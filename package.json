@@ -1,0 +1,25 @@
+{
+  "name": "zen-syntax",
+  "displayName": "zen-syntax",
+  "description": "Hide unnecessary syntax or markup from programming languages",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "zen-styntax",
+      "aliases": ["", "zen-styntax"],
+      "extensions": [""],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "zen-styntax",
+      "scopeName": "source.tsx",
+      "path": "./syntaxes/zen-styntax.tmLanguage.json"
+    }]
+  }
+}
