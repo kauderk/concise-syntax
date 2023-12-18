@@ -1,4 +1,4 @@
-# zen-syntax
+# concise-syntax
 
 ## Description
 

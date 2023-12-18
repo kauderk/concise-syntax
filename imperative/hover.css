@@ -7,7 +7,7 @@
 }
 */
 
-/* FIXME: include this into the extension, but precalculate the "zen" class beforehand */
+/* FIXME: include this into the extension, but precalculate the "concise" class beforehand */
 .view-lines {
   --r: transparent;
 }

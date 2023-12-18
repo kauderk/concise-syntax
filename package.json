@@ -1,6 +1,6 @@
 {
-  "name": "zen-syntax",
-  "displayName": "zen-syntax",
+  "name": "concise-syntax",
+  "displayName": "concise-syntax",
   "description": "Hide unnecessary syntax or markup from programming languages",
   "version": "0.0.1",
   "engines": {
@@ -12,7 +12,7 @@
   "contributes": {
     "themes": [
       {
-        "label": "Zen Syntax",
+        "label": "Concise Syntax",
         "uiTheme": "vs-dark",
         "path": "./themes/tokens.json"
       }
@@ -20,7 +20,7 @@
     "grammars": [
       {
         "path": "./syntaxes/injection.json",
-        "scopeName": "source.zen",
+        "scopeName": "source.concise",
         "injectTo": [
           "source.js",
           "source.ts",
