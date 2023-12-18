@@ -1,0 +1,19 @@
+/* hide popovers when debugging */
+/*
+.monaco-hover *,
+[widgetid='editor.contrib.resizableContentHoverWidget'] {
+	display: none;
+  pointer-events: none;
+}
+*/
+
+/* FIXME: include this into the extension, but precalculate the "zen" class beforehand */
+.view-lines {
+  --r: transparent;
+}
+.view-lines:has(.mtk4:hover) {
+  --r: red;
+}
+.mtk4 {
+  color: var(--r);
+}

@@ -10,16 +10,25 @@
     "Programming Languages"
   ],
   "contributes": {
-    "languages": [{
-      "id": "zen-styntax",
-      "aliases": ["", "zen-styntax"],
-      "extensions": [""],
-      "configuration": "./language-configuration.json"
-    }],
-    "grammars": [{
-      "language": "zen-styntax",
-      "scopeName": "source.tsx",
-      "path": "./syntaxes/zen-styntax.tmLanguage.json"
-    }]
+    "themes": [
+      {
+        "label": "Zen Syntax",
+        "uiTheme": "vs-dark",
+        "path": "./themes/tokens.json"
+      }
+    ],
+    "grammars": [
+      {
+        "path": "./syntaxes/injection.json",
+        "scopeName": "source.zen",
+        "injectTo": [
+          "source.js",
+          "source.ts",
+          "source.tsx",
+          "source.jsx",
+          "source.abc"
+        ]
+      }
+    ]
   }
 }

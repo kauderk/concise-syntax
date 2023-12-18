@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "scopeName": "source.zen",
+  "injectionSelector": "L:meta.block.tsx",
+  "patterns": [
+    {
+      "comment": "closing tags",
+      "match": "(</.*?;)|(</.*?>)",
+      "name": "zen.redundant-syntax"
+    },
+    {
+      "comment": "begin tsx ternary operators",
+      "match": "(\\{).+\\?.+?(\\()",
+      "captures": {
+        "1": { "name": "zen.redundant-syntax" },
+        "2": { "name": "zen.redundant-syntax" }
+      }
+    },
+    {
+      "comment": "end tsx ternary operators",
+      "match": "\\).+?:.+\\}",
+      "name": "zen.redundant-syntax"
+    }
+  ]
+}
