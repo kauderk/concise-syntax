@@ -1,15 +1,28 @@
 {
   "name": "concise-syntax",
-  "displayName": "concise-syntax",
+  "displayName": "Concise Syntax",
   "description": "Hide unnecessary syntax or markup from programming languages",
   "version": "0.0.1",
+  "publisher": "kauderk",
+  "type": "commonjs",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Programming Languages"
   ],
+  "main": "./dist/extension",
+  "scripts": {
+    "build": "tsc",
+    "vscode:uninstall": "node ./dist/uninstall"
+  },
   "contributes": {
+    "commands": [
+      {
+        "command": "extension.reload",
+        "title": "Concise Syntax: Reload"
+      }
+    ],
     "themes": [
       {
         "label": "Concise Syntax",
@@ -30,5 +43,9 @@
         ]
       }
     ]
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "vscode": "^1.1.37"
   }
 }
