@@ -8,13 +8,14 @@
     "allowSyntheticDefaultImports": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "outDir": "./dist",
+    "outDir": "./out",
     "rootDir": "./src",
     "baseUrl": ".",
+    "sourceMap": true,
     "paths": {
       "vscode": ["./node_modules/vscode"]
     }
   },
-  "include": ["src/**/*.ts", "src/uninstall.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "**/*.spec.ts"]
 }

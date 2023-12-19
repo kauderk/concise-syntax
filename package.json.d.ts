@@ -1,4 +1,5 @@
-{
+/** Generated with `./json-d-ts.js` */
+declare const data: {
   "name": "concise-syntax",
   "displayName": "Concise Syntax",
   "description": "Hide unnecessary syntax or markup from programming languages",
@@ -26,12 +27,12 @@
     "commands": [
       {
         "command": "extension.reload",
-        "title": "Mount Extension",
+        "title": "Concise Syntax: Mount Extension",
         "category": "Concise Syntax"
       },
       {
         "command": "extension.disposeExtension",
-        "title": "Dispose Extension (free memory)",
+        "title": "Concise Syntax: Dispose Extension (free memory)",
         "category": "Concise Syntax"
       }
     ],
@@ -61,3 +62,4 @@
     "vscode": "^1.1.37"
   }
 }
+export = data
