@@ -9,11 +9,11 @@
 
 /* FIXME: include this into the extension, but precalculate the "concise" class beforehand */
 .view-lines {
-  --r: transparent;
+  --r: rgb(128, 128, 128);
 }
-.view-lines:has(.mtk4:hover) {
+.view-lines:has(:is(.mtk4, .mtk14):hover) {
   --r: red;
 }
-.mtk4 {
+:is(.mtk4, .mtk14) {
   color: var(--r);
 }
