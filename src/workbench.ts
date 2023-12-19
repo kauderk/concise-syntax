@@ -1,40 +1,45 @@
 /* eslint-env browser */
 ;(function () {
-  function patch() {
-    const e1 = document.querySelector('.right-items')
-    const e2 = document.querySelector(
-      '.right-items .__CONCISE_SYNTAX_INDICATOR_CLS'
-    )
-    if (e1 && !e2) {
-      let e = document.createElement('div')
-      const id = 'vscode-concise-syntax'
-      e.id = 'kauderk.' + id
-      const title = 'Concise syntax'
-      e.title = title
-      e.className = 'statusbar-item right __CONCISE_SYNTAX_INDICATOR_CLS'
-      const span = document.createElement('span')
-      {
-        const a = document.createElement('a')
-        a.tabIndex = -1
-        a.className = 'statusbar-item-label'
-        {
-          span.className = 'codicon codicon-symbol-keyword'
-          a.appendChild(span)
-        }
-        e.appendChild(a)
-      }
-      e1.appendChild(e)
+  /**
+   * State
+   */
+  let conciseSyntax = {
+    init: false,
+    interval: 0 as any as NodeJS.Timeout,
+    observer: null as null | MutationObserver,
+    extension: null as null | Extension,
+  }
+  // @ts-ignore
+  conciseSyntax = { ...conciseSyntax, ...(window.conciseSyntax ?? {}) }
 
-      const isTrue = () => localStorage.getItem(id) === 'true'
-      function applyConciseSyntax(on: boolean) {
-        const styles =
-          document.getElementById(id) ?? document.createElement('style')
-        styles.id = id
-        span.style.fontWeight = on ? 'bold' : 'normal'
-        e.title = on ? `${title}: enabled` : `${title}: disabled`
+  const extensionId = 'kauderk.concise-syntax'
+  const windowId = 'window' + extensionId
 
-        styles.innerHTML = on
-          ? `
+  type Extension = ReturnType<typeof domExtension>
+  // Should this manage its previous instance?
+
+  function active(extension: Extension) {
+    const isTrue = () => localStorage.getItem(windowId) === 'true'
+    applyConciseSyntax(isTrue(), extension)
+    extension.item.onclick = () => {
+      const on = !isTrue()
+      applyConciseSyntax(on, extension)
+      localStorage.setItem(windowId, String(on))
+    }
+
+    function applyConciseSyntax(on: boolean, _extension: typeof extension) {
+      const styles =
+        document.getElementById(windowId) ?? document.createElement('style')
+      styles.id = windowId
+      _extension.icon.style.fontWeight = on ? 'bold' : 'normal'
+      const title = 'Concise Syntax'
+      _extension.item.title = on ? `${title}: enabled` : `${title}: disabled`
+
+      styles.innerHTML = on
+        ? `
+				.customHover:hover {
+					filter: drop-shadow(2px 4px 6px white);
+				}
 				.view-lines {
 					--r: transparent;
 				}
@@ -45,33 +50,77 @@
 					color: var(--r);
 				}
 				`
-          : ''
-        document.body.appendChild(styles)
-      }
-      // FIXME: figure out why this runs twice sometimes
-      applyConciseSyntax(isTrue())
-
-      // Toggle
-      e.onclick = () => {
-        const on = !isTrue()
-        applyConciseSyntax(on)
-        localStorage.setItem(id, String(on))
-      }
-
-      // @ts-ignore
-      if (!window.onloadConciseSyntaxIndicatorInterval) {
-        // @ts-ignore
-        window.onloadConciseSyntaxIndicatorInterval = true
-        console.log('window vscode-concise-syntax is active!')
-      }
+        : ''
+      document.body.appendChild(styles)
     }
   }
-
-  // @ts-ignore
-  if (window.conciseSyntaxIndicatorInterval) {
-    // @ts-ignore
-    clearInterval(window.conciseSyntaxIndicatorInterval)
+  function inactive(extension: Extension) {
+    extension.item.onclick = null
+    extension.item.removeAttribute('title')
+    extension.icon.style.removeProperty('font-weight')
   }
-  // @ts-ignore
-  window.conciseSyntaxIndicatorInterval = setInterval(patch, 5000)
+
+  function domExtension() {
+    const statusBar = document.querySelector('.right-items') as HTMLElement
+    const item = statusBar?.querySelector(
+      `[id="${extensionId}"]`
+    ) as HTMLElement
+    const icon = item?.querySelector('.codicon') as HTMLElement
+    //TODO: avoid casting
+    return { icon, item, statusBar }
+  }
+
+  //#region Lifecycle
+  conciseSyntax.observer?.disconnect()
+  let Extension = conciseSyntax.extension
+
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type !== 'childList') {
+        return
+      }
+      mutation.addedNodes.forEach((node: any) => {
+        if (node.id === extensionId) {
+          active((Extension = domExtension()))
+          // vscode doesn't provide a hover function when the item is missing a command
+          Extension.item.classList.toggle('customHover', true)
+        }
+      })
+      mutation.removedNodes.forEach((node: any) => {
+        if (node.matches?.('.right-items.items-container')) {
+          reload()
+        } else if (node.id === extensionId && Extension) {
+          inactive(Extension)
+          Extension.item.classList.toggle('customHover', false)
+        }
+      })
+    })
+  })
+  conciseSyntax.observer = observer
+
+  function patch() {
+    const dom = domExtension()
+    if (!document.contains(dom.statusBar?.parentNode) || conciseSyntax.init)
+      return
+
+    if (dom.icon) {
+      conciseSyntax.init = true
+      clearInterval(conciseSyntax.interval)
+
+      // FIXME: the MutationObserver stopped working after multiple debugger sessions
+      // I know this is the case because the same thing happened years ago but with a chrome browser
+      // after clearing the cache it worked again, I guess I have to reinstall vscode * sigh *
+      // observer.observe(dom.statusBar.parentNode!, { childList: true })
+      dom.item.classList.toggle('customHover', true)
+      active((Extension = dom))
+    }
+  }
+  function reload() {
+    observer.disconnect()
+    conciseSyntax.init = false
+    clearInterval(conciseSyntax.interval)
+    conciseSyntax.interval = setInterval(patch, 5000)
+  }
+  reload()
+  //#endregion
 })()
