@@ -3,6 +3,9 @@ import * as fs from 'fs'
 import * as path from 'path'
 import msg from './messages'
 import { randomUUID } from 'crypto'
+import packageJson from '../package.json'
+
+const extensionId = packageJson.publisher + '.' + packageJson.name
 
 function getWorkBenchHtmlData() {
   if (!require.main?.filename) {
@@ -26,15 +29,19 @@ function getWorkBenchHtmlData() {
     )
   return { path: workbenchPath, getBackupPath }
 }
-async function installImpl() {
+async function installCycle(context: vscode.ExtensionContext) {
   const file = getWorkBenchHtmlData()
+  const state = getStateStore(context)
 
   const backupUuid = await getBackupUuid(file.path)
   if (backupUuid) {
     console.log('vscode-concise-syntax is active!')
+    statusBarItem(context)
+    await state.write('active')
     return
   }
 
+  const error = getErrorStore(context)
   const uuidSession: string = randomUUID()
   // await createBackup(uuidSession)
   {
@@ -49,6 +56,7 @@ async function installImpl() {
       )
     } catch (e) {
       vscode.window.showInformationMessage(msg.admin)
+      await error.write('throw')
       throw e
     }
   }
@@ -56,9 +64,9 @@ async function installImpl() {
   // await performPatch(uuidSession)
   {
     let workbenchPath
-    let ext = vscode.extensions.getExtension('kauderk.vscode-concise-syntax')
+    let ext = vscode.extensions.getExtension(extensionId)
     if (ext && ext.extensionPath) {
-      workbenchPath = path.resolve(ext.extensionPath, 'dist/workbench.js')
+      workbenchPath = path.resolve(ext.extensionPath, 'out/workbench.js')
     } else {
       workbenchPath = path.resolve(__dirname, 'workbench.js')
     }
@@ -81,21 +89,28 @@ async function installImpl() {
           '<!-- !! VSCODE-CONCISE-SYNTAX-END !! -->\n</html>'
       )
 
+    const error = getErrorStore(context)
     try {
       await fs.promises.writeFile(file.path, html, 'utf-8')
     } catch (e) {
       vscode.window.showInformationMessage(msg.admin)
-      disabledRestart()
+      reloadWindowMessage(msg.disabled)
+      await error.write('error')
       return
     }
 
     // enabledRestart()
-    vscode.window
-      .showInformationMessage(msg.enabled, { title: msg.restartIde })
-      .then(reloadWindow)
+    reloadWindowMessage(msg.enabled)
+    await state.write('restart')
+    return
   }
-
-  console.log('vscode-concise-syntax is active!')
+  function reloadWindowMessage(message: string) {
+    vscode.window
+      .showInformationMessage(message, { title: msg.restartIde })
+      .then(() =>
+        vscode.commands.executeCommand('workbench.action.reloadWindow')
+      )
+  }
 }
 function clearExistingPatches(html: string) {
   return html
@@ -116,20 +131,19 @@ async function getBackupUuid(path: string) {
     throw e
   }
 }
-export async function uninstall() {
-  return uninstallImpl().then(disabledRestart).catch(_catch)
-}
-async function uninstallImpl() {
+async function uninstallCycle(context: vscode.ExtensionContext) {
   const file = getWorkBenchHtmlData()
+  const state = getStateStore(context)
+  const error = getErrorStore(context)
 
   // if typescript wont won't freak out about promises then nothing matters :D
   // getBackupUuid
   const backupUuid = await getBackupUuid(file.path)
 
   if (!backupUuid) {
-    vscode.window.showInformationMessage(
-      msg.somethingWrong + 'no backup uuid found'
-    )
+    const message = msg.somethingWrong + 'no backup uuid found'
+    vscode.window.showInformationMessage(message)
+    await error.write('error')
     return
   }
   // restoreBackup
@@ -142,6 +156,7 @@ async function uninstallImpl() {
       }
     } catch (e) {
       vscode.window.showInformationMessage(msg.admin)
+      await error.write('throw')
       throw e
     }
   }
@@ -156,32 +171,106 @@ async function uninstallImpl() {
       }
     }
   }
+  await state.write('restart')
+  return
 }
 
-function reloadWindow() {
-  // reload vscode-window
-  vscode.commands.executeCommand('workbench.action.reloadWindow')
-}
-
-function disabledRestart() {
-  vscode.window
-    .showInformationMessage(msg.disabled, { title: msg.restartIde })
-    .then(reloadWindow)
-}
-
-function _catch(e: unknown) {
-  console.error(e)
-}
 // how do you make javascript freak out about promises/errors?
-// export function deactivate() {
-//   return uninstallImpl().catch(_catch)
-// }
+export function deactivate() {
+  // debugger
+  // FIXME: why is this hook not working? :(
+  console.log('vscode-concise-syntax is deactivated!')
+}
+
+function getStateStore(context: vscode.ExtensionContext) {
+  // return stateManagerObject<{
+  //   error: string
+  //   active: boolean
+  // }>(context, extensionId + '.state')
+  return stateManager<'active' | 'restart' | 'disposed'>(
+    context,
+    extensionId + '.state'
+  )
+}
+function getErrorStore(context: vscode.ExtensionContext) {
+  // return stateManagerObject<{
+  //   error: string
+  //   active: boolean
+  // }>(context, extensionId + '.state')
+  return stateManager<'error' | 'throw' | 'unhandled'>(
+    context,
+    extensionId + '.error'
+  )
+}
 export function activate(context: vscode.ExtensionContext) {
+  const reloadCommand = packageJson.contributes.commands[0].command
   context.subscriptions.push(
-    vscode.commands.registerCommand('extension.reload', () => {
-      return uninstallImpl().then(installImpl).catch(_catch)
+    vscode.commands.registerCommand(reloadCommand, () => {
+      uninstallCycle(context)
+        .then(() => installCycle(context))
+        .catch(_catch)
+    })
+  )
+  const disposeCommand = packageJson.contributes.commands[1].command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(disposeCommand, () => {
+      uninstallCycle(context)
+        .catch(_catch)
+        .finally(() => state.write('disposed'))
     })
   )
 
-  return installImpl().catch(_catch)
+  const state = getStateStore(context)
+  if (state.read() != 'disposed') {
+    installCycle(context).catch(_catch)
+  }
+
+  console.log('vscode-concise-syntax is active')
+
+  function _catch(e: unknown) {
+    console.error(e)
+    const error = getErrorStore(context)
+    error.write('unhandled').catch(() => {})
+  }
+}
+
+function stateManager<T extends string>(
+  context: vscode.ExtensionContext,
+  key: string
+) {
+  return {
+    value: '' as any,
+    read() {
+      return (this.value = context.globalState.get(key) as T | undefined)
+    },
+    async write(newState: T) {
+      this.value = newState
+      await context.globalState.update(key, newState)
+      return newState
+    },
+  }
+}
+
+/**
+ * The icon's purpose is to indicate the workbench.ts script the extension is active.
+ */
+function statusBarItem({ subscriptions }: vscode.ExtensionContext) {
+  // FIXME: find a way to apply custom css on the client side from here
+  // const myCommandId = packageJson.contributes.commands[1].command
+  // subscriptions.push(
+  //   vscode.commands.registerCommand(myCommandId, () => {
+  //     vscode.window.showInformationMessage(
+  //       `Clicked on concise syntax indicator`
+  //     )
+  //   })
+  // )
+  const item = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  )
+  // myStatusBarItem.command = myCommandId
+  item.text = `$(symbol-keyword) Concise`
+  // myStatusBarItem.tooltip = `Concise Syntax: pending`
+  item.show()
+  subscriptions.push(item)
 }

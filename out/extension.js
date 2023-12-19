@@ -26,7 +26,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.mergeDeep = exports.isObject = exports.activate = exports.deactivate = void 0;
+exports.activate = exports.deactivate = void 0;
 const vscode = __importStar(require("vscode"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
@@ -51,7 +51,7 @@ async function installCycle(context) {
     const backupUuid = await getBackupUuid(file.path);
     if (backupUuid) {
         console.log('vscode-concise-syntax is active!');
-        selectionIcon(context);
+        statusBarItem(context);
         await state.write('active');
         return;
     }
@@ -232,45 +232,10 @@ function stateManager(context, key) {
         },
     };
 }
-function stateManagerObject(context, key) {
-    return {
-        read() {
-            return context.globalState.get(key);
-        },
-        async write(newState) {
-            const assign = mergeDeep(this.read(), newState);
-            await context.globalState.update(key, assign);
-            return assign;
-        },
-    };
-}
-function isObject(item) {
-    return item && typeof item === 'object' && !Array.isArray(item);
-}
-exports.isObject = isObject;
-function mergeDeep(target, ...sources) {
-    if (!sources.length)
-        return target;
-    const source = sources.shift();
-    if (isObject(target) && isObject(source)) {
-        for (const key in source) {
-            if (isObject(source[key])) {
-                if (!target[key])
-                    Object.assign(target, { [key]: {} });
-                mergeDeep(target[key], source[key]);
-            }
-            else {
-                Object.assign(target, { [key]: source[key] });
-            }
-        }
-    }
-    return mergeDeep(target, ...sources);
-}
-exports.mergeDeep = mergeDeep;
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
-function selectionIcon({ subscriptions }) {
+function statusBarItem({ subscriptions }) {
     // FIXME: find a way to apply custom css on the client side from here
     // const myCommandId = packageJson.contributes.commands[1].command
     // subscriptions.push(
@@ -280,11 +245,11 @@ function selectionIcon({ subscriptions }) {
     //     )
     //   })
     // )
-    const myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     // myStatusBarItem.command = myCommandId
-    myStatusBarItem.text = `$(symbol-keyword) Concise`;
+    item.text = `$(symbol-keyword) Concise`;
     // myStatusBarItem.tooltip = `Concise Syntax: pending`
-    myStatusBarItem.show();
-    subscriptions.push(myStatusBarItem);
+    item.show();
+    subscriptions.push(item);
 }
 //# sourceMappingURL=extension.js.map
