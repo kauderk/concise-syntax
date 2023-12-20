@@ -51,9 +51,9 @@ async function installCycle(context) {
     const backupUuid = await getBackupUuid(file.path);
     if (backupUuid) {
         console.log('vscode-concise-syntax is active!');
-        statusBarItem(context);
+        statusBarItem(context).show();
         await state.write('active');
-        return;
+        return true;
     }
     const error = getErrorStore(context);
     const uuidSession = (0, crypto_1.randomUUID)();
@@ -103,15 +103,18 @@ async function installCycle(context) {
             return;
         }
         // enabledRestart()
-        reloadWindowMessage(messages_1.default.enabled);
         await state.write('restart');
         return;
     }
-    function reloadWindowMessage(message) {
-        vscode.window
-            .showInformationMessage(message, { title: messages_1.default.restartIde })
-            .then(() => vscode.commands.executeCommand('workbench.action.reloadWindow'));
-    }
+}
+function reloadWindowMessage(message) {
+    vscode.window
+        .showInformationMessage(message, { title: messages_1.default.restartIde })
+        .then((selection) => {
+        if (selection) {
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+        }
+    });
 }
 function clearExistingPatches(html) {
     return html
@@ -140,10 +143,10 @@ async function uninstallCycle(context) {
     // getBackupUuid
     const backupUuid = await getBackupUuid(file.path);
     if (!backupUuid) {
-        const message = messages_1.default.somethingWrong + 'no backup uuid found';
-        vscode.window.showInformationMessage(message);
-        await error.write('error');
-        return;
+        // const message = msg.somethingWrong + 'no backup uuid found'
+        // vscode.window.showInformationMessage(message)
+        // await error.write('error')
+        return backupUuid;
     }
     // restoreBackup
     const backupFilePath = file.getBackupPath(backupUuid);
@@ -171,45 +174,76 @@ async function uninstallCycle(context) {
         }
     }
     await state.write('restart');
-    return;
+    return backupUuid;
 }
 // how do you make javascript freak out about promises/errors?
 function deactivate() {
-    // debugger
     // FIXME: why is this hook not working? :(
     console.log('vscode-concise-syntax is deactivated!');
 }
 exports.deactivate = deactivate;
 function getStateStore(context) {
-    // return stateManagerObject<{
-    //   error: string
-    //   active: boolean
-    // }>(context, extensionId + '.state')
     return stateManager(context, extensionId + '.state');
 }
 function getErrorStore(context) {
-    // return stateManagerObject<{
-    //   error: string
-    //   active: boolean
-    // }>(context, extensionId + '.state')
     return stateManager(context, extensionId + '.error');
 }
-function activate(context) {
+async function activate(context) {
+    const state = getStateStore(context);
+    // FIXME: use a better state manager or state machine
+    const file = getWorkBenchHtmlData();
+    const backup = await getBackupUuid(file.path);
     const reloadCommand = package_json_1.default.contributes.commands[0].command;
-    context.subscriptions.push(vscode.commands.registerCommand(reloadCommand, () => {
-        uninstallCycle(context)
-            .then(() => installCycle(context))
-            .catch(_catch);
+    context.subscriptions.push(vscode.commands.registerCommand(reloadCommand, async () => {
+        try {
+            if (state.read() == 'active') {
+                vscode.window.showInformationMessage('Already Mounted');
+            }
+            else {
+                await uninstallCycle(context);
+                await installCycle(context);
+                if (!backup) {
+                    reloadWindowMessage(messages_1.default.enabled);
+                }
+                else {
+                    statusBarItem(context).show();
+                    vscode.window.showInformationMessage('Mount: using cache');
+                }
+            }
+        }
+        catch (error) {
+            _catch(error);
+        }
     }));
     const disposeCommand = package_json_1.default.contributes.commands[1].command;
-    context.subscriptions.push(vscode.commands.registerCommand(disposeCommand, () => {
-        uninstallCycle(context)
-            .catch(_catch)
-            .finally(() => state.write('disposed'));
+    context.subscriptions.push(vscode.commands.registerCommand(disposeCommand, async () => {
+        try {
+            const backup = await uninstallCycle(context);
+            statusBarItem(context).hide();
+            const [message, ...options] = backup
+                ? ['Disposed', 'Reload', 'Uninstall']
+                : ['Already Disposed', 'Uninstall'];
+            // prettier-ignore
+            const selection = await vscode.window.showInformationMessage(message, ...options);
+            if (selection == 'Reload') {
+                vscode.commands.executeCommand('workbench.action.reloadWindow');
+            }
+            else if (selection == 'Uninstall') {
+                vscode.commands.executeCommand('workbench.extensions.action.uninstallExtension', extensionId);
+            }
+        }
+        catch (error) {
+            _catch(error);
+        }
+        finally {
+            await state.write('disposed');
+        }
     }));
-    const state = getStateStore(context);
     if (state.read() != 'disposed') {
         installCycle(context).catch(_catch);
+    }
+    else if (backup) {
+        statusBarItem(context).show();
     }
     console.log('vscode-concise-syntax is active');
     function _catch(e) {
@@ -232,10 +266,13 @@ function stateManager(context, key) {
         },
     };
 }
+let _item;
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
 function statusBarItem({ subscriptions }) {
+    if (_item)
+        return _item;
     // FIXME: find a way to apply custom css on the client side from here
     // const myCommandId = packageJson.contributes.commands[1].command
     // subscriptions.push(
@@ -248,8 +285,9 @@ function statusBarItem({ subscriptions }) {
     const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     // myStatusBarItem.command = myCommandId
     item.text = `$(symbol-keyword) Concise`;
-    // myStatusBarItem.tooltip = `Concise Syntax: pending`
+    item.tooltip = `Concise Syntax: pending`;
     item.show();
     subscriptions.push(item);
+    return (_item = item);
 }
 //# sourceMappingURL=extension.js.map

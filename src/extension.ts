@@ -36,9 +36,9 @@ async function installCycle(context: vscode.ExtensionContext) {
   const backupUuid = await getBackupUuid(file.path)
   if (backupUuid) {
     console.log('vscode-concise-syntax is active!')
-    statusBarItem(context)
+    statusBarItem(context).show()
     await state.write('active')
-    return
+    return true
   }
 
   const error = getErrorStore(context)
@@ -100,17 +100,19 @@ async function installCycle(context: vscode.ExtensionContext) {
     }
 
     // enabledRestart()
-    reloadWindowMessage(msg.enabled)
+
     await state.write('restart')
     return
   }
-  function reloadWindowMessage(message: string) {
-    vscode.window
-      .showInformationMessage(message, { title: msg.restartIde })
-      .then(() =>
+}
+function reloadWindowMessage(message: string) {
+  vscode.window
+    .showInformationMessage(message, { title: msg.restartIde })
+    .then((selection) => {
+      if (selection) {
         vscode.commands.executeCommand('workbench.action.reloadWindow')
-      )
-  }
+      }
+    })
 }
 function clearExistingPatches(html: string) {
   return html
@@ -141,10 +143,10 @@ async function uninstallCycle(context: vscode.ExtensionContext) {
   const backupUuid = await getBackupUuid(file.path)
 
   if (!backupUuid) {
-    const message = msg.somethingWrong + 'no backup uuid found'
-    vscode.window.showInformationMessage(message)
-    await error.write('error')
-    return
+    // const message = msg.somethingWrong + 'no backup uuid found'
+    // vscode.window.showInformationMessage(message)
+    // await error.write('error')
+    return backupUuid
   }
   // restoreBackup
   const backupFilePath = file.getBackupPath(backupUuid)
@@ -172,57 +174,89 @@ async function uninstallCycle(context: vscode.ExtensionContext) {
     }
   }
   await state.write('restart')
-  return
+  return backupUuid
 }
 
 // how do you make javascript freak out about promises/errors?
 export function deactivate() {
-  // debugger
   // FIXME: why is this hook not working? :(
   console.log('vscode-concise-syntax is deactivated!')
 }
 
 function getStateStore(context: vscode.ExtensionContext) {
-  // return stateManagerObject<{
-  //   error: string
-  //   active: boolean
-  // }>(context, extensionId + '.state')
   return stateManager<'active' | 'restart' | 'disposed'>(
     context,
     extensionId + '.state'
   )
 }
 function getErrorStore(context: vscode.ExtensionContext) {
-  // return stateManagerObject<{
-  //   error: string
-  //   active: boolean
-  // }>(context, extensionId + '.state')
   return stateManager<'error' | 'throw' | 'unhandled'>(
     context,
     extensionId + '.error'
   )
 }
-export function activate(context: vscode.ExtensionContext) {
+
+export async function activate(context: vscode.ExtensionContext) {
+  const state = getStateStore(context)
+
+  // FIXME: use a better state manager or state machine
+  const file = getWorkBenchHtmlData()
+  const backup = await getBackupUuid(file.path)
+
   const reloadCommand = packageJson.contributes.commands[0].command
   context.subscriptions.push(
-    vscode.commands.registerCommand(reloadCommand, () => {
-      uninstallCycle(context)
-        .then(() => installCycle(context))
-        .catch(_catch)
+    vscode.commands.registerCommand(reloadCommand, async () => {
+      try {
+        if (state.read() == 'active') {
+          vscode.window.showInformationMessage('Already Mounted')
+        } else {
+          await uninstallCycle(context)
+          await installCycle(context)
+          if (!backup) {
+            reloadWindowMessage(msg.enabled)
+          } else {
+            statusBarItem(context).show()
+            vscode.window.showInformationMessage('Mount: using cache')
+          }
+        }
+      } catch (error) {
+        _catch(error)
+      }
     })
   )
   const disposeCommand = packageJson.contributes.commands[1].command
   context.subscriptions.push(
-    vscode.commands.registerCommand(disposeCommand, () => {
-      uninstallCycle(context)
-        .catch(_catch)
-        .finally(() => state.write('disposed'))
+    vscode.commands.registerCommand(disposeCommand, async () => {
+      try {
+        const backup = await uninstallCycle(context)
+        statusBarItem(context).hide()
+
+        const [message, ...options] = backup
+          ? ['Disposed', 'Reload', 'Uninstall']
+          : ['Already Disposed', 'Uninstall']
+        // prettier-ignore
+        const selection = await vscode.window.showInformationMessage(message, ...options)
+
+        if (selection == 'Reload') {
+          vscode.commands.executeCommand('workbench.action.reloadWindow')
+        } else if (selection == 'Uninstall') {
+          vscode.commands.executeCommand(
+            'workbench.extensions.action.uninstallExtension',
+            extensionId
+          )
+        }
+      } catch (error) {
+        _catch(error)
+      } finally {
+        await state.write('disposed')
+      }
     })
   )
 
-  const state = getStateStore(context)
   if (state.read() != 'disposed') {
     installCycle(context).catch(_catch)
+  } else if (backup) {
+    statusBarItem(context).show()
   }
 
   console.log('vscode-concise-syntax is active')
@@ -251,10 +285,12 @@ function stateManager<T extends string>(
   }
 }
 
+let _item: vscode.StatusBarItem
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
 function statusBarItem({ subscriptions }: vscode.ExtensionContext) {
+  if (_item) return _item
   // FIXME: find a way to apply custom css on the client side from here
   // const myCommandId = packageJson.contributes.commands[1].command
   // subscriptions.push(
@@ -270,7 +306,8 @@ function statusBarItem({ subscriptions }: vscode.ExtensionContext) {
   )
   // myStatusBarItem.command = myCommandId
   item.text = `$(symbol-keyword) Concise`
-  // myStatusBarItem.tooltip = `Concise Syntax: pending`
+  item.tooltip = `Concise Syntax: pending`
   item.show()
   subscriptions.push(item)
+  return (_item = item)
 }
