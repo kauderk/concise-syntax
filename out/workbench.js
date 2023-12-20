@@ -2,129 +2,159 @@
 /* eslint-env browser */
 ;
 (function () {
-    /**
-     * State
-     */
     let conciseSyntax = {
         init: false,
         interval: 0,
-        observer: null,
+        dispose: null,
         extension: null,
     };
     // @ts-ignore
-    conciseSyntax = { ...conciseSyntax, ...(window.conciseSyntax ?? {}) };
+    window.conciseSyntax ??= conciseSyntax;
     const extensionId = 'kauderk.concise-syntax';
     const windowId = 'window' + extensionId;
+    // exploit the fact that vscode renders data to the dom, could be any other attribute
+    const bridgeBetweenVscodeExtension = 'aria-label';
+    const customCSS = `
+	.view-lines {
+		--r: transparent;
+	}
+	.view-lines:has(.mtk4:hover) {
+		--r: red;
+	}
+	.mtk4 {
+		color: var(--r);
+	}
+	`;
+    /**
+     * Apply custom logic when the vscode extension changes the bridge attribute
+     */
     function activate(extension) {
         Extension = extension; // alright...
-        const isActive = findIsActive(extension.item);
-        extension.item.classList.toggle('customHover', isActive);
+        const isActive = tryParseData(extension.item);
         applyConciseSyntax(isActive, extension);
         function applyConciseSyntax(on, _extension) {
             const styles = document.getElementById(windowId) ?? document.createElement('style');
             styles.id = windowId;
             _extension.icon.style.fontWeight = on ? 'bold' : 'normal';
             const title = 'Concise Syntax';
-            _extension.item.title = on ? `${title}: enabled` : `${title}: disabled`;
-            styles.innerHTML = on
-                ? `
-				.customHover:hover {
-					filter: drop-shadow(2px 4px 6px white);
-				}
-				.view-lines {
-					--r: transparent;
-				}
-				.view-lines:has(.mtk4:hover) {
-					--r: red;
-				}
-				.mtk4 {
-					color: var(--r);
-				}
-				`
-                : '';
+            _extension.item.title = on ? `${title}: active` : `${title}: inactive`;
+            styles.innerHTML = on ? customCSS : '';
             document.body.appendChild(styles);
         }
     }
+    /**
+     * Clean up
+     */
     function inactive() {
         document.getElementById(windowId)?.remove();
         if (!Extension)
             return;
         Extension.item.removeAttribute('title');
         Extension.icon.style.removeProperty('font-weight');
-        Extension.item.classList.toggle('customHover', false);
     }
-    function domExtension() {
-        const statusBar = document.querySelector('.right-items');
-        const item = statusBar?.querySelector(`[id="${extensionId}"]`);
-        const icon = item?.querySelector('.codicon');
-        //TODO: avoid casting
-        return { icon, item, statusBar };
-    }
-    //#region Lifecycle
-    conciseSyntax.observer?.disconnect();
     let Extension = conciseSyntax.extension;
-    const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-            if (mutation.type !== 'childList') {
+    let disposeObserver = conciseSyntax.dispose ?? (() => { });
+    let previousData = undefined;
+    const tryParseData = (target) => 
+    // You could pass stringified data
+    !target.getAttribute?.(bridgeBetweenVscodeExtension)?.includes('inactive');
+    const attributeObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            const newData = tryParseData(mutation.target);
+            if (previousData === newData)
                 return;
-            }
-            mutation.addedNodes.forEach((node) => {
-                if (node.id === extensionId) {
-                    activate(domExtension());
-                }
-            });
-            mutation.removedNodes.forEach((node) => {
-                if (node.matches?.('.right-items.items-container')) {
-                    reload();
-                }
-                else if (node.id === extensionId && Extension) {
-                    inactive();
-                }
-            });
-        });
-    });
-    conciseSyntax.observer = observer;
-    let wasActive = undefined;
-    const findIsActive = (target) => !target.getAttribute('aria-label').includes('inactive');
-    const attributeObserver = new MutationObserver(function (mutations) {
-        mutations.forEach(function (mutation) {
-            if (mutation.type !== 'attributes' ||
-                mutation.attributeName !== 'aria-label')
-                return;
-            const isActive = findIsActive(mutation.target);
-            if (wasActive === isActive)
-                return;
-            wasActive = isActive;
-            if (isActive) {
+            previousData = newData;
+            if (newData) {
                 activate(domExtension());
             }
             else {
                 inactive();
             }
-        });
+        }
     });
+    function domExtension() {
+        const statusBar = document.querySelector('.right-items');
+        const item = statusBar?.querySelector(`[id="${extensionId}"]`);
+        const icon = item?.querySelector('.codicon');
+        return { icon, item, statusBar };
+    }
+    let anyUsage = false;
     function patch() {
         const dom = domExtension();
-        if (!document.contains(dom.statusBar?.parentNode) || conciseSyntax.init)
+        if (!document.contains(dom.statusBar?.parentNode) ||
+            !dom.icon ||
+            conciseSyntax.init)
             return;
-        if (dom.icon) {
-            conciseSyntax.init = true;
-            clearInterval(conciseSyntax.interval);
-            // FIXME: the MutationObserver stopped working after multiple debugger sessions
-            // I know this is the case because the same thing happened years ago but with a chrome browser
-            // after clearing the cache it worked again, I guess I have to reinstall vscode * sigh *
-            // observer.observe(dom.statusBar.parentNode!, { childList: true })
-            attributeObserver.observe(dom.item, { attributes: true });
-            activate(dom);
-        }
+        anyUsage = true;
+        conciseSyntax.init = true;
+        clearInterval(conciseSyntax.interval);
+        disposeObserver = watchForRemoval(dom.item, reload);
+        attributeObserver.observe(dom.item, {
+            attributes: true,
+            attributeFilter: [bridgeBetweenVscodeExtension],
+        });
+        activate(dom);
     }
-    function reload() {
-        observer.disconnect();
+    function dispose() {
+        disposeObserver();
+        attributeObserver.disconnect();
         conciseSyntax.init = false;
         clearInterval(conciseSyntax.interval);
+    }
+    function reload() {
+        dispose();
         conciseSyntax.interval = setInterval(patch, 5000);
     }
-    reload();
+    // TODO: test if this is more "performant" or just mental gymnastics
+    function watchForRemoval(targetElement, callback) {
+        let done = false;
+        let stack = [];
+        const rootObserver = new MutationObserver((mutationsList) => {
+            mutationsList.forEach((mutation) => {
+                if (done ||
+                    !stack.includes(mutation.target) ||
+                    !mutation.removedNodes.length)
+                    return;
+                const nodes = Array.from(mutation.removedNodes);
+                // console.log(mutation.target)
+                // direct match
+                if (nodes.indexOf(targetElement) > -1 ||
+                    // parent match
+                    nodes.some((parent) => parent.contains(targetElement))) {
+                    dispose();
+                    callback();
+                    return;
+                }
+            });
+        });
+        function REC_ObserverAncestors(element) {
+            if (!element.parentElement || element.parentElement === document.body) {
+                return;
+            }
+            stack.push(element.parentElement);
+            rootObserver.observe(element.parentElement, { childList: true });
+            REC_ObserverAncestors(element.parentElement);
+        }
+        // Start observing ancestor hierarchy
+        REC_ObserverAncestors(targetElement);
+        function dispose() {
+            done = true;
+            stack = [];
+            rootObserver.takeRecords();
+            rootObserver.disconnect();
+        }
+        return dispose;
+    }
     //#endregion
+    reload();
+    const exhaust = setTimeout(() => {
+        if (!anyUsage) {
+            clearInterval(conciseSyntax.interval);
+        }
+    }, 1000 * 60 * 2);
+    conciseSyntax.dispose = () => {
+        dispose();
+        inactive();
+    };
 })();
 //# sourceMappingURL=workbench.js.map
