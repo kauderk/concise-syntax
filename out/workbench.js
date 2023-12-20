@@ -11,7 +11,7 @@
     // @ts-ignore
     window.conciseSyntax ??= conciseSyntax;
     const extensionId = 'kauderk.concise-syntax';
-    const windowId = 'window' + extensionId;
+    const windowId = 'window.' + extensionId;
     // exploit the fact that vscode renders data to the dom, could be any other attribute
     const bridgeBetweenVscodeExtension = 'aria-label';
     const customCSS = `
@@ -24,7 +24,7 @@
 	.mtk4 {
 		color: var(--r);
 	}
-	`;
+	`.replace(/\s+/g, '');
     /**
      * Apply custom logic when the vscode extension changes the bridge attribute
      */
@@ -38,7 +38,7 @@
             _extension.icon.style.fontWeight = on ? 'bold' : 'normal';
             const title = 'Concise Syntax';
             _extension.item.title = on ? `${title}: active` : `${title}: inactive`;
-            styles.innerHTML = on ? customCSS : '';
+            styles.innerText = on ? customCSS : '';
             document.body.appendChild(styles);
         }
     }

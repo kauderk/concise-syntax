@@ -31,150 +31,44 @@ const vscode = __importStar(require("vscode"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const messages_1 = __importDefault(require("./messages"));
-const crypto_1 = require("crypto");
 const package_json_1 = __importDefault(require("../package.json"));
 const extensionId = package_json_1.default.publisher + '.' + package_json_1.default.name;
-function getWorkBenchHtmlData() {
-    if (!require.main?.filename) {
-        vscode.window.showErrorMessage(messages_1.default.internalError + 'no main filename');
-        throw new Error('no main filename');
-    }
-    const appDir = path.dirname(require.main.filename);
-    const base = path.join(appDir, 'vs', 'code');
-    const workbenchPath = path.join(base, 'electron-sandbox', 'workbench', 'workbench.html');
-    const getBackupPath = (uuid) => path.join(base, 'electron-sandbox', 'workbench', `workbench.${uuid}.bak-concise-syntax`);
-    return { path: workbenchPath, getBackupPath };
-}
+const extensionScriptSrc = extensionId + '.js';
+const extensionScriptTag = `<script src="${extensionScriptSrc}" ></script>`;
 async function installCycle(context) {
-    const file = getWorkBenchHtmlData();
     const state = getStateStore(context);
-    const backupUuid = await getBackupUuid(file.path);
-    if (backupUuid) {
+    const { html, wasActive, workbench } = await read();
+    if (wasActive) {
         console.log('vscode-concise-syntax is active!');
         await statusBarItem(context, true);
         await state.write('active');
         return true;
     }
-    const error = getErrorStore(context);
-    const uuidSession = (0, crypto_1.randomUUID)();
-    // await createBackup(uuidSession)
-    {
-        try {
-            const html = await fs.promises
-                .readFile(file.path, 'utf-8')
-                .then(clearExistingPatches);
-            await fs.promises.writeFile(file.getBackupPath(uuidSession), html, 'utf-8');
-        }
-        catch (e) {
-            vscode.window.showInformationMessage(messages_1.default.admin);
-            await error.write('throw');
-            throw e;
-        }
+    let remoteWorkbenchPath;
+    let ext = vscode.extensions.getExtension(extensionId);
+    if (ext && ext.extensionPath) {
+        remoteWorkbenchPath = path.resolve(ext.extensionPath, 'out/workbench.js');
     }
-    // await performPatch(uuidSession)
-    {
-        let workbenchPath;
-        let ext = vscode.extensions.getExtension(extensionId);
-        if (ext && ext.extensionPath) {
-            workbenchPath = path.resolve(ext.extensionPath, 'out/workbench.js');
-        }
-        else {
-            workbenchPath = path.resolve(__dirname, 'workbench.js');
-        }
-        const indicatorJsContent = await fs.promises.readFile(workbenchPath, 'utf-8');
-        const iifeWorkbench = `<script>${indicatorJsContent}</script>`;
-        // prettier-ignore
-        const html = (await fs.promises
-            .readFile(file.path, 'utf-8')
-            .then(clearExistingPatches))
-            .replace(/<meta\s+http-equiv="Content-Security-Policy"[\s\S]*?\/>/, '')
-            .replace(/(<\/html>)/, `<!-- !! VSCODE-CONCISE-SYNTAX-SESSION-ID ${uuidSession} !! -->\n` +
-            '<!-- !! VSCODE-CONCISE-SYNTAX-START !! -->\n' +
-            iifeWorkbench +
-            '<!-- !! VSCODE-CONCISE-SYNTAX-END !! -->\n</html>');
-        const error = getErrorStore(context);
-        try {
-            await fs.promises.writeFile(file.path, html, 'utf-8');
-        }
-        catch (e) {
-            vscode.window.showInformationMessage(messages_1.default.admin);
-            reloadWindowMessage(messages_1.default.disabled);
-            await error.write('error');
-            return;
-        }
-        // enabledRestart()
-        await state.write('restart');
-        return;
+    else {
+        remoteWorkbenchPath = path.resolve(__dirname, 'workbench.js');
     }
-}
-function reloadWindowMessage(message) {
-    vscode.window
-        .showInformationMessage(message, { title: messages_1.default.restartIde })
-        .then((selection) => {
-        if (selection) {
-            vscode.commands.executeCommand('workbench.action.reloadWindow');
-        }
-    });
-}
-function clearExistingPatches(html) {
-    return html
-        .replace(/<!-- !! VSCODE-CONCISE-SYNTAX-START !! -->[\s\S]*?<!-- !! VSCODE-CONCISE-SYNTAX-END !! -->\n*/, '')
-        .replace(/<!-- !! VSCODE-CONCISE-SYNTAX-SESSION-ID [\w-]+ !! -->\n*/g, '');
-}
-async function getBackupUuid(path) {
-    try {
-        const uid = (await fs.promises.readFile(path, 'utf-8')) //
-            .match(/<!-- !! VSCODE-CONCISE-SYNTAX-SESSION-ID ([0-9a-fA-F-]+) !! -->/);
-        if (!uid)
-            return null;
-        else
-            return uid[1];
-    }
-    catch (e) {
-        vscode.window.showInformationMessage(messages_1.default.somethingWrong + e);
-        throw e;
-    }
+    await fs.promises.copyFile(remoteWorkbenchPath, workbench.customPath);
+    const newHtml = html
+        .replaceAll(extensionScriptTag, '')
+        .replace(/(<\/html>)/, extensionScriptTag + '\n</html>');
+    await fs.promises.writeFile(workbench.path, newHtml, 'utf-8');
+    await state.write('restart');
 }
 async function uninstallCycle(context) {
-    const file = getWorkBenchHtmlData();
     const state = getStateStore(context);
-    const error = getErrorStore(context);
-    // if typescript wont won't freak out about promises then nothing matters :D
-    // getBackupUuid
-    const backupUuid = await getBackupUuid(file.path);
-    if (!backupUuid) {
-        // const message = msg.somethingWrong + 'no backup uuid found'
-        // vscode.window.showInformationMessage(message)
-        // await error.write('error')
-        return backupUuid;
+    const { html, wasActive, workbench } = await read();
+    if (wasActive) {
+        const newHtml = html.replaceAll(extensionScriptTag, '');
+        await fs.promises.writeFile(workbench.path, newHtml, 'utf-8');
     }
-    // restoreBackup
-    const backupFilePath = file.getBackupPath(backupUuid);
-    {
-        try {
-            if (fs.existsSync(backupFilePath)) {
-                await fs.promises.unlink(file.path);
-                await fs.promises.copyFile(backupFilePath, file.path);
-            }
-        }
-        catch (e) {
-            vscode.window.showInformationMessage(messages_1.default.admin);
-            await error.write('throw');
-            throw e;
-        }
-    }
-    // deleteBackupFiles
-    {
-        const htmlDir = path.dirname(file.path);
-        const htmlDirItems = await fs.promises.readdir(htmlDir);
-        for (const item of htmlDirItems) {
-            if (item.endsWith('.bak-concise-syntax')) {
-                await fs.promises.unlink(path.join(htmlDir, item));
-            }
-        }
-    }
+    await fs.promises.unlink(workbench.customPath).catch(_catch);
     await state.write('restart');
-    return backupUuid;
+    return wasActive;
 }
 // how do you make javascript freak out about promises/errors?
 function deactivate() {
@@ -182,17 +76,10 @@ function deactivate() {
     console.log('vscode-concise-syntax is deactivated!');
 }
 exports.deactivate = deactivate;
-function getStateStore(context) {
-    return stateManager(context, extensionId + '.state');
-}
-function getErrorStore(context) {
-    return stateManager(context, extensionId + '.error');
-}
 async function activate(context) {
     const state = getStateStore(context);
     // FIXME: use a better state manager or state machine
-    const file = getWorkBenchHtmlData();
-    const backup = await getBackupUuid(file.path);
+    const { wasActive } = await read();
     const reloadCommand = package_json_1.default.contributes.commands[0].command;
     context.subscriptions.push(vscode.commands.registerCommand(reloadCommand, async () => {
         try {
@@ -202,7 +89,7 @@ async function activate(context) {
             else {
                 await uninstallCycle(context);
                 await installCycle(context);
-                if (!backup) {
+                if (!wasActive) {
                     reloadWindowMessage(messages_1.default.enabled);
                 }
                 else {
@@ -212,15 +99,15 @@ async function activate(context) {
             }
         }
         catch (error) {
-            _catch(error);
+            __catch(error);
         }
     }));
     const disposeCommand = package_json_1.default.contributes.commands[1].command;
     context.subscriptions.push(vscode.commands.registerCommand(disposeCommand, async () => {
         try {
-            const backup = await uninstallCycle(context);
+            const wasActive = await uninstallCycle(context);
             await statusBarItem(context, false);
-            const [message, ...options] = backup
+            const [message, ...options] = wasActive
                 ? ['Disposed', 'Reload', 'Uninstall']
                 : ['Already Disposed', 'Uninstall'];
             // prettier-ignore
@@ -233,26 +120,67 @@ async function activate(context) {
             }
         }
         catch (error) {
-            _catch(error);
+            __catch(error);
         }
         finally {
             await state.write('disposed');
         }
     }));
     if (state.read() != 'disposed') {
-        installCycle(context).catch(_catch);
+        installCycle(context)
+            .then(() => {
+            if (!wasActive) {
+                reloadWindowMessage(messages_1.default.enabled);
+            }
+        })
+            .catch(__catch);
     }
-    else if (backup) {
+    else if (wasActive) {
         await statusBarItem(context, true);
     }
     console.log('vscode-concise-syntax is active');
-    function _catch(e) {
+    function __catch(e) {
         console.error(e);
         const error = getErrorStore(context);
-        error.write('unhandled').catch(() => { });
+        error.write('unhandled').catch(_catch);
     }
 }
 exports.activate = activate;
+function _catch(e) { }
+async function read() {
+    if (!require.main?.filename) {
+        vscode.window.showErrorMessage(messages_1.default.internalError + 'no main filename');
+        throw new Error('no main filename');
+    }
+    const appDir = path.dirname(require.main.filename);
+    const base = path.join(appDir, 'vs', 'code', 'electron-sandbox', 'workbench');
+    const workbenchPath = path.join(base, 'workbench.html');
+    const html = await fs.promises.readFile(workbenchPath, 'utf-8');
+    const wasActive = html.includes(extensionScriptTag);
+    return {
+        html,
+        wasActive,
+        workbench: {
+            path: workbenchPath,
+            customPath: path.join(base, extensionScriptSrc),
+        },
+    };
+}
+function reloadWindowMessage(message) {
+    vscode.window
+        .showInformationMessage(message, { title: messages_1.default.restartIde })
+        .then((selection) => {
+        if (selection) {
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+        }
+    });
+}
+function getStateStore(context) {
+    return stateManager(context, extensionId + '.state');
+}
+function getErrorStore(context) {
+    return stateManager(context, extensionId + '.error');
+}
 function stateManager(context, key) {
     return {
         value: '',
