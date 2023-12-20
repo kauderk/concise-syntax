@@ -27,12 +27,17 @@ declare const data: {
     "commands": [
       {
         "command": "extension.reload",
-        "title": "Concise Syntax: Mount Extension",
+        "title": "Mount Extension",
         "category": "Concise Syntax"
       },
       {
         "command": "extension.disposeExtension",
-        "title": "Concise Syntax: Dispose Extension (free memory)",
+        "title": "Dispose Extension (free memory)",
+        "category": "Concise Syntax"
+      },
+      {
+        "command": "extension.toggle",
+        "title": "Toggle",
         "category": "Concise Syntax"
       }
     ],

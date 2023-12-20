@@ -15,15 +15,11 @@
     conciseSyntax = { ...conciseSyntax, ...(window.conciseSyntax ?? {}) };
     const extensionId = 'kauderk.concise-syntax';
     const windowId = 'window' + extensionId;
-    // Should this manage its previous instance?
-    function active(extension) {
-        const isTrue = () => localStorage.getItem(windowId) === 'true';
-        applyConciseSyntax(isTrue(), extension);
-        extension.item.onclick = () => {
-            const on = !isTrue();
-            applyConciseSyntax(on, extension);
-            localStorage.setItem(windowId, String(on));
-        };
+    function activate(extension) {
+        Extension = extension; // alright...
+        const isActive = findIsActive(extension.item);
+        extension.item.classList.toggle('customHover', isActive);
+        applyConciseSyntax(isActive, extension);
         function applyConciseSyntax(on, _extension) {
             const styles = document.getElementById(windowId) ?? document.createElement('style');
             styles.id = windowId;
@@ -49,10 +45,13 @@
             document.body.appendChild(styles);
         }
     }
-    function inactive(extension) {
-        extension.item.onclick = null;
-        extension.item.removeAttribute('title');
-        extension.icon.style.removeProperty('font-weight');
+    function inactive() {
+        document.getElementById(windowId)?.remove();
+        if (!Extension)
+            return;
+        Extension.item.removeAttribute('title');
+        Extension.icon.style.removeProperty('font-weight');
+        Extension.item.classList.toggle('customHover', false);
     }
     function domExtension() {
         const statusBar = document.querySelector('.right-items');
@@ -71,9 +70,7 @@
             }
             mutation.addedNodes.forEach((node) => {
                 if (node.id === extensionId) {
-                    active((Extension = domExtension()));
-                    // vscode doesn't provide a hover function when the item is missing a command
-                    Extension.item.classList.toggle('customHover', true);
+                    activate(domExtension());
                 }
             });
             mutation.removedNodes.forEach((node) => {
@@ -81,13 +78,31 @@
                     reload();
                 }
                 else if (node.id === extensionId && Extension) {
-                    inactive(Extension);
-                    Extension.item.classList.toggle('customHover', false);
+                    inactive();
                 }
             });
         });
     });
     conciseSyntax.observer = observer;
+    let wasActive = undefined;
+    const findIsActive = (target) => !target.getAttribute('aria-label').includes('inactive');
+    const attributeObserver = new MutationObserver(function (mutations) {
+        mutations.forEach(function (mutation) {
+            if (mutation.type !== 'attributes' ||
+                mutation.attributeName !== 'aria-label')
+                return;
+            const isActive = findIsActive(mutation.target);
+            if (wasActive === isActive)
+                return;
+            wasActive = isActive;
+            if (isActive) {
+                activate(domExtension());
+            }
+            else {
+                inactive();
+            }
+        });
+    });
     function patch() {
         const dom = domExtension();
         if (!document.contains(dom.statusBar?.parentNode) || conciseSyntax.init)
@@ -99,8 +114,8 @@
             // I know this is the case because the same thing happened years ago but with a chrome browser
             // after clearing the cache it worked again, I guess I have to reinstall vscode * sigh *
             // observer.observe(dom.statusBar.parentNode!, { childList: true })
-            dom.item.classList.toggle('customHover', true);
-            active((Extension = dom));
+            attributeObserver.observe(dom.item, { attributes: true });
+            activate(dom);
         }
     }
     function reload() {

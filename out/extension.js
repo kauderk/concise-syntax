@@ -51,7 +51,7 @@ async function installCycle(context) {
     const backupUuid = await getBackupUuid(file.path);
     if (backupUuid) {
         console.log('vscode-concise-syntax is active!');
-        statusBarItem(context).show();
+        await statusBarItem(context, true);
         await state.write('active');
         return true;
     }
@@ -206,8 +206,8 @@ async function activate(context) {
                     reloadWindowMessage(messages_1.default.enabled);
                 }
                 else {
-                    statusBarItem(context).show();
-                    vscode.window.showInformationMessage('Mount: using cache');
+                    await statusBarItem(context, true);
+                    vscode.window.showInformationMessage('Mount: using cache', 'Reload');
                 }
             }
         }
@@ -219,7 +219,7 @@ async function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand(disposeCommand, async () => {
         try {
             const backup = await uninstallCycle(context);
-            statusBarItem(context).hide();
+            await statusBarItem(context, false);
             const [message, ...options] = backup
                 ? ['Disposed', 'Reload', 'Uninstall']
                 : ['Already Disposed', 'Uninstall'];
@@ -243,7 +243,7 @@ async function activate(context) {
         installCycle(context).catch(_catch);
     }
     else if (backup) {
-        statusBarItem(context).show();
+        await statusBarItem(context, true);
     }
     console.log('vscode-concise-syntax is active');
     function _catch(e) {
@@ -270,24 +270,29 @@ let _item;
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
-function statusBarItem({ subscriptions }) {
-    if (_item)
-        return _item;
-    // FIXME: find a way to apply custom css on the client side from here
-    // const myCommandId = packageJson.contributes.commands[1].command
-    // subscriptions.push(
-    //   vscode.commands.registerCommand(myCommandId, () => {
-    //     vscode.window.showInformationMessage(
-    //       `Clicked on concise syntax indicator`
-    //     )
-    //   })
-    // )
+async function statusBarItem(context, wasActive) {
+    const active = stateManager(context, extensionId + '.active');
+    await active.write(wasActive ? 'true' : 'false');
+    const tooltip = (previous) => (_item.tooltip = `Concise Syntax: ` + (previous ? 'active' : 'inactive'));
+    if (_item) {
+        tooltip(wasActive);
+        return;
+    }
+    async function toggle(next) {
+        tooltip(next);
+        await active.write(next ? 'true' : 'false');
+    }
+    const getActive = () => !!JSON.parse(active.read() ?? 'false');
+    const myCommandId = package_json_1.default.contributes.commands[2].command;
+    context.subscriptions.push(vscode.commands.registerCommand(myCommandId, async () => {
+        await toggle(!getActive());
+    }));
     const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    // myStatusBarItem.command = myCommandId
+    _item = item;
+    item.command = myCommandId;
     item.text = `$(symbol-keyword) Concise`;
-    item.tooltip = `Concise Syntax: pending`;
+    tooltip(getActive());
     item.show();
-    subscriptions.push(item);
-    return (_item = item);
+    context.subscriptions.push(item);
 }
 //# sourceMappingURL=extension.js.map

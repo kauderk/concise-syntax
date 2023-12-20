@@ -16,16 +16,15 @@
   const windowId = 'window' + extensionId
 
   type Extension = ReturnType<typeof domExtension>
-  // Should this manage its previous instance?
 
-  function active(extension: Extension) {
-    const isTrue = () => localStorage.getItem(windowId) === 'true'
-    applyConciseSyntax(isTrue(), extension)
-    extension.item.onclick = () => {
-      const on = !isTrue()
-      applyConciseSyntax(on, extension)
-      localStorage.setItem(windowId, String(on))
-    }
+  function activate(extension: Extension) {
+    Extension = extension // alright...
+
+    const isActive = findIsActive(extension.item)
+
+    extension.item.classList.toggle('customHover', isActive)
+
+    applyConciseSyntax(isActive, extension)
 
     function applyConciseSyntax(on: boolean, _extension: typeof extension) {
       const styles =
@@ -54,10 +53,12 @@
       document.body.appendChild(styles)
     }
   }
-  function inactive(extension: Extension) {
-    extension.item.onclick = null
-    extension.item.removeAttribute('title')
-    extension.icon.style.removeProperty('font-weight')
+  function inactive() {
+    document.getElementById(windowId)?.remove()
+    if (!Extension) return
+    Extension.item.removeAttribute('title')
+    Extension.icon.style.removeProperty('font-weight')
+    Extension.item.classList.toggle('customHover', false)
   }
 
   function domExtension() {
@@ -81,22 +82,42 @@
       }
       mutation.addedNodes.forEach((node: any) => {
         if (node.id === extensionId) {
-          active((Extension = domExtension()))
-          // vscode doesn't provide a hover function when the item is missing a command
-          Extension.item.classList.toggle('customHover', true)
+          activate(domExtension())
         }
       })
       mutation.removedNodes.forEach((node: any) => {
         if (node.matches?.('.right-items.items-container')) {
           reload()
         } else if (node.id === extensionId && Extension) {
-          inactive(Extension)
-          Extension.item.classList.toggle('customHover', false)
+          inactive()
         }
       })
     })
   })
   conciseSyntax.observer = observer
+
+  let wasActive: boolean | undefined = undefined
+  const findIsActive = (target: any) =>
+    !(target as any).getAttribute('aria-label').includes('inactive')
+  const attributeObserver = new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+      if (
+        mutation.type !== 'attributes' ||
+        mutation.attributeName !== 'aria-label'
+      )
+        return
+
+      const isActive = findIsActive(mutation.target)
+      if (wasActive === isActive) return
+      wasActive = isActive
+
+      if (isActive) {
+        activate(domExtension())
+      } else {
+        inactive()
+      }
+    })
+  })
 
   function patch() {
     const dom = domExtension()
@@ -111,8 +132,8 @@
       // I know this is the case because the same thing happened years ago but with a chrome browser
       // after clearing the cache it worked again, I guess I have to reinstall vscode * sigh *
       // observer.observe(dom.statusBar.parentNode!, { childList: true })
-      dom.item.classList.toggle('customHover', true)
-      active((Extension = dom))
+      attributeObserver.observe(dom.item, { attributes: true })
+      activate(dom)
     }
   }
   function reload() {

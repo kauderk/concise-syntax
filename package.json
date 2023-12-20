@@ -33,6 +33,11 @@
         "command": "extension.disposeExtension",
         "title": "Dispose Extension (free memory)",
         "category": "Concise Syntax"
+      },
+      {
+        "command": "extension.toggle",
+        "title": "Toggle",
+        "category": "Concise Syntax"
       }
     ],
     "themes": [
