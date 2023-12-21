@@ -5,21 +5,13 @@
   "patterns": [
     {
       "comment": "closing tags",
-      "match": "(</.*?;)|(</.*?>)",
-      "name": "concise.redundant-syntax"
-    },
-    {
-      "comment": "begin tsx ternary operators",
-      "match": "(\\{).+\\?.+?(\\()",
-      "captures": {
-        "1": { "name": "concise.redundant-syntax" },
-        "2": { "name": "concise.redundant-syntax" }
-      }
-    },
-    {
-      "comment": "end tsx ternary operators",
-      "match": "\\).+?:.+\\}",
-      "name": "concise.redundant-syntax"
+      "match": ";",
+      "name": "concise.redundant-syntax",
+      "patterns": [
+        {
+          "include": "source.tsx"
+        }
+      ]
     }
   ]
 }

@@ -40,6 +40,19 @@
         "title": "Toggle",
         "category": "Concise Syntax"
       }
+    ],
+    "grammars": [
+      {
+        "path": "./syntaxes/injection.json",
+        "scopeName": "source.concise",
+        "injectTo": [
+          "source.js",
+          "source.ts",
+          "source.tsx",
+          "source.jsx",
+          "source.abc"
+        ]
+      }
     ]
   },
   "devDependencies": {
