@@ -27,48 +27,112 @@
 	`;
     function regexToDomToCss() {
         const languages = ['typescriptreact', 'javascriptreact'];
+        const idSelector = '[data-mode-id="typescriptreact"]';
         const editor = document
-            .querySelector(`[data-mode-id="typescriptreact"]`)
+            .querySelector(idSelector)
             ?.querySelector('.view-lines.monaco-mouse-cursor-text');
         if (!editor) {
             console.log('no editor');
             return customCSS;
         }
+        const flags = {
+            jsxTag: null,
+            jsxTernaryBrace: null,
+            jsxTernaryOtherwise: null,
+            vsCodeHiddenTokens: null,
+        };
+        const root = `${idSelector} .view-lines>div>span`;
         const lines = Array.from(editor.querySelectorAll('div>span'));
-        for (const line of lines) {
+        function toFlatClassList(Array) {
+            return Array.reduce((acc, val) => acc.concat(val.join('.')), []); // FIXME: avoid casting
+        }
+        function SliceClassList(line, slice) {
+            const sliced = Array.from(line.children)
+                .slice(slice)
+                .map((c) => Array.from(c.classList));
+            return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
+        }
+        debugger;
+        parser: for (const line of lines) {
             const text = line.textContent;
             if (!text)
                 continue;
-            const foundTag = text.match('.+(</(?<tag>.*)?>)$')?.groups?.tag;
-            if (!foundTag)
-                continue;
-            const closing = Array.from(line.children)
-                .slice(-3)
-                .map((c) => Array.from(c.classList));
-            if (closing.length != 3 && closing.every((c) => c.length == 1))
-                continue;
-            const [left, tag, right] = closing.flat();
-            if (left !== right)
-                continue;
-            const table = {
-                root: '.view-lines>div>span',
-                jsxMarker: left,
-                jsxTag: tag,
-            };
-            const selector = `:has(:nth-last-child(3).${table.jsxMarker}+:is(.${table.jsxTag})+.${table.jsxMarker}) :nth-last-child(2)`;
+            let anyFlag = false;
+            if (text.match('.+(</(?<jsxTag>.*)?>)$')?.groups?.jsxTag) {
+                if (flags.jsxTag || flags.vsCodeHiddenTokens)
+                    continue;
+                const closing = SliceClassList(line, -3);
+                if (!closing.okLength)
+                    continue;
+                const [angleBracket, tag, right] = closing.flat();
+                if (angleBracket !== right)
+                    continue;
+                flags.jsxTag = {
+                    // find the last </tag> and hide it "tag" which is the second to last child
+                    hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
+                    hover: `.${angleBracket}+.${tag}`,
+                };
+                flags.vsCodeHiddenTokens = {
+                    // this is the most common case, you could derive it from other flags
+                    hide: `>.${angleBracket}`,
+                    hover: `.${angleBracket}`,
+                };
+                anyFlag = true;
+            }
+            else if (text.match(/(\{).+\?.+?(?<ternaryBrace>\()$/)?.groups?.ternaryBrace) {
+                if (flags.jsxTernaryBrace)
+                    continue;
+                const closing = SliceClassList(line, -4);
+                if (!closing.okLength)
+                    continue;
+                // prettier-ignore
+                const [blank, questionMark, blank2, openBrace] = toFlatClassList(closing);
+                const selector = `.${blank}+.${questionMark}+.${blank}+.${openBrace}:last-child`;
+                flags.jsxTernaryBrace = {
+                    // find the last open brace in " ? ("
+                    hide: `:has(${selector}) :last-child`,
+                    hover: selector,
+                };
+                anyFlag = true;
+            }
+            else if (text.match(/(?<ternaryOtherwise>\).+?:.+\})/)?.groups?.ternaryOtherwise) {
+                if (flags.jsxTernaryOtherwise)
+                    continue;
+                const closing = SliceClassList(line, -7);
+                if (!closing.okLength)
+                    continue;
+                // prettier-ignore
+                const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing);
+                const selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
+                flags.jsxTernaryOtherwise = {
+                    // find the last open brace in " ? ("
+                    hide: `:has(${selector})`,
+                    hover: selector,
+                };
+                anyFlag = true;
+            }
+            if (anyFlag && Object.values(flags).every((f) => !!f)) {
+                break parser;
+            }
+        }
+        // you know the concise syntax hover feature will work because you found the common case
+        const validFlags = Object.values(flags).filter((f) => f?.hide && f.hover); // FIXME: avoid casting
+        if (validFlags.length && flags.vsCodeHiddenTokens?.hover) {
+            const toHover = validFlags.map((f) => f.hover).join(',');
+            const toHidden = validFlags.map((f) => root + f.hide).join(',');
             return `
 			.view-lines {
 				--r: transparent;
 			}
-			.view-lines:has(:is(.${left},.${table.jsxMarker}+:is(.${table.jsxTag})):hover) {
+			.view-lines:has(:is(${toHover}):hover) {
 				--r: red;
 			}
-			.${left},
-			${table.root}${selector} {
+			${toHidden} {
 				color: var(--r);
 			}
 			`;
         }
+        // FIXME: honestly, the user should get a warning: the extension can't find the common case
         return customCSS;
     }
     /**
@@ -203,4 +267,9 @@
         inactive();
     };
 })();
+/**
+ * TODO: regexToDomToCss
+ * toggle lookup.settings.json
+ * hydrate window.styles when settings change
+ */
 //# sourceMappingURL=workbench.js.map
