@@ -17,13 +17,60 @@
 	.view-lines {
 		--r: transparent;
 	}
-	.view-lines:has(.mtk4:hover) {
+	.view-lines:has(.dummy:hover) {
 		--r: red;
 	}
-	.mtk4 {
+	.dummy {
 		color: var(--r);
 	}
-	`.replace(/\s+/g, '')
+	`
+
+  function regexToDomToCss() {
+    const languages = ['typescriptreact', 'javascriptreact']
+
+    const editor = document
+      .querySelector(`[data-mode-id="typescriptreact"]`)
+      ?.querySelector('.view-lines.monaco-mouse-cursor-text')
+    if (!editor) {
+      console.log('no editor')
+      return customCSS
+    }
+
+    const lines = Array.from(editor.querySelectorAll('div>span'))
+    for (const line of lines) {
+      const text = line.textContent
+      if (!text) continue
+      const foundTag = text.match('.+(</(?<tag>.*)?>)$')?.groups?.tag
+      if (!foundTag) continue
+      const closing = Array.from(line.children)
+        .slice(-3)
+        .map((c) => Array.from(c.classList))
+      if (closing.length != 3 && closing.every((c) => c.length == 1)) continue
+      const [left, tag, right] = closing.flat()
+      if (left !== right) continue
+
+      const table = {
+        root: '.view-lines>div>span',
+        jsxMarker: left,
+        jsxTag: tag,
+      }
+      const selector = `:has(:nth-last-child(3).${table.jsxMarker}+:is(.${table.jsxTag})+.${table.jsxMarker}) :nth-last-child(2)`
+
+      return `
+			.view-lines {
+				--r: transparent;
+			}
+			.view-lines:has(:is(.${left},.${table.jsxMarker}+:is(.${table.jsxTag})):hover) {
+				--r: red;
+			}
+			.${left},
+			${table.root}${selector} {
+				color: var(--r);
+			}
+			`
+    }
+    return customCSS
+  }
 
   /**
    * Apply custom logic when the vscode extension changes the bridge attribute
@@ -39,7 +86,7 @@
       _extension.icon.style.fontWeight = on ? 'bold' : 'normal'
       const title = 'Concise Syntax'
       _extension.item.title = on ? `${title}: active` : `${title}: inactive`
-      styles.innerText = on ? customCSS : ''
+      styles.innerText = on ? regexToDomToCss() : ''
       document.body.appendChild(styles)
     }
   }

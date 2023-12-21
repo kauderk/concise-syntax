@@ -32,38 +32,32 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const messages_1 = __importDefault(require("./messages"));
 const package_json_1 = __importDefault(require("../package.json"));
-const extensionId = package_json_1.default.publisher + '.' + package_json_1.default.name;
-const extensionScriptSrc = extensionId + '.js';
-const extensionScriptTag = `<script src="${extensionScriptSrc}" ></script>`;
+const write_1 = require("./write");
 async function installCycle(context) {
     const state = getStateStore(context);
-    const { html, wasActive, workbench } = await read();
-    if (wasActive) {
+    const res = await read();
+    if (res.wasActive) {
         console.log('vscode-concise-syntax is active!');
         await statusBarItem(context, true);
         await state.write('active');
         return true;
     }
     let remoteWorkbenchPath;
-    let ext = vscode.extensions.getExtension(extensionId);
+    let ext = vscode.extensions.getExtension(write_1.extensionId);
     if (ext && ext.extensionPath) {
         remoteWorkbenchPath = path.resolve(ext.extensionPath, 'out/workbench.js');
     }
     else {
         remoteWorkbenchPath = path.resolve(__dirname, 'workbench.js');
     }
-    await fs.promises.copyFile(remoteWorkbenchPath, workbench.customPath);
-    const newHtml = html
-        .replaceAll(extensionScriptTag, '')
-        .replace(/(<\/html>)/, extensionScriptTag + '\n</html>');
-    await fs.promises.writeFile(workbench.path, newHtml, 'utf-8');
+    await (0, write_1.patchWorkbench)(res, remoteWorkbenchPath);
     await state.write('restart');
 }
 async function uninstallCycle(context) {
     const state = getStateStore(context);
     const { html, wasActive, workbench } = await read();
     if (wasActive) {
-        const newHtml = html.replaceAll(extensionScriptTag, '');
+        const newHtml = html.replaceAll((0, write_1.extensionScriptTag)(), '');
         await fs.promises.writeFile(workbench.path, newHtml, 'utf-8');
     }
     await fs.promises.unlink(workbench.customPath).catch(_catch);
@@ -116,7 +110,7 @@ async function activate(context) {
                 vscode.commands.executeCommand('workbench.action.reloadWindow');
             }
             else if (selection == 'Uninstall') {
-                vscode.commands.executeCommand('workbench.extensions.action.uninstallExtension', extensionId);
+                vscode.commands.executeCommand('workbench.extensions.action.uninstallExtension', write_1.extensionId);
             }
         }
         catch (error) {
@@ -154,17 +148,7 @@ async function read() {
     }
     const appDir = path.dirname(require.main.filename);
     const base = path.join(appDir, 'vs', 'code', 'electron-sandbox', 'workbench');
-    const workbenchPath = path.join(base, 'workbench.html');
-    const html = await fs.promises.readFile(workbenchPath, 'utf-8');
-    const wasActive = html.includes(extensionScriptTag);
-    return {
-        html,
-        wasActive,
-        workbench: {
-            path: workbenchPath,
-            customPath: path.join(base, extensionScriptSrc),
-        },
-    };
+    return await (0, write_1.preRead)(base);
 }
 function reloadWindowMessage(message) {
     vscode.window
@@ -176,10 +160,10 @@ function reloadWindowMessage(message) {
     });
 }
 function getStateStore(context) {
-    return stateManager(context, extensionId + '.state');
+    return stateManager(context, write_1.extensionId + '.state');
 }
 function getErrorStore(context) {
-    return stateManager(context, extensionId + '.error');
+    return stateManager(context, write_1.extensionId + '.error');
 }
 function stateManager(context, key) {
     return {
@@ -199,7 +183,7 @@ let _item;
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
 async function statusBarItem(context, wasActive) {
-    const active = stateManager(context, extensionId + '.active');
+    const active = stateManager(context, write_1.extensionId + '.active');
     await active.write(wasActive ? 'true' : 'false');
     const tooltip = (previous) => (_item.tooltip = `Concise Syntax: ` + (previous ? 'active' : 'inactive'));
     if (_item) {
