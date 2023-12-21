@@ -1,17 +1,35 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "scopeName": "source.concise",
-  "injectionSelector": "L:meta.block.tsx",
+  "injectionSelector": "R:meta.block.tsx",
   "patterns": [
     {
-      "comment": "closing tags",
-      "match": ";",
       "name": "concise.redundant-syntax",
-      "patterns": [
-        {
-          "include": "source.tsx"
-        }
-      ]
+      "patterns": [{ "include": "punctuation.terminator.statement.tsx" }]
+    },
+    {
+      "name": "concise.redundant-syntax",
+      "patterns": [{ "include": "punctuation.definition.tag.begin.tsx" }]
+    },
+    {
+      "name": "concise.redundant-syntax",
+      "patterns": [{ "include": "punctuation.definition.tag.end.tsx" }]
+    },
+    {
+      "name": "concise.redundant-syntax",
+      "patterns": [{ "include": "punctuation.definition.string.begin.tsx" }]
+    },
+    {
+      "name": "concise.redundant-syntax",
+      "patterns": [{ "include": "punctuation.definition.string.end.tsx" }]
+    },
+    {
+      "name": "concise.redundant-syntax",
+      "patterns": [{ "include": "punctuation.section.embedded.begin.tsx" }]
+    },
+    {
+      "name": "concise.redundant-syntax",
+      "patterns": [{ "include": "punctuation.section.embedded.end.tsx" }]
     }
   ]
 }
