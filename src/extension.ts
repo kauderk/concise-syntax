@@ -3,16 +3,18 @@ import * as fs from 'fs'
 import * as path from 'path'
 import msg from './messages'
 import packageJson from '../package.json'
-
-const extensionId = packageJson.publisher + '.' + packageJson.name
-const extensionScriptSrc = extensionId + '.js'
-const extensionScriptTag = `<script src="${extensionScriptSrc}" ></script>`
+import {
+  extensionId,
+  extensionScriptTag,
+  preRead,
+  patchWorkbench,
+} from './write'
 
 async function installCycle(context: vscode.ExtensionContext) {
   const state = getStateStore(context)
 
-  const { html, wasActive, workbench } = await read()
-  if (wasActive) {
+  const res = await read()
+  if (res.wasActive) {
     console.log('vscode-concise-syntax is active!')
     await statusBarItem(context, true)
     await state.write('active')
@@ -26,13 +28,7 @@ async function installCycle(context: vscode.ExtensionContext) {
   } else {
     remoteWorkbenchPath = path.resolve(__dirname, 'workbench.js')
   }
-  await fs.promises.copyFile(remoteWorkbenchPath, workbench.customPath)
-
-  const newHtml = html
-    .replaceAll(extensionScriptTag, '')
-    .replace(/(<\/html>)/, extensionScriptTag + '\n</html>')
-
-  await fs.promises.writeFile(workbench.path, newHtml, 'utf-8')
+  await patchWorkbench(res, remoteWorkbenchPath)
 
   await state.write('restart')
 }
@@ -42,7 +38,7 @@ async function uninstallCycle(context: vscode.ExtensionContext) {
 
   const { html, wasActive, workbench } = await read()
   if (wasActive) {
-    const newHtml = html.replaceAll(extensionScriptTag, '')
+    const newHtml = html.replaceAll(extensionScriptTag(), '')
     await fs.promises.writeFile(workbench.path, newHtml, 'utf-8')
   }
   await fs.promises.unlink(workbench.customPath).catch(_catch)
@@ -141,17 +137,7 @@ async function read() {
   }
   const appDir = path.dirname(require.main.filename)
   const base = path.join(appDir, 'vs', 'code', 'electron-sandbox', 'workbench')
-  const workbenchPath = path.join(base, 'workbench.html')
-  const html = await fs.promises.readFile(workbenchPath, 'utf-8')
-  const wasActive = html.includes(extensionScriptTag)
-  return {
-    html,
-    wasActive,
-    workbench: {
-      path: workbenchPath,
-      customPath: path.join(base, extensionScriptSrc),
-    },
-  }
+  return await preRead(base)
 }
 
 function reloadWindowMessage(message: string) {

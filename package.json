@@ -20,7 +20,8 @@
     "build": "tsc",
     "watch": "tsc -watch",
     "vscode:prepublish": "npm run build",
-    "vscode:uninstall": "node ./out/uninstall"
+    "vscode:uninstall": "node ./out/uninstall",
+    "watch:workbench": "ts-node watch.workbench.ts"
   },
   "contributes": {
     "commands": [
@@ -39,30 +40,11 @@
         "title": "Toggle",
         "category": "Concise Syntax"
       }
-    ],
-    "themes": [
-      {
-        "label": "Concise Syntax",
-        "uiTheme": "vs-dark",
-        "path": "./themes/tokens.json"
-      }
-    ],
-    "grammars": [
-      {
-        "path": "./syntaxes/injection.json",
-        "scopeName": "source.concise",
-        "injectTo": [
-          "source.js",
-          "source.ts",
-          "source.tsx",
-          "source.jsx",
-          "source.abc"
-        ]
-      }
     ]
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
+    "ts-node": "^10.9.2",
     "vscode": "^1.1.37"
   }
 }
