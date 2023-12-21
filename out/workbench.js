@@ -41,6 +41,9 @@
             jsxTernaryOtherwise: null,
             vsCodeHiddenTokens: null,
         };
+        const customFlags = {
+            singleQuotes: null,
+        };
         const root = `${idSelector} .view-lines>div>span`;
         const lines = Array.from(editor.querySelectorAll('div>span'));
         function toFlatClassList(Array) {
@@ -105,13 +108,34 @@
                 const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing);
                 const selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
                 flags.jsxTernaryOtherwise = {
-                    // find the last open brace in " ? ("
-                    hide: `:has(${selector})`,
+                    // find ") : null}" then hide it all
+                    hide: `:has(${selector}) *`,
                     hover: selector,
                 };
                 anyFlag = true;
             }
-            if (anyFlag && Object.values(flags).every((f) => !!f)) {
+            else if (text.match(/(?<singleQuotes>""|''|``)/)?.groups?.singleQuotes) {
+                if (customFlags.singleQuotes)
+                    continue;
+                const array = Array.from(line.children);
+                const quote = /"|'|`/;
+                singleQuotes: for (let i = 0; i < array.length; i++) {
+                    const child = array[i];
+                    const current = child.textContent?.match(quote);
+                    const next = array[i + 1]?.textContent?.match(quote);
+                    if (current?.[0].length == 1 && current[0] === next?.[0]) {
+                        const beginQuote = Array.from(child.classList).join('.');
+                        const endQuote = Array.from(array[i + 1].classList).join('.'); // wow, why isn't typescript freaking out?
+                        // Find "" or '' or `` and show them
+                        customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {color: gray;}`;
+                        anyFlag = true;
+                        break singleQuotes;
+                    }
+                }
+            }
+            if (anyFlag &&
+                Object.values(flags).every((f) => !!f) &&
+                Object.values(customFlags).every((f) => !!f)) {
                 break parser;
             }
         }
@@ -120,6 +144,9 @@
         if (validFlags.length && flags.vsCodeHiddenTokens?.hover) {
             const toHover = validFlags.map((f) => f.hover).join(',');
             const toHidden = validFlags.map((f) => root + f.hide).join(',');
+            const toCustom = Object.values(customFlags)
+                .filter((f) => !!f)
+                .join('\n');
             return `
 			.view-lines {
 				--r: transparent;
@@ -130,6 +157,7 @@
 			${toHidden} {
 				color: var(--r);
 			}
+			${toCustom}
 			`;
         }
         // FIXME: honestly, the user should get a warning: the extension can't find the common case
