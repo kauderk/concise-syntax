@@ -69,8 +69,6 @@
       return Object.assign(sliced, { okLength: sliced.length == slice * -1 })
     }
 
-    debugger
-
     parser: for (const line of lines) {
       const text = line.textContent
       if (!text) continue
