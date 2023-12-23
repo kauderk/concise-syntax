@@ -18,7 +18,7 @@
   "scripts": {
     "preparation": "node json-d-ts.js",
     "build": "tsc",
-    "watch": "tsc -watch",
+    "watch": "tsc -watch && npm run watch:workbench",
     "vscode:prepublish": "npm run build",
     "vscode:uninstall": "node ./out/uninstall",
     "watch:workbench": "ts-node watch.workbench.ts"

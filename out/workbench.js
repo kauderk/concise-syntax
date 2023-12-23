@@ -25,13 +25,13 @@
 		color: var(--r);
 	}
 	`;
+    const idSelector = '[data-mode-id="typescriptreact"]';
+    const linesSelector = idSelector + ` .view-lines.monaco-mouse-cursor-text`;
+    const highlightSelector = idSelector + ` .view-overlays`;
+    const languages = ['typescriptreact', 'javascriptreact'];
     function regexToDomToCss() {
-        const languages = ['typescriptreact', 'javascriptreact'];
-        const idSelector = '[data-mode-id="typescriptreact"]';
-        const editor = document
-            .querySelector(idSelector)
-            ?.querySelector('.view-lines.monaco-mouse-cursor-text');
-        if (!editor) {
+        const lineEditor = document.querySelector(linesSelector);
+        if (!lineEditor) {
             console.log('no editor');
             return customCSS;
         }
@@ -40,12 +40,14 @@
             jsxTernaryBrace: null,
             jsxTernaryOtherwise: null,
             vsCodeHiddenTokens: null,
+            beginQuote: null,
+            endQuote: null,
         };
         const customFlags = {
             singleQuotes: null,
         };
-        const root = `${idSelector} .view-lines>div>span`;
-        const lines = Array.from(editor.querySelectorAll('div>span'));
+        const root = `${linesSelector}>div>span`;
+        const lines = Array.from(lineEditor.querySelectorAll('div>span'));
         function toFlatClassList(Array) {
             return Array.reduce((acc, val) => acc.concat(val.join('.')), []); // FIXME: avoid casting
         }
@@ -126,7 +128,19 @@
                         const beginQuote = Array.from(child.classList).join('.');
                         const endQuote = Array.from(array[i + 1].classList).join('.'); // wow, why isn't typescript freaking out?
                         // Find "" or '' or `` and show them
-                        customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {color: gray;}`;
+                        customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {
+							color: gray;
+						}`;
+                        flags.beginQuote = {
+                            // this is the most common case, you could derive it from other flags
+                            hide: `>.${beginQuote}`,
+                            hover: `.${beginQuote}`,
+                        };
+                        flags.endQuote = {
+                            // this is the most common case, you could derive it from other flags
+                            hide: `>.${endQuote}`,
+                            hover: `.${endQuote}`,
+                        };
                         anyFlag = true;
                         break singleQuotes;
                     }
@@ -150,6 +164,9 @@
 			.view-lines {
 				--r: transparent;
 			}
+			.view-lines > div:hover {
+				--r: yellow;
+			}
 			.view-lines:has(:is(${toHover}):hover) {
 				--r: red;
 			}
@@ -157,7 +174,9 @@
 				color: var(--r);
 			}
 			${toCustom}
-			`;
+			`
+                .replace(/\r|\n/g, '')
+                .replaceAll(/\t+/g, '\n');
         }
         // FIXME: honestly, the user should get a warning: the extension can't find the common case
         return customCSS;
@@ -175,7 +194,7 @@
             _extension.icon.style.fontWeight = on ? 'bold' : 'normal';
             const title = 'Concise Syntax';
             _extension.item.title = on ? `${title}: active` : `${title}: inactive`;
-            styles.innerText = on ? regexToDomToCss() : '';
+            styles.textContent = on ? regexToDomToCss() : '';
             document.body.appendChild(styles);
         }
     }
@@ -189,6 +208,97 @@
         Extension.item.removeAttribute('title');
         Extension.icon.style.removeProperty('font-weight');
     }
+    let highlightedLines = new Set();
+    const selectedSelector = '.selected-text';
+    const currentLineSelector = '.current-line';
+    let currentLines = new Set();
+    const Highlight = {
+        added(node) {
+            highlightStyles(node, true);
+        },
+        removed(node) {
+            highlightStyles(node, false);
+        },
+    };
+    function highlightStyles(node, add) {
+        if (node.querySelector(selectedSelector)) {
+            const top = Number(node.style?.top.match(/\d+/)?.[0]);
+            if (isNaN(top))
+                return;
+            if (highlightedLines.has(top) === add)
+                return;
+            // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+            if (!add &&
+                document.querySelector(highlightSelector + `>[style*="${top}"]>` + selectedSelector)) {
+                return;
+            }
+            // funny code
+            highlightedLines[add ? 'add' : 'delete'](top);
+            const id = windowId + '.highlight';
+            const styles = document.getElementById(id) ?? document.createElement('style');
+            styles.id = id;
+            const lines = Array.from(highlightedLines)
+                .reduce((acc, top) => acc + `[style*="${top}"],`, '')
+                .slice(0, -1);
+            styles.textContent = `
+			${linesSelector} :is(${lines}) {
+					--r: orange;
+			}
+			`
+                .replace(/\r|\n/g, '')
+                .replaceAll(/\t+/g, '\n');
+            document.body.appendChild(styles);
+        }
+        else if (node.querySelector(currentLineSelector)) {
+            const top = Number(node.style?.top.match(/\d+/)?.[0]);
+            if (isNaN(top))
+                return;
+            // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+            if (!add &&
+                document.querySelector(highlightSelector + `>[style*="${top}"]>` + currentLineSelector)) {
+                return;
+            }
+            // funny code
+            currentLines[add ? 'add' : 'delete'](top);
+            const id = windowId + '.current';
+            const styles = document.getElementById(id) ?? document.createElement('style');
+            styles.id = id;
+            const lines = Array.from(currentLines)
+                .reduce((acc, top) => acc + `[style*="${top}"],`, '')
+                .slice(0, -1);
+            styles.textContent = `
+			${linesSelector} :is(${lines}) {
+					--r: brown;
+			}
+			`
+                .replace(/\r|\n/g, '')
+                .replaceAll(/\t+/g, '\n');
+            document.body.appendChild(styles);
+        }
+    }
+    //#region Highlight Lifecycle
+    const highlightEditorMap = new Map();
+    const Deployer = {
+        added(node) {
+            if (node.matches?.(highlightSelector)) {
+                debugger;
+                const highlightEditor = createMutation(Highlight);
+                highlightEditor.observe(node, {
+                    childList: true,
+                });
+                highlightEditorMap.set(node, highlightEditor);
+            }
+        },
+        removed(node) {
+            let match = node.matches?.(highlightSelector);
+            if (match) {
+                debugger;
+                highlightEditorMap.get(node)?.disconnect();
+                highlightEditorMap.delete(node);
+            }
+        },
+    };
+    const highlightDeployer = createMutation(Deployer);
     let Extension = conciseSyntax.extension;
     let disposeObserver = conciseSyntax.dispose ?? (() => { });
     let previousData = undefined;
@@ -282,9 +392,39 @@
         }
         return dispose;
     }
+    function createMutation(option) {
+        return new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => option.added(node));
+                mutation.removedNodes.forEach((node) => option.removed(node));
+            });
+        });
+    }
     //#endregion
+    // avoid heavy vscode hydration
+    let done = false;
+    const patchHighlight = () => {
+        const editor = document.querySelector(highlightSelector);
+        if (!editor) {
+            return;
+        }
+        const closestEditorAncestor = document.querySelector('.monaco-scrollable-element');
+        if (done || !closestEditorAncestor) {
+            return;
+        }
+        done = true;
+        clearInterval(patchHighlightInterval);
+        debugger;
+        Deployer.added(editor);
+        highlightDeployer.observe(closestEditorAncestor, {
+            childList: true,
+            subtree: true,
+        });
+    };
+    let patchHighlightInterval = setInterval(patchHighlight, 1000);
     reload();
     const exhaust = setTimeout(() => {
+        clearTimeout(exhaust);
         if (!anyUsage) {
             clearInterval(conciseSyntax.interval);
         }
@@ -292,6 +432,10 @@
     conciseSyntax.dispose = () => {
         dispose();
         inactive();
+        highlightEditorMap.clear();
+        highlightDeployer.disconnect();
+        highlightedLines.clear();
+        currentLines.clear();
     };
 })();
 /**
