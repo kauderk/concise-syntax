@@ -46,6 +46,8 @@
       jsxTernaryBrace: null as Flags,
       jsxTernaryOtherwise: null as Flags,
       vsCodeHiddenTokens: null as Flags,
+      beginQuote: null as Flags,
+      endQuote: null as Flags,
     }
     const customFlags = {
       singleQuotes: null as string | null,
@@ -147,7 +149,19 @@
             const endQuote = Array.from(array[i + 1].classList).join('.') // wow, why isn't typescript freaking out?
 
             // Find "" or '' or `` and show them
-            customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {color: gray;}`
+            customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {
+							color: gray;
+						}`
+            flags.beginQuote = {
+              // this is the most common case, you could derive it from other flags
+              hide: `>.${beginQuote}`,
+              hover: `.${beginQuote}`,
+            }
+            flags.endQuote = {
+              // this is the most common case, you could derive it from other flags
+              hide: `>.${endQuote}`,
+              hover: `.${endQuote}`,
+            }
 
             anyFlag = true
             break singleQuotes
