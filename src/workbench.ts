@@ -199,6 +199,8 @@
 			}
 			${toCustom}
 			`
+        .replace(/\r|\n/g, '')
+        .replaceAll(/\t+/g, '\n')
     }
     // FIXME: honestly, the user should get a warning: the extension can't find the common case
     return customCSS
@@ -218,7 +220,7 @@
       _extension.icon.style.fontWeight = on ? 'bold' : 'normal'
       const title = 'Concise Syntax'
       _extension.item.title = on ? `${title}: active` : `${title}: inactive`
-      styles.innerText = on ? regexToDomToCss() : ''
+      styles.textContent = on ? regexToDomToCss() : ''
       document.body.appendChild(styles)
     }
   }
