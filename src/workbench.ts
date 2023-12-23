@@ -25,14 +25,14 @@
 	}
 	`
 
-  function regexToDomToCss() {
-    const languages = ['typescriptreact', 'javascriptreact']
+  const idSelector = '[data-mode-id="typescriptreact"]'
+  const linesSelector = idSelector + ` .view-lines.monaco-mouse-cursor-text`
+  const highlightSelector = idSelector + ` .view-overlays`
+  const languages = ['typescriptreact', 'javascriptreact']
 
-    const idSelector = '[data-mode-id="typescriptreact"]'
-    const editor = document
-      .querySelector(idSelector)
-      ?.querySelector('.view-lines.monaco-mouse-cursor-text')
-    if (!editor) {
+  function regexToDomToCss() {
+    const lineEditor = document.querySelector(linesSelector)
+    if (!lineEditor) {
       console.log('no editor')
       return customCSS
     }
@@ -53,8 +53,8 @@
       singleQuotes: null as string | null,
     }
 
-    const root = `${idSelector} .view-lines>div>span`
-    const lines = Array.from(editor.querySelectorAll('div>span'))
+    const root = `${linesSelector}>div>span`
+    const lines = Array.from(lineEditor.querySelectorAll('div>span'))
 
     function toFlatClassList<T extends { join: (to?: string) => string }>(
       Array: T[]
@@ -191,6 +191,9 @@
 			.view-lines {
 				--r: transparent;
 			}
+			.view-lines > div:hover {
+				--r: yellow;
+			}
 			.view-lines:has(:is(${toHover}):hover) {
 				--r: red;
 			}
@@ -234,7 +237,84 @@
     Extension.icon.style.removeProperty('font-weight')
   }
 
+  let highlightedLines = new Set<number>()
+  const selectedSelector = '.selected-text'
+  const currentLineSelector = '.current-line'
+  let currentLines = new Set<number>()
+
+  const Highlight: MutationOptions = {
+    added(node) {
+      highlightStyles(node, true)
+    },
+    removed(node) {
+      highlightStyles(node, false)
+    },
+  }
+  function highlightStyles(node: HTMLElement, add: boolean) {
+    if (node.querySelector(selectedSelector)) {
+      const top = Number(node.style?.top.match(/\d+/)?.[0])
+      if (isNaN(top)) return
+      if (highlightedLines.has(top) === add) return
+
+      // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+      if (
+        !add &&
+        document.querySelector(
+          highlightSelector + `>[style*="${top}"]>` + selectedSelector
+        )
+      ) {
+        return
+      }
+
+      // funny code
+      highlightedLines[add ? 'add' : 'delete'](top)
+
+      const id = windowId + '.highlight'
+      const styles =
+        document.getElementById(id) ?? document.createElement('style')
+      styles.id = id
+      const lines = Array.from(highlightedLines)
+        .reduce((acc, top) => acc + `[style*="${top}"],`, '')
+        .slice(0, -1)
+
+      styles.textContent = `
+			${linesSelector} :is(${lines}) {
+					--r: orange;
+			}
+			`
+        .replace(/\r|\n/g, '')
+        .replaceAll(/\t+/g, '\n')
+      document.body.appendChild(styles)
+    } 
   //#region Lifecycle
+  }
+
+  //#region Highlight Lifecycle
+  const highlightEditorMap = new Map<Element, MutationObserver>()
+  const Deployer = {
+    added(node) {
+      if (node.matches?.(highlightSelector)) {
+        debugger
+        const highlightEditor = createMutation(Highlight)
+        highlightEditor.observe(node, {
+          childList: true,
+        })
+        highlightEditorMap.set(node, highlightEditor)
+      }
+    },
+    removed(node) {
+      let match = node.matches?.(highlightSelector)
+      if (match) {
+        debugger
+        highlightEditorMap.get(node)?.disconnect()
+        highlightEditorMap.delete(node)
+      }
+    },
+  } satisfies MutationOptions
+  const highlightDeployer = createMutation(Deployer)
+  //#endregion
+
+  //#region StatusBar Lifecycle
   type Extension = ReturnType<typeof domExtension>
   let Extension = conciseSyntax.extension
   let disposeObserver = conciseSyntax.dispose ?? (() => {})
@@ -342,17 +422,60 @@
     }
     return dispose
   }
+  type MutationOptions = {
+    added(node: HTMLElement): void
+    removed(node: HTMLElement): void
+  }
+  function createMutation(option: MutationOptions) {
+    return new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node: any) => option.added(node))
+        mutation.removedNodes.forEach((node: any) => option.removed(node))
+      })
+    })
+  }
   //#endregion
 
+  // avoid heavy vscode hydration
+
+  let done = false
+  const patchHighlight = () => {
+    const editor = document.querySelector(highlightSelector) as HTMLElement
+    if (!editor) {
+      return
+    }
+    const closestEditorAncestor = document.querySelector(
+      '.monaco-scrollable-element'
+    )
+    if (done || !closestEditorAncestor) {
+      return
+    }
+    done = true
+    clearInterval(patchHighlightInterval)
+    debugger
+    Deployer.added(editor)
+    highlightDeployer.observe(closestEditorAncestor, {
+      childList: true,
+      subtree: true,
+    })
+  }
+  let patchHighlightInterval = setInterval(patchHighlight, 1000)
   reload()
+
   const exhaust = setTimeout(() => {
+    clearTimeout(exhaust)
     if (!anyUsage) {
       clearInterval(conciseSyntax.interval)
     }
   }, 1000 * 60 * 2)
+
   conciseSyntax.dispose = () => {
     dispose()
     inactive()
+    highlightEditorMap.clear()
+    highlightDeployer.disconnect()
+    highlightedLines.clear()
+    currentLines.clear()
   }
 })()
 /**
