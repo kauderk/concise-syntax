@@ -285,8 +285,39 @@
         .replace(/\r|\n/g, '')
         .replaceAll(/\t+/g, '\n')
       document.body.appendChild(styles)
-    } 
-  //#region Lifecycle
+    } else if (node.querySelector(currentLineSelector)) {
+      const top = Number(node.style?.top.match(/\d+/)?.[0])
+      if (isNaN(top)) return
+      // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+      if (
+        !add &&
+        document.querySelector(
+          highlightSelector + `>[style*="${top}"]>` + currentLineSelector
+        )
+      ) {
+        return
+      }
+
+      // funny code
+      currentLines[add ? 'add' : 'delete'](top)
+
+      const id = windowId + '.current'
+      const styles =
+        document.getElementById(id) ?? document.createElement('style')
+      styles.id = id
+      const lines = Array.from(currentLines)
+        .reduce((acc, top) => acc + `[style*="${top}"],`, '')
+        .slice(0, -1)
+
+      styles.textContent = `
+			${linesSelector} :is(${lines}) {
+					--r: brown;
+			}
+			`
+        .replace(/\r|\n/g, '')
+        .replaceAll(/\t+/g, '\n')
+      document.body.appendChild(styles)
+    }
   }
 
   //#region Highlight Lifecycle
