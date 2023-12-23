@@ -1,350 +1,308 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
+Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+const vscode = require("vscode");
+const fs = require("fs");
+const path = require("path");
+function _interopNamespaceDefault(e) {
+  const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
+  if (e) {
+    for (const k in e) {
+      if (k !== "default") {
+        const d = Object.getOwnPropertyDescriptor(e, k);
+        Object.defineProperty(n, k, d.get ? d : {
+          enumerable: true,
+          get: () => e[k]
+        });
+      }
     }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
+  }
+  n.default = e;
+  return Object.freeze(n);
+}
+const vscode__namespace = /* @__PURE__ */ _interopNamespaceDefault(vscode);
+const fs__namespace = /* @__PURE__ */ _interopNamespaceDefault(fs);
+const path__namespace = /* @__PURE__ */ _interopNamespaceDefault(path);
+const msg = {
+  admin: "Run VS Code with admin privileges so the changes can be applied.",
+  enabled: "Concise syntax enabled. Restart to take effect. ",
+  disabled: "Concise syntax disabled and reverted to default. Restart to take effect.",
+  already_disabled: "Concise syntax already disabled.",
+  somethingWrong: "Something went wrong: ",
+  internalError: "Internal error: ",
+  restartIde: "Restart Visual Studio Code",
+  notfound: "Concise syntax not found.",
+  notConfigured: "Concise syntax path not configured.",
+  reloadAfterVersionUpgrade: "Detected reloading Concise syntax after VSCode is upgraded. Performing application only.",
+  cannotLoad: (url) => `Cannot load '${url}'. Skipping.`
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
+const name = "concise-syntax";
+const displayName = "Concise Syntax";
+const description = "Hide unnecessary syntax or markup from programming languages";
+const version = "0.0.1";
+const publisher = "kauderk";
+const type = "commonjs";
+const engines = {
+  vscode: "^1.70.0"
 };
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.activate = exports.deactivate = void 0;
-const vscode = __importStar(require("vscode"));
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
-const messages_1 = __importDefault(require("./messages"));
-const package_json_1 = __importDefault(require("../package.json"));
-const write_1 = require("./write");
+const categories = [
+  "Programming Languages"
+];
+const main = "./out/extension";
+const activationEvents = [
+  "*"
+];
+const scripts = {
+  build: 'concurrently --kill-others "vite build" "vite build -c vite.config.workbench.ts"',
+  dev: 'concurrently --kill-others "vite build --watch" "vite build -c vite.config.workbench.ts --watch"',
+  "vscode:prepublish": "npm run build",
+  "vscode:uninstall": "node ./out/uninstall"
+};
+const contributes = {
+  commands: [
+    {
+      command: "extension.reload",
+      title: "Mount Extension",
+      category: "Concise Syntax"
+    },
+    {
+      command: "extension.disposeExtension",
+      title: "Dispose Extension (free memory)",
+      category: "Concise Syntax"
+    },
+    {
+      command: "extension.toggle",
+      title: "Toggle",
+      category: "Concise Syntax"
+    }
+  ]
+};
+const devDependencies = {
+  "@types/node": "^20.10.5",
+  concurrently: "^8.2.2",
+  vite: "4.5.1",
+  vscode: "^1.1.37"
+};
+const packageJson = {
+  name,
+  displayName,
+  description,
+  version,
+  publisher,
+  type,
+  engines,
+  categories,
+  main,
+  activationEvents,
+  scripts,
+  contributes,
+  devDependencies
+};
+const extensionId = packageJson.publisher + "." + packageJson.name;
+const extensionScriptSrc = extensionId + ".js";
+const extensionScriptTag = () => new RegExp(
+  `<script.+${extensionId.replaceAll(".", "\\.")}.+/script>`,
+  "gm"
+  // intermittently
+);
+async function patchWorkbench(res, remoteWorkbenchPath) {
+  await fs.promises.copyFile(remoteWorkbenchPath, res.workbench.customPath);
+  const hash = ("" + Math.random()).substring(2, 7);
+  const newHtml = res.html.replaceAll(extensionScriptTag(), "").replace(
+    /(<\/html>)/,
+    `<script src="${extensionScriptSrc}?${hash}"><\/script></html>`
+  );
+  await fs.promises.writeFile(res.workbench.path, newHtml, "utf-8");
+}
+async function preRead(base) {
+  const workbenchPath = path.join(base, "workbench.html");
+  const html = await fs.promises.readFile(workbenchPath, "utf-8");
+  const wasActive = html.match(extensionScriptTag());
+  return {
+    html,
+    wasActive,
+    workbench: {
+      path: workbenchPath,
+      customPath: path.join(base, extensionScriptSrc)
+    }
+  };
+}
 async function installCycle(context) {
-    const state = getStateStore(context);
-    const res = await read();
-    if (res.wasActive) {
-        console.log('vscode-concise-syntax is active!');
-        await statusBarItem(context, true);
-        await state.write('active');
-        return true;
-    }
-    let remoteWorkbenchPath;
-    let ext = vscode.extensions.getExtension(write_1.extensionId);
-    if (ext && ext.extensionPath) {
-        remoteWorkbenchPath = path.resolve(ext.extensionPath, 'out/workbench.js');
-    }
-    else {
-        remoteWorkbenchPath = path.resolve(__dirname, 'workbench.js');
-    }
-    await (0, write_1.patchWorkbench)(res, remoteWorkbenchPath);
-    await state.write('restart');
+  const state = getStateStore(context);
+  const res = await read();
+  if (res.wasActive) {
+    console.log("vscode-concise-syntax is active!");
+    await statusBarItem(context, true);
+    await state.write("active");
+    return true;
+  }
+  let remoteWorkbenchPath;
+  let ext = vscode__namespace.extensions.getExtension(extensionId);
+  if (ext && ext.extensionPath) {
+    remoteWorkbenchPath = path__namespace.resolve(ext.extensionPath, "out/workbench.js");
+  } else {
+    remoteWorkbenchPath = path__namespace.resolve(__dirname, "workbench.js");
+  }
+  await patchWorkbench(res, remoteWorkbenchPath);
+  await state.write("restart");
 }
 async function uninstallCycle(context) {
-    const state = getStateStore(context);
-    const { html, wasActive, workbench } = await read();
-    if (wasActive) {
-        const newHtml = html.replaceAll((0, write_1.extensionScriptTag)(), '');
-        await fs.promises.writeFile(workbench.path, newHtml, 'utf-8');
-    }
-    await fs.promises.unlink(workbench.customPath).catch(_catch);
-    await state.write('restart');
-    return wasActive;
+  const state = getStateStore(context);
+  const { html, wasActive, workbench } = await read();
+  if (wasActive) {
+    const newHtml = html.replaceAll(extensionScriptTag(), "");
+    await fs__namespace.promises.writeFile(workbench.path, newHtml, "utf-8");
+  }
+  await fs__namespace.promises.unlink(workbench.customPath).catch(_catch);
+  await state.write("restart");
+  return wasActive;
 }
-// how do you make javascript freak out about promises/errors?
 function deactivate() {
-    // FIXME: why is this hook not working? :(
-    console.log('vscode-concise-syntax is deactivated!');
+  console.log("vscode-concise-syntax is deactivated!");
 }
-exports.deactivate = deactivate;
 async function activate(context) {
-    const state = getStateStore(context);
-    // FIXME: use a better state manager or state machine
-    const { wasActive } = await read();
-    const reloadCommand = package_json_1.default.contributes.commands[0].command;
-    context.subscriptions.push(vscode.commands.registerCommand(reloadCommand, async () => {
-        try {
-            if (state.read() == 'active') {
-                vscode.window.showInformationMessage('Already Mounted');
-            }
-            else {
-                await uninstallCycle(context);
-                await installCycle(context);
-                if (!wasActive) {
-                    reloadWindowMessage(messages_1.default.enabled);
-                }
-                else {
-                    await statusBarItem(context, true);
-                    vscode.window.showInformationMessage('Mount: using cache', 'Reload');
-                }
-            }
+  const state = getStateStore(context);
+  const { wasActive } = await read();
+  const reloadCommand = packageJson.contributes.commands[0].command;
+  context.subscriptions.push(
+    vscode__namespace.commands.registerCommand(reloadCommand, async () => {
+      try {
+        if (state.read() == "active") {
+          vscode__namespace.window.showInformationMessage("Already Mounted");
+        } else {
+          await uninstallCycle(context);
+          await installCycle(context);
+          if (!wasActive) {
+            reloadWindowMessage(msg.enabled);
+          } else {
+            await statusBarItem(context, true);
+            vscode__namespace.window.showInformationMessage("Mount: using cache", "Reload");
+          }
         }
-        catch (error) {
-            __catch(error);
+      } catch (error) {
+        __catch(error);
+      }
+    })
+  );
+  const disposeCommand = packageJson.contributes.commands[1].command;
+  context.subscriptions.push(
+    vscode__namespace.commands.registerCommand(disposeCommand, async () => {
+      try {
+        const wasActive2 = await uninstallCycle(context);
+        await statusBarItem(context, false);
+        const [message, ...options] = wasActive2 ? ["Disposed", "Reload", "Uninstall"] : ["Already Disposed", "Uninstall"];
+        const selection = await vscode__namespace.window.showInformationMessage(message, ...options);
+        if (selection == "Reload") {
+          vscode__namespace.commands.executeCommand("workbench.action.reloadWindow");
+        } else if (selection == "Uninstall") {
+          vscode__namespace.commands.executeCommand(
+            "workbench.extensions.action.uninstallExtension",
+            extensionId
+          );
         }
-    }));
-    const disposeCommand = package_json_1.default.contributes.commands[1].command;
-    context.subscriptions.push(vscode.commands.registerCommand(disposeCommand, async () => {
-        try {
-            const wasActive = await uninstallCycle(context);
-            await statusBarItem(context, false);
-            const [message, ...options] = wasActive
-                ? ['Disposed', 'Reload', 'Uninstall']
-                : ['Already Disposed', 'Uninstall'];
-            // prettier-ignore
-            const selection = await vscode.window.showInformationMessage(message, ...options);
-            if (selection == 'Reload') {
-                vscode.commands.executeCommand('workbench.action.reloadWindow');
-            }
-            else if (selection == 'Uninstall') {
-                vscode.commands.executeCommand('workbench.extensions.action.uninstallExtension', write_1.extensionId);
-            }
-        }
-        catch (error) {
-            __catch(error);
-        }
-        finally {
-            await state.write('disposed');
-        }
-    }));
-    const key = 'editor.tokenColorCustomizations';
-    const textMateRules = [
-        {
-            name: 'kauderk.concise-syntax.text',
-            scope: ['meta.jsx.children.tsx'],
-            settings: {
-                foreground: '#B59E7A',
-            },
-        },
-        {
-            name: 'kauderk.concise-syntax.redundant',
-            scope: [
-                'punctuation.definition.tag.begin.tsx',
-                'punctuation.definition.tag.end.tsx',
-                'punctuation.section.embedded.begin.tsx',
-                'punctuation.section.embedded.end.tsx',
-                'punctuation.terminator.statement.tsx',
-                'concise.redundant-syntax',
-            ],
-            settings: {
-                foreground: '#00b51b00',
-            },
-        },
-        {
-            name: 'kauderk.concise-syntax.quote.begin',
-            scope: ['punctuation.definition.string.begin.tsx'],
-            settings: {
-                foreground: '#b5a90000',
-            },
-        },
-        {
-            name: 'kauderk.concise-syntax.quote.end',
-            scope: ['punctuation.definition.string.end.tsx'],
-            settings: {
-                foreground: '#b5030000',
-            },
-        },
-    ];
-    const operation = 'add';
-    // TODO: avoid writing defensive code, someone else surely knows a better way to do this
-    updateSettings: try {
-        const workspace = vscode.workspace.workspaceFolders?.[0].uri;
-        if (!workspace) {
-            vscode.window.showErrorMessage('No workspace found: cannot update textMateRules');
-            break updateSettings;
-        }
-        const path = '.vscode/settings.json';
-        const config = await fs.promises
-            .readFile(workspace?.fsPath + '/' + path, 'utf-8')
-            // https://stackoverflow.com/a/73298406 parse JSON with comments
-            .then((invalid_json) => new Function('return ' + invalid_json)())
-            .catch(_catch);
-        if (!config) {
-            vscode.window.showErrorMessage(`Cannot read ${path}: does not exist or is not valid JSON`);
-            break updateSettings;
-        }
-        // FIXME: figure out why this method returns a Proxy with global values such as Light and Dark themes
-        // let tokens: typeof shape | undefined = await vscode.workspace.getConfiguration(undefined, workspace)?.get(key)
-        let userRules = config?.[key]?.textMateRules;
-        if (userRules && !Array.isArray(userRules)) {
-            vscode.window.showErrorMessage(`${path}: ${key}.textMateRules is not an array`);
-            break updateSettings;
-        }
-        const isEmpty = !userRules || userRules?.length == 0;
-        if (operation == 'remove') {
-            if (isEmpty) {
-                break updateSettings;
-            }
-            else {
-                // remove only the extension's textMateRules
-                userRules = userRules?.filter((rule) => !textMateRules.find((r) => r.name == rule?.name));
-            }
-        }
-        else if (operation == 'add') {
-            if (isEmpty) {
-                userRules = textMateRules;
-            }
-            else {
-                userRules ??= [];
-                const lookup = textMateRules.reduce((acc, rule) => {
-                    acc.push([rule.name, rule.scope]);
-                    return acc;
-                }, []);
-                let conflictScopes = [];
-                conflicts: for (let i = 0; i < userRules.length; i++) {
-                    const userRule = userRules[i];
-                    if (!userRule || textMateRules.some((r) => r.name == userRule.name))
-                        continue;
-                    const userScope = userRule.scope ?? [];
-                    const potentialConflictScopes = userScope.reduce((acc, scope) => {
-                        if (scope &&
-                            textMateRules.some((r) => r.scope.some((value) => userScope.includes(value)))) {
-                            acc.push(scope);
-                        }
-                        return acc;
-                    }, []);
-                    if (!potentialConflictScopes.length)
-                        continue conflicts;
-                    conflictScopes.push([
-                        `${i}: ${userRule.name || ''}`,
-                        potentialConflictScopes.join(', '),
-                    ]);
-                }
-                if (conflictScopes.length) {
-                    vscode.window.showWarningMessage(`${path}: ${key}.textMateRules: Conflict scopes detected       🛠️ Remove them when using Concise-Syntax 🛠️        ${conflictScopes
-                        .map(([name, scopes]) => `[${name} -> ${scopes}]`)
-                        .join(', ')}`);
-                }
-                // add what is missing
-                addition: for (const rule of textMateRules) {
-                    const exist = userRules.some((r, i) => {
-                        const match = r?.name === rule.name;
-                        if (match) {
-                            userRules[i] = rule; // ! userRules is ok
-                            return true;
-                        }
-                        return match;
-                    });
-                    if (!exist) {
-                        userRules.push(rule);
-                    }
-                }
-            }
-        }
-        config[key].textMateRules = userRules;
-        // Overwrite entire parent setting
-        await vscode.workspace
-            .getConfiguration()
-            .update(key, config[key], vscode.ConfigurationTarget.Workspace);
-    }
-    catch (error) {
-        if (error?.message) {
-            vscode.window.showErrorMessage(error.message);
-        }
-        debugger;
-    }
-    if (state.read() != 'disposed') {
-        installCycle(context)
-            .then(() => {
-            if (!wasActive) {
-                reloadWindowMessage(messages_1.default.enabled);
-            }
-        })
-            .catch(__catch);
-    }
-    else if (wasActive) {
-        await statusBarItem(context);
-    }
-    console.log('vscode-concise-syntax is active');
-    function __catch(e) {
-        console.error(e);
-        const error = getErrorStore(context);
-        error.write('unhandled').catch(_catch);
-    }
+      } catch (error) {
+        __catch(error);
+      } finally {
+        await state.write("disposed");
+      }
+    })
+  );
+  if (state.read() != "disposed") {
+    installCycle(context).then(() => {
+      if (!wasActive) {
+        reloadWindowMessage(msg.enabled);
+      }
+    }).catch(__catch);
+  } else if (wasActive) {
+    await statusBarItem(context);
+  }
+  console.log("vscode-concise-syntax is active");
+  function __catch(e) {
+    console.error(e);
+    const error = getErrorStore(context);
+    error.write("unhandled").catch(_catch);
+  }
 }
-exports.activate = activate;
-function _catch(e) { }
+function _catch(e) {
+}
 async function read() {
-    if (!require.main?.filename) {
-        vscode.window.showErrorMessage(messages_1.default.internalError + 'no main filename');
-        throw new Error('no main filename');
-    }
-    const appDir = path.dirname(require.main.filename);
-    const base = path.join(appDir, 'vs', 'code', 'electron-sandbox', 'workbench');
-    return await (0, write_1.preRead)(base);
+  if (!require.main?.filename) {
+    vscode__namespace.window.showErrorMessage(msg.internalError + "no main filename");
+    throw new Error("no main filename");
+  }
+  const appDir = path__namespace.dirname(require.main.filename);
+  const base = path__namespace.join(appDir, "vs", "code", "electron-sandbox", "workbench");
+  return await preRead(base);
 }
 function reloadWindowMessage(message) {
-    vscode.window
-        .showInformationMessage(message, { title: messages_1.default.restartIde })
-        .then((selection) => {
-        if (selection) {
-            vscode.commands.executeCommand('workbench.action.reloadWindow');
-        }
-    });
+  vscode__namespace.window.showInformationMessage(message, { title: msg.restartIde }).then((selection) => {
+    if (selection) {
+      vscode__namespace.commands.executeCommand("workbench.action.reloadWindow");
+    }
+  });
 }
 function getStateStore(context) {
-    return stateManager(context, write_1.extensionId + '.state');
+  return stateManager(
+    context,
+    extensionId + ".state"
+  );
 }
 function getErrorStore(context) {
-    return stateManager(context, write_1.extensionId + '.error');
+  return stateManager(
+    context,
+    extensionId + ".error"
+  );
 }
 function stateManager(context, key) {
-    return {
-        value: '',
-        read() {
-            return (this.value = context.globalState.get(key));
-        },
-        async write(newState) {
-            this.value = newState;
-            await context.globalState.update(key, newState);
-            return newState;
-        },
-    };
+  return {
+    value: "",
+    read() {
+      return this.value = context.globalState.get(key);
+    },
+    async write(newState) {
+      this.value = newState;
+      await context.globalState.update(key, newState);
+      return newState;
+    }
+  };
 }
 let _item;
-/**
- * The icon's purpose is to indicate the workbench.ts script the extension is active.
- */
 async function statusBarItem(context, wasActive) {
-    const active = stateManager(context, write_1.extensionId + '.active');
-    if (activate !== undefined) {
-        await active.write(wasActive ? 'true' : 'false');
+  const active = stateManager(
+    context,
+    extensionId + ".active"
+  );
+  if (activate !== void 0) {
+    await active.write(wasActive ? "true" : "false");
+  }
+  const tooltip = (previous) => _item.tooltip = `Concise Syntax: ` + (previous ? "active" : "inactive");
+  if (_item) {
+    if (wasActive !== void 0) {
+      tooltip(wasActive);
     }
-    const tooltip = (previous) => (_item.tooltip = `Concise Syntax: ` + (previous ? 'active' : 'inactive'));
-    if (_item) {
-        if (wasActive !== undefined) {
-            tooltip(wasActive);
-        }
-        return;
-    }
-    async function toggle(next) {
-        tooltip(next);
-        await active.write(next ? 'true' : 'false');
-    }
-    const getActive = () => !!JSON.parse(active.read() ?? 'false');
-    const myCommandId = package_json_1.default.contributes.commands[2].command;
-    context.subscriptions.push(vscode.commands.registerCommand(myCommandId, async () => {
-        await toggle(!getActive());
-    }));
-    const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    _item = item;
-    item.command = myCommandId;
-    item.text = `$(symbol-keyword) Concise`;
-    tooltip(getActive());
-    item.show();
-    context.subscriptions.push(item);
+    return;
+  }
+  async function toggle(next) {
+    tooltip(next);
+    await active.write(next ? "true" : "false");
+  }
+  const getActive = () => !!JSON.parse(active.read() ?? "false");
+  const myCommandId = packageJson.contributes.commands[2].command;
+  context.subscriptions.push(
+    vscode__namespace.commands.registerCommand(myCommandId, async () => {
+      await toggle(!getActive());
+    })
+  );
+  const item = vscode__namespace.window.createStatusBarItem(
+    vscode__namespace.StatusBarAlignment.Right,
+    100
+  );
+  _item = item;
+  item.command = myCommandId;
+  item.text = `$(symbol-keyword) Concise`;
+  tooltip(getActive());
+  item.show();
+  context.subscriptions.push(item);
 }
+exports.activate = activate;
+exports.deactivate = deactivate;
 //# sourceMappingURL=extension.js.map

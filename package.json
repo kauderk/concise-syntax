@@ -16,12 +16,10 @@
     "*"
   ],
   "scripts": {
-    "preparation": "node json-d-ts.js",
-    "build": "tsc",
-    "watch": "tsc -watch && npm run watch:workbench",
+    "build": "concurrently --kill-others \"vite build\" \"vite build -c vite.config.workbench.ts\"",
+    "dev": "concurrently --kill-others \"vite build --watch\" \"vite build -c vite.config.workbench.ts --watch\"",
     "vscode:prepublish": "npm run build",
-    "vscode:uninstall": "node ./out/uninstall",
-    "watch:workbench": "ts-node watch.workbench.ts"
+    "vscode:uninstall": "node ./out/uninstall"
   },
   "contributes": {
     "commands": [
@@ -44,7 +42,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
-    "ts-node": "^10.9.2",
+    "concurrently": "^8.2.2",
+    "vite": "4.5.1",
     "vscode": "^1.1.37"
   }
 }

@@ -17,9 +17,8 @@ declare const data: {
     "*"
   ],
   "scripts": {
-    "preparation": "node json-d-ts.js",
-    "build": "tsc",
-    "watch": "tsc -watch",
+    "build": "concurrently --kill-others \"vite build\" \"vite build -c vite.config.workbench.ts\"",
+    "dev": "concurrently --kill-others \"vite build --watch\" \"vite build -c vite.config.workbench.ts --watch\"",
     "vscode:prepublish": "npm run build",
     "vscode:uninstall": "node ./out/uninstall"
   },
@@ -40,30 +39,12 @@ declare const data: {
         "title": "Toggle",
         "category": "Concise Syntax"
       }
-    ],
-    "themes": [
-      {
-        "label": "Concise Syntax",
-        "uiTheme": "vs-dark",
-        "path": "./themes/tokens.json"
-      }
-    ],
-    "grammars": [
-      {
-        "path": "./syntaxes/injection.json",
-        "scopeName": "source.concise",
-        "injectTo": [
-          "source.js",
-          "source.ts",
-          "source.tsx",
-          "source.jsx",
-          "source.abc"
-        ]
-      }
     ]
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
+    "concurrently": "^8.2.2",
+    "vite": "4.5.1",
     "vscode": "^1.1.37"
   }
 }
