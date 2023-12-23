@@ -52,9 +52,8 @@ const activationEvents = [
   "*"
 ];
 const scripts = {
-  build: 'concurrently --kill-others "vite build" "vite build -c vite.config.workbench.ts"',
-  dev: 'concurrently --kill-others "vite build --watch" "vite build -c vite.config.workbench.ts --watch"',
-  "vscode:prepublish": "npm run build",
+  watch: 'concurrently "vite build -c vite.config.workbench.ts --watch" "vite build --watch"',
+  "vscode:prepublish": 'concurrently "vite build -c vite.config.workbench.ts" "vite build"',
   "vscode:uninstall": "node ./out/uninstall"
 };
 const contributes = {

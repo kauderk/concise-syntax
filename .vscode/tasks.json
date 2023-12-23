@@ -6,7 +6,13 @@
     {
       "type": "npm",
       "script": "watch",
-      "problemMatcher": "$tsc-watch",
+      "label": "watch",
+      // FIXME: when using anything other then tsc to compile, the extension will not start
+      // now it is the "concurrently" npm package, so it's even worst to match/regex the problemMatcher
+      // also take a look at the log "patch vscode:" in vite.config.workbench.ts, you might need to match that as well * sigh *
+      // to verify the problem take a look at the "output" tab in vscode: "Task watch is a background task but uses a problem matcher without a background pattern"
+      // FIXME: when debugging -> "debug anyway" to skip the problemMatcher
+      "problemMatcher": "$tsc",
       "isBackground": true,
       "presentation": {
         "reveal": "never"
@@ -15,20 +21,6 @@
         "kind": "build",
         "isDefault": true
       }
-    },
-    {
-      "label": "Terminate All Tasks",
-      "command": "echo ${input:terminateAll}",
-      "type": "shell",
-      "problemMatcher": []
-    }
-  ],
-  "inputs": [
-    {
-      "id": "terminateAll",
-      "type": "command",
-      "command": "workbench.action.tasks.terminate",
-      "args": "terminateAll"
     }
   ]
 }
