@@ -1,23 +1,52 @@
-import { defineConfig } from 'vite'
+import { type UserConfig, build } from 'vite'
 import { patchWorkbench, preRead } from './src/shared/write'
 import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import { exec } from 'child_process'
 
-export default defineConfig({
-  build: {
-    sourcemap: true,
-    minify: false,
-    outDir: 'out',
-    emptyOutDir: false,
-    lib: {
-      entry: 'src/workbench/index.ts',
-      name: 'workbench',
-      fileName: () => 'workbench.js',
-      formats: ['umd'],
+const watch = process.argv.includes('--watch')
+
+const shared = {
+  sourcemap: true,
+  minify: false,
+  outDir: 'out',
+  emptyOutDir: false,
+  watch: watch ? { include: ['src/**/*'] } : undefined,
+}
+const config: UserConfig[] = [
+  {
+    build: {
+      ...shared,
+      lib: {
+        entry: 'src/workbench/index.ts',
+        name: 'workbench',
+        fileName: () => 'workbench.js',
+        formats: ['umd'],
+      },
     },
   },
+  {
+    build: {
+      target: 'node18',
+      ssr: true, // https://github.com/vitejs/vite/issues/13926
+      ...shared,
+      lib: {
+        entry: 'src/extension/index.ts',
+        formats: ['cjs'],
+      },
+      rollupOptions: {
+        external: ['vscode'],
+        output: {
+          entryFileNames: 'extension.js', // otherwise it will be index.js
+        },
+      },
+    },
+  },
+]
+config.forEach(async (config) => {
+  // https://github.com/vitejs/vite/issues/11424#issuecomment-1483847848
+  await build(config).catch(console.error)
 })
 
 // update package.json.d.ts

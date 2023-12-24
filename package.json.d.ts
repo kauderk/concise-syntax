@@ -17,8 +17,8 @@ declare const data: {
     "*"
   ],
   "scripts": {
-    "watch": "concurrently \"vite build -c vite.config.workbench.ts --watch\" \"vite build --watch\"",
-    "vscode:prepublish": "concurrently \"vite build -c vite.config.workbench.ts\" \"vite build\"",
+    "watch": "ts-node vite.config.custom.ts --watch",
+    "vscode:prepublish": "ts-node vite.config.custom.ts",
     "vscode:uninstall": "node ./out/uninstall"
   },
   "contributes": {
@@ -43,6 +43,7 @@ declare const data: {
   "devDependencies": {
     "@types/node": "^20.10.5",
     "concurrently": "^8.2.2",
+    "ts-node": "^10.9.2",
     "vite": "4.5.1",
     "vscode": "^1.1.37"
   }
