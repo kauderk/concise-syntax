@@ -1,14 +1,14 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
 import * as path from 'path'
-import msg from './messages'
-import packageJson from '../package.json'
+import msg from '../shared/messages'
+import packageJson from '../../package.json'
 import {
   extensionId,
   extensionScriptTag,
   preRead,
   patchWorkbench,
-} from './write'
+} from '../shared/write'
 
 async function installCycle(context: vscode.ExtensionContext) {
   const state = getStateStore(context)
@@ -26,7 +26,7 @@ async function installCycle(context: vscode.ExtensionContext) {
   if (ext && ext.extensionPath) {
     remoteWorkbenchPath = path.resolve(ext.extensionPath, 'out/workbench.js')
   } else {
-    remoteWorkbenchPath = path.resolve(__dirname, 'workbench.js')
+    remoteWorkbenchPath = path.resolve(__dirname, 'index.js')
   }
   await patchWorkbench(res, remoteWorkbenchPath)
 

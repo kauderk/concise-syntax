@@ -139,7 +139,7 @@ async function installCycle(context) {
   if (ext && ext.extensionPath) {
     remoteWorkbenchPath = path__namespace.resolve(ext.extensionPath, "out/workbench.js");
   } else {
-    remoteWorkbenchPath = path__namespace.resolve(__dirname, "workbench.js");
+    remoteWorkbenchPath = path__namespace.resolve(__dirname, "index.js");
   }
   await patchWorkbench(res, remoteWorkbenchPath);
   await state.write("restart");

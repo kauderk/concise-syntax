@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import packageJson from '../package.json'
+import packageJson from '../../package.json'
 
 export const extensionId = packageJson.publisher + '.' + packageJson.name
 export const extensionScriptSrc = extensionId + '.js'
