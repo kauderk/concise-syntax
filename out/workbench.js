@@ -1,5 +1,5 @@
 (function(factory) {
-  typeof define === "function" && define.amd ? define(factory) : factory();
+  typeof ignoreDefine === "function" && ignoreDefine.amd ? ignoreDefine(factory) : factory();
 })(function() {
   "use strict";
   let conciseSyntax = {

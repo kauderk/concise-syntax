@@ -42,7 +42,6 @@ declare const data: {
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
-    "concurrently": "^8.2.2",
     "ts-node": "^10.9.2",
     "vite": "4.5.1",
     "vscode": "^1.1.37"

@@ -24,6 +24,13 @@ const config: UserConfig[] = [
         fileName: () => 'workbench.js',
         formats: ['umd'],
       },
+      rollupOptions: {
+        output: {
+          amd: {
+            define: 'ignoreDefine', // ignore define, just run the factory function
+          },
+        },
+      },
     },
   },
   {
@@ -75,4 +82,4 @@ fs.promises
       console.log('patch vscode:', path.basename(res.workbench.customPath))
     })
   )
-  .catch(() => {})
+  .catch(console.error)
