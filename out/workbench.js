@@ -2,6 +2,39 @@
   typeof ignoreDefine === "function" && ignoreDefine.amd ? ignoreDefine(factory) : factory();
 })(function() {
   "use strict";
+  function watchForRemoval(targetElement, callback) {
+    let done2 = false;
+    let stack = [];
+    const rootObserver = new MutationObserver((mutationsList) => {
+      mutationsList.forEach((mutation) => {
+        if (done2 || !stack.includes(mutation.target) || !mutation.removedNodes.length)
+          return;
+        const nodes = Array.from(mutation.removedNodes);
+        if (nodes.indexOf(targetElement) > -1 || // parent match
+        nodes.some((parent) => parent.contains(targetElement))) {
+          dispose2();
+          callback();
+          return;
+        }
+      });
+    });
+    function REC_ObserverAncestors(element) {
+      if (!element.parentElement || element.parentElement === document.body) {
+        return;
+      }
+      stack.push(element.parentElement);
+      rootObserver.observe(element.parentElement, { childList: true });
+      REC_ObserverAncestors(element.parentElement);
+    }
+    REC_ObserverAncestors(targetElement);
+    function dispose2() {
+      done2 = true;
+      stack = [];
+      rootObserver.takeRecords();
+      rootObserver.disconnect();
+    }
+    return dispose2;
+  }
   let conciseSyntax = {
     init: false,
     interval: 0,
@@ -329,39 +362,6 @@
   function reload() {
     dispose();
     conciseSyntax.interval = setInterval(patch, 5e3);
-  }
-  function watchForRemoval(targetElement, callback) {
-    let done2 = false;
-    let stack = [];
-    const rootObserver = new MutationObserver((mutationsList) => {
-      mutationsList.forEach((mutation) => {
-        if (done2 || !stack.includes(mutation.target) || !mutation.removedNodes.length)
-          return;
-        const nodes = Array.from(mutation.removedNodes);
-        if (nodes.indexOf(targetElement) > -1 || // parent match
-        nodes.some((parent) => parent.contains(targetElement))) {
-          dispose2();
-          callback();
-          return;
-        }
-      });
-    });
-    function REC_ObserverAncestors(element) {
-      if (!element.parentElement || element.parentElement === document.body) {
-        return;
-      }
-      stack.push(element.parentElement);
-      rootObserver.observe(element.parentElement, { childList: true });
-      REC_ObserverAncestors(element.parentElement);
-    }
-    REC_ObserverAncestors(targetElement);
-    function dispose2() {
-      done2 = true;
-      stack = [];
-      rootObserver.takeRecords();
-      rootObserver.disconnect();
-    }
-    return dispose2;
   }
   function createMutation(option) {
     return new MutationObserver((mutations) => {

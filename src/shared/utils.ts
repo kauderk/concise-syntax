@@ -1,3 +1,4 @@
+// TODO: test if this is more "performant" or just mental gymnastics
 export function watchForRemoval(targetElement: Element, callback: Function) {
   let done = false
   let stack: Node[] = []

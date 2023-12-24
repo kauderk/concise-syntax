@@ -14,8 +14,14 @@ const shared = {
   emptyOutDir: false,
   watch: watch ? { include: ['src/**/*'] } : undefined,
 }
+const resolve = {
+  alias: {
+    src: path.resolve(__dirname, 'src'),
+  },
+}
 const config: UserConfig[] = [
   {
+    resolve,
     build: {
       ...shared,
       lib: {
@@ -27,6 +33,7 @@ const config: UserConfig[] = [
       rollupOptions: {
         output: {
           amd: {
+            // alternative to https://github.com/rollup/rollup/issues/3490#issuecomment-645348130
             define: 'ignoreDefine', // ignore define, just run the factory function
           },
         },
@@ -34,6 +41,7 @@ const config: UserConfig[] = [
     },
   },
   {
+    resolve,
     build: {
       target: 'node18',
       ssr: true, // https://github.com/vitejs/vite/issues/13926

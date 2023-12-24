@@ -13,6 +13,7 @@
     "baseUrl": ".",
     "sourceMap": true,
     "paths": {
+      "src": ["./src"],
       "vscode": ["./node_modules/vscode"]
     }
   },
