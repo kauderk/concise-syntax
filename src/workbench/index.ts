@@ -1,5 +1,6 @@
 import { createSyntaxLifecycle } from './syntax'
 import { createHighlightLifeCycle } from './highlight'
+import { extensionId } from './keys'
 
 const syntax = createSyntaxLifecycle()
 const highlight = createHighlightLifeCycle()
@@ -24,3 +25,5 @@ if (window.conciseSyntax) {
 // @ts-ignore
 window.conciseSyntax = conciseSyntax
 conciseSyntax.activate()
+
+console.log(extensionId, conciseSyntax)

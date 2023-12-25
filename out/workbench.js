@@ -8,12 +8,12 @@
   const idSelector = '[data-mode-id="typescriptreact"]';
   const linesSelector = idSelector + ` .view-lines.monaco-mouse-cursor-text`;
   const highlightSelector = idSelector + ` .view-overlays`;
+  const stylesContainer = document.getElementById(windowId) ?? document.createElement("div");
+  stylesContainer.id = windowId;
+  document.body.appendChild(stylesContainer);
   function createStyles(name) {
-    const stylesContainer = document.getElementById(windowId) ?? document.createElement("div");
-    stylesContainer.id = windowId;
-    document.body.appendChild(stylesContainer);
     const id = windowId + "." + name;
-    const style = document.getElementById(id) ?? document.createElement("style");
+    const style = stylesContainer.querySelector(`[id="${id}"]`) ?? document.createElement("style");
     style.id = id;
     stylesContainer.appendChild(style);
     return {
@@ -360,53 +360,60 @@
     return cycle;
   }
   function createHighlightLifeCycle() {
-    function createHighlight({
-      node,
-      selector,
-      add,
-      set,
-      styleIt: styleIt2,
-      color
-    }) {
-      var _a, _b;
+    function createHighlight({ node, selector, add, set, color }) {
+      var _a, _b, _c;
       if (!node.querySelector(selector))
         return;
-      const top = Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
-      if (isNaN(top) || set.has(top) === add || // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
-      !add && document.querySelector(
+      const old = node.editor;
+      const group = ((_a = node.closest("[aria-label][data-mode-id]")) == null ? void 0 : _a.getAttribute("aria-label")) ?? old;
+      node.editor = group;
+      const top = Number((_c = (_b = node.style) == null ? void 0 : _b.top.match(/\d+/)) == null ? void 0 : _c[0]);
+      if (isNaN(top) || set.has(top) === add || !add && // most likely a node previous the lifecycle
+      (!group || // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+      document.querySelector(
         highlightSelector + `>[style*="${top}"]>` + selector
-      )) {
+      ))) {
         return;
+      }
+      if (!add && !group) {
+        return console.warn("no group", node, top);
       }
       set[add ? "add" : "delete"](top);
       const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
-      styleIt2(`
-		${linesSelector} :is(${lines}) {
-				--r: ${color};
-		}`);
+      const uid = (group ?? windowId) + selector;
+      let style = stylesContainer.querySelector(
+        `[data-editor="${uid}"]`
+      );
+      if (!style || !stylesContainer.contains(style)) {
+        style = document.createElement("style");
+        style.dataset.editor = uid;
+        stylesContainer.appendChild(style);
+      }
+      styleIt(
+        style,
+        `[aria-label="${group}"]${linesSelector} :is(${lines}) {
+					--r: ${color};
+			}`
+      );
       return true;
     }
     let selectedLines = /* @__PURE__ */ new Set();
     const selectedSelector = ".selected-text";
-    const selectedStyles = createStyles("selected");
     let currentLines = /* @__PURE__ */ new Set();
     const currentLineSelector = ".current-line";
-    const currentStyles = createStyles("current");
     function highlightStyles(node, add) {
       createHighlight({
         node,
         selector: selectedSelector,
         add,
         set: selectedLines,
-        color: "orange",
-        styleIt: selectedStyles.styleIt
+        color: "orange"
       }) || createHighlight({
         node,
         selector: currentLineSelector,
         add,
         set: currentLines,
-        color: "brown",
-        styleIt: selectedStyles.styleIt
+        color: "brown"
       });
     }
     const Highlight = {
@@ -486,8 +493,9 @@
         EditorOverlayDeployer.disconnect();
         selectedLines.clear();
         currentLines.clear();
-        selectedStyles.dispose();
-        currentStyles.dispose();
+        stylesContainer.querySelectorAll("style").forEach((style) => {
+          style.textContent = "";
+        });
       }
     });
     return cycle;
@@ -510,5 +518,6 @@
   }
   window.conciseSyntax = conciseSyntax;
   conciseSyntax.activate();
+  console.log(extensionId, conciseSyntax);
 });
 //# sourceMappingURL=workbench.js.map

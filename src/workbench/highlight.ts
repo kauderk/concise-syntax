@@ -1,11 +1,12 @@
-import { highlightSelector, idSelector, linesSelector } from './keys'
+import { highlightSelector, idSelector, linesSelector, windowId } from './keys'
 import { lifecycle } from './lifecycle'
 import {
   MutationOptions,
   createAttributeMutation,
   createMutation,
+  styleIt,
+  stylesContainer,
 } from './shared'
-import { createStyles } from './shared'
 
 /**
  * @description Change color of highlighted or selected lines
@@ -17,26 +18,33 @@ import { createStyles } from './shared'
  * At the top is main function: createHighlight
  */
 export function createHighlightLifeCycle() {
-  function createHighlight({
-    node,
-    selector,
-    add,
-    set,
-    styleIt,
-    color,
-  }: Selected) {
+  function createHighlight({ node, selector, add, set, color }: Selected) {
     if (!node.querySelector(selector)) return
+    // @ts-ignore
+    const old = node.editor
+    const group =
+      node.closest('[aria-label][data-mode-id]')?.getAttribute('aria-label') ??
+      old
+    // @ts-ignore
+    node.editor = group
+
     const top = Number(node.style?.top.match(/\d+/)?.[0])
     if (
       isNaN(top) ||
       set.has(top) === add ||
-      // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
       (!add &&
-        document.querySelector(
-          highlightSelector + `>[style*="${top}"]>` + selector
-        ))
+        // most likely a node previous the lifecycle
+        (!group ||
+          // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+          document.querySelector(
+            highlightSelector + `>[style*="${top}"]>` + selector
+          )))
     ) {
       return
+    }
+
+    if (!add && !group) {
+      return console.warn('no group', node, top)
     }
 
     // funny code
@@ -46,21 +54,31 @@ export function createHighlightLifeCycle() {
       .reduce((acc, top) => acc + `[style*="${top}"],`, '')
       .slice(0, -1)
 
-    styleIt(`
-		${linesSelector} :is(${lines}) {
-				--r: ${color};
-		}`)
+    const uid = (group ?? windowId) + selector
+    let style = stylesContainer.querySelector(
+      `[data-editor="${uid}"]`
+    ) as HTMLElement
+    if (!style || !stylesContainer.contains(style)) {
+      style = document.createElement('style')
+      style.dataset.editor = uid
+      stylesContainer.appendChild(style)
+    }
+
+    styleIt(
+      style,
+      `[aria-label="${group}"]${linesSelector} :is(${lines}) {
+					--r: ${color};
+			}`
+    )
 
     return true
   }
 
   let selectedLines = new Set<number>()
   const selectedSelector = '.selected-text'
-  const selectedStyles = createStyles('selected')
 
   let currentLines = new Set<number>()
   const currentLineSelector = '.current-line'
-  const currentStyles = createStyles('current')
 
   function highlightStyles(node: HTMLElement, add: boolean) {
     createHighlight({
@@ -69,7 +87,6 @@ export function createHighlightLifeCycle() {
       add,
       set: selectedLines,
       color: 'orange',
-      styleIt: selectedStyles.styleIt,
     }) ||
       createHighlight({
         node,
@@ -77,7 +94,6 @@ export function createHighlightLifeCycle() {
         add,
         set: currentLines,
         color: 'brown',
-        styleIt: selectedStyles.styleIt,
       })
   }
   const Highlight = {
@@ -155,8 +171,9 @@ export function createHighlightLifeCycle() {
       EditorOverlayDeployer.disconnect()
       selectedLines.clear()
       currentLines.clear()
-      selectedStyles.dispose()
-      currentStyles.dispose()
+      stylesContainer.querySelectorAll('style').forEach((style) => {
+        style.textContent = ''
+      })
     },
   })
 
@@ -168,6 +185,5 @@ type Selected = {
   selector: string
   add: boolean
   set: Set<number>
-  styleIt: (text: string) => void
   color: string
 }

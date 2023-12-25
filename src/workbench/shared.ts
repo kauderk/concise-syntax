@@ -1,13 +1,15 @@
 import { windowId } from './keys'
 
-export function createStyles(name: string) {
-  const stylesContainer =
-    document.getElementById(windowId) ?? document.createElement('div')
-  stylesContainer.id = windowId
-  document.body.appendChild(stylesContainer)
+export const stylesContainer =
+  document.getElementById(windowId) ?? document.createElement('div')
+stylesContainer.id = windowId
+document.body.appendChild(stylesContainer)
 
+export function createStyles(name: string) {
   const id = windowId + '.' + name
-  const style = document.getElementById(id) ?? document.createElement('style')
+  const style =
+    stylesContainer.querySelector(`[id="${id}"]`) ??
+    document.createElement('style')
   style.id = id
   stylesContainer.appendChild(style)
 
