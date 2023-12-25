@@ -1,7 +1,7 @@
 import { watchForRemoval } from './shared'
 
 export type LifecycleProps<T> = {
-  activate(dom: T): void
+  activate(dom: T): void | (() => void)
   dom(): T & { check(): boolean; watchForRemoval: HTMLElement }
   dispose?: () => void
 }
@@ -16,6 +16,7 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
   let anyUsage = false
   let interval: NodeJS.Timeout
   let disposeObserver = () => {}
+  let disposeActivate: Function | void
 
   function patch() {
     const dom = props.dom()
@@ -24,9 +25,10 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
     running = true
     clearInterval(interval)
     disposeObserver = watchForRemoval(dom.watchForRemoval, reload)
-    props.activate(dom)
+    disposeActivate = props.activate(dom)
   }
   function dispose() {
+    disposeActivate?.()
     disposeObserver()
     props.dispose?.()
     running = false

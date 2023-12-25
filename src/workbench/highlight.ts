@@ -22,11 +22,11 @@ export function createHighlightLifeCycle() {
     if (!node.querySelector(selector)) return
     // @ts-ignore
     const old = node.editor
-    const group =
+    const label =
       node.closest('[aria-label][data-mode-id]')?.getAttribute('aria-label') ??
       old
     // @ts-ignore
-    node.editor = group
+    node.editor = label
 
     const top = Number(node.style?.top.match(/\d+/)?.[0])
     if (
@@ -34,7 +34,7 @@ export function createHighlightLifeCycle() {
       set.has(top) === add ||
       (!add &&
         // most likely a node previous the lifecycle
-        (!group ||
+        (!label ||
           // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
           document.querySelector(
             highlightSelector + `>[style*="${top}"]>` + selector
@@ -43,7 +43,7 @@ export function createHighlightLifeCycle() {
       return
     }
 
-    if (!add && !group) {
+    if (!add && !label) {
       return console.warn('no group', node, top)
     }
 
@@ -54,19 +54,19 @@ export function createHighlightLifeCycle() {
       .reduce((acc, top) => acc + `[style*="${top}"],`, '')
       .slice(0, -1)
 
-    const uid = (group ?? windowId) + selector
+    const uid = (label ?? windowId) + selector
     let style = stylesContainer.querySelector(
-      `[data-editor="${uid}"]`
+      `[aria-label="${uid}"]`
     ) as HTMLElement
     if (!style || !stylesContainer.contains(style)) {
       style = document.createElement('style')
-      style.dataset.editor = uid
+      style.dataset.label = uid
       stylesContainer.appendChild(style)
     }
 
     styleIt(
       style,
-      `[aria-label="${group}"]${linesSelector} :is(${lines}) {
+      `[aria-label="${label}"]${linesSelector} :is(${lines}) {
 					--r: ${color};
 			}`
     )
@@ -107,34 +107,54 @@ export function createHighlightLifeCycle() {
 
   const EditorOverlayMap = new Map<Element, { dispose(): void }>()
   const EditorOverlay = {
+    usingUnobservable: true,
     added(editor) {
       const overlays = editor.querySelector?.(highlightSelector)
       if (!overlays) return
       const languageObserver = createAttributeMutation({
         watchAttribute: 'data-mode-id',
-        activate: swap,
-        inactive: swap,
+        activate(language) {
+          if (!language) return // hydrating...
+          highlightObserver.disconnect()
+          if (language === 'typescriptreact') {
+            const overlays = editor.querySelector?.(highlightSelector)
+            if (!overlays) return console.warn('no overlays')
+            console.log('overlays', arguments)
+            highlightObserver.observe(overlays, {
+              childList: true,
+            })
+          }
+        },
+        inactive(language) {
+          console.log('inactive', arguments)
+          highlightObserver.disconnect()
+        },
+      })
+      const groupObserver = createAttributeMutation({
+        watchAttribute: 'aria-label',
+        activate(label) {
+          console.log('activate', arguments)
+          stylesContainer
+            .querySelectorAll(`[aria-label="${label}"]`)
+            .forEach((style) => style.remove())
+        },
+        inactive(label) {
+          console.log('inactive', arguments)
+          stylesContainer
+            .querySelectorAll(`[aria-label="${label}"]`)
+            .forEach((style) => style.remove())
+        },
       })
       const highlightObserver = createMutation(Highlight)
-      function swap({ attribute }: any) {
-        if (!attribute) return // hydrating...
-        highlightObserver.disconnect()
-
-        if (attribute === 'typescriptreact') {
-          const overlays = editor.querySelector?.(highlightSelector)
-          if (!overlays) return console.warn('no overlays')
-          highlightObserver.observe(overlays, {
-            childList: true,
-          })
-        }
-      }
 
       EditorOverlayMap.get(editor)?.dispose()
       languageObserver.activate(editor)
+      groupObserver.activate(editor)
       EditorOverlayMap.set(editor, {
         dispose() {
           highlightObserver.disconnect()
-          languageObserver?.dispose()
+          languageObserver.dispose()
+          groupObserver.dispose()
         },
       })
     },
@@ -149,21 +169,62 @@ export function createHighlightLifeCycle() {
 
   const cycle = lifecycle({
     dom() {
-      const overlays = document.querySelector(highlightSelector)
+      const root = document.querySelector(
+        '#workbench\\.parts\\.editor > div.content > div > div > div > div > div.monaco-scrollable-element > div.split-view-container'
+      ) as HTMLElement
+      const editor = root?.querySelector(idSelector) as HTMLElement
+      const overlays = editor?.querySelector(highlightSelector)
         ?.parentElement as HTMLElement
-      const editor = document.querySelector(idSelector) as HTMLElement
       return {
         check() {
-          return !!(overlays && editor)
+          return !!(root && editor && overlays)
         },
-        watchForRemoval: editor,
+        watchForRemoval: root,
       }
     },
     activate(dom) {
-      EditorOverlay.added(dom.watchForRemoval)
-      EditorOverlayDeployer.observe(dom.watchForRemoval, {
-        childList: true,
+      /**
+       * - split-view-container
+       * 		- split-view-view -> Recursion
+       * 			- editor-container
+       */
+      let editorContainersMap = new Set<HTMLElement>()
+      const rootContainerObserver = createMutation({
+        added(node) {
+          const editorContainers = Array.from(
+            node.querySelectorAll('.editor-container')
+          )
+          editorContainers.forEach((node: any) => {
+            if (!editorContainersMap.has(node)) {
+              debugger
+              EditorOverlay.added(node)
+              EditorOverlayDeployer.observe(node, {
+                childList: true,
+              })
+            } else {
+              editorContainersMap.add(node)
+            }
+          })
+        },
+        removed(node) {
+          const editorContainers = Array.from(
+            node.querySelectorAll('.editor-container')
+          )
+          editorContainers.forEach((node: any) => {
+            if (editorContainersMap.has(node)) {
+              debugger
+              EditorOverlay.removed(node)
+              EditorOverlayDeployer.disconnect()
+              editorContainersMap.delete(node)
+            }
+          })
+        },
       })
+      rootContainerObserver.observe(dom.watchForRemoval, {
+        childList: true,
+        subtree: true,
+      })
+      return () => rootContainerObserver.disconnect()
     },
     dispose() {
       Object.values(EditorOverlayMap).forEach((observer) => observer.dispose())
@@ -171,6 +232,9 @@ export function createHighlightLifeCycle() {
       EditorOverlayDeployer.disconnect()
       selectedLines.clear()
       currentLines.clear()
+      stylesContainer
+        .querySelectorAll('[aria-label]')
+        .forEach((style) => style.remove())
       stylesContainer.querySelectorAll('style').forEach((style) => {
         style.textContent = ''
       })

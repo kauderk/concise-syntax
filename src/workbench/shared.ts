@@ -31,14 +31,21 @@ export function styleIt(style: Element, text: string) {
 export type MutationOptions = {
   added(node: HTMLElement): void
   removed(node: HTMLElement): void
+  usingUnobservable?: boolean
 }
-export function createMutation(option: MutationOptions) {
-  return new MutationObserver((mutations) => {
+export function createMutation<M extends MutationOptions>(option: M) {
+  const mutationObserver = option.usingUnobservable
+    ? MutationUnObserver
+    : MutationObserver
+  return new mutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       mutation.addedNodes.forEach((node: any) => option.added(node))
       mutation.removedNodes.forEach((node: any) => option.removed(node))
     })
-  })
+    // typescript should infer this, right?
+  }) as M['usingUnobservable'] extends true
+    ? MutationUnObserver
+    : MutationObserver
 }
 
 type D = string | undefined
@@ -48,8 +55,8 @@ type Bridge = {
 }
 export function createAttributeMutation(props: {
   watchAttribute: string
-  activate: (payload: Bridge) => void
-  inactive: (payload: Partial<Bridge>) => void
+  activate: (payload: D) => void
+  inactive: (payload: D) => void
 }) {
   let previousData: D
   const bridgeAttribute = (target: any): D =>
@@ -61,14 +68,10 @@ export function createAttributeMutation(props: {
       if (previousData === newData) return
       previousData = newData
 
-      const payload = {
-        target: mutation.target as HTMLElement,
-        attribute: newData,
-      }
       if (newData) {
-        props.activate(payload)
+        props.activate(newData)
       } else {
-        props.inactive(payload)
+        props.inactive(newData)
       }
     }
   })
@@ -79,7 +82,7 @@ export function createAttributeMutation(props: {
       freezeTarget = target // this is annoying
       previousData = bridgeAttribute(target)
 
-      props.activate({ target, attribute: previousData })
+      props.activate(previousData)
       observer.observe(target, {
         attributes: true,
         attributeFilter: [props.watchAttribute],
@@ -87,7 +90,7 @@ export function createAttributeMutation(props: {
     },
     dispose() {
       // lol this could be a problem
-      props.inactive({ target: freezeTarget, attribute: previousData })
+      props.inactive(previousData)
       observer.disconnect()
     },
   }
@@ -142,4 +145,29 @@ export function watchForRemoval(targetElement: Element, callback: Function) {
     rootObserver.disconnect()
   }
   return dispose
+}
+
+// https://github.com/whatwg/dom/issues/126#issuecomment-1049814948
+class MutationUnObserver extends MutationObserver {
+  private observerTargets: Array<{
+    target: Node
+    options?: MutationObserverInit
+  }> = []
+
+  observe(target: Node, options?: MutationObserverInit): void {
+    this.observerTargets.push({ target, options })
+
+    return super.observe(target, options)
+  }
+
+  unobserve(target: Node): void {
+    const newObserverTargets = this.observerTargets.filter(
+      (ot) => ot.target !== target
+    )
+    this.observerTargets = []
+    this.disconnect()
+    newObserverTargets.forEach((ot) => {
+      this.observe(ot.target, ot.options)
+    })
+  }
 }

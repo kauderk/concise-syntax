@@ -1,7 +1,13 @@
 (function(factory) {
   typeof ignoreDefine === "function" && ignoreDefine.amd ? ignoreDefine(factory) : factory();
 })(function() {
-  "use strict";
+  "use strict";var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => {
+  __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+  return value;
+};
+
   const extensionId = "kauderk.concise-syntax";
   const windowId = "window." + extensionId;
   const bridgeBetweenVscodeExtension = "aria-label";
@@ -28,7 +34,8 @@
     return style.textContent = text.replace(/\r|\n/g, "").replaceAll(/\t+/g, "\n");
   }
   function createMutation(option) {
-    return new MutationObserver((mutations) => {
+    const mutationObserver = option.usingUnobservable ? MutationUnObserver : MutationObserver;
+    return new mutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => option.added(node));
         mutation.removedNodes.forEach((node) => option.removed(node));
@@ -47,30 +54,24 @@
         if (previousData === newData)
           return;
         previousData = newData;
-        const payload = {
-          target: mutation.target,
-          attribute: newData
-        };
         if (newData) {
-          props.activate(payload);
+          props.activate(newData);
         } else {
-          props.inactive(payload);
+          props.inactive(newData);
         }
       }
     });
-    let freezeTarget;
     return {
       activate(target) {
-        freezeTarget = target;
         previousData = bridgeAttribute2(target);
-        props.activate({ target, attribute: previousData });
+        props.activate(previousData);
         observer.observe(target, {
           attributes: true,
           attributeFilter: [props.watchAttribute]
         });
       },
       dispose() {
-        props.inactive({ target: freezeTarget, attribute: previousData });
+        props.inactive(previousData);
         observer.disconnect();
       }
     };
@@ -109,12 +110,33 @@
     }
     return dispose;
   }
+  class MutationUnObserver extends MutationObserver {
+    constructor() {
+      super(...arguments);
+      __publicField(this, "observerTargets", []);
+    }
+    observe(target, options) {
+      this.observerTargets.push({ target, options });
+      return super.observe(target, options);
+    }
+    unobserve(target) {
+      const newObserverTargets = this.observerTargets.filter(
+        (ot) => ot.target !== target
+      );
+      this.observerTargets = [];
+      this.disconnect();
+      newObserverTargets.forEach((ot) => {
+        this.observe(ot.target, ot.options);
+      });
+    }
+  }
   function lifecycle(props) {
     let running = false;
     let anyUsage = false;
     let interval;
     let disposeObserver = () => {
     };
+    let disposeActivate;
     function patch() {
       const dom = props.dom();
       if (running || !dom.check())
@@ -123,10 +145,11 @@
       running = true;
       clearInterval(interval);
       disposeObserver = watchForRemoval(dom.watchForRemoval, reload);
-      props.activate(dom);
+      disposeActivate = props.activate(dom);
     }
     function dispose() {
       var _a;
+      disposeActivate == null ? void 0 : disposeActivate();
       disposeObserver();
       (_a = props.dispose) == null ? void 0 : _a.call(props);
       running = false;
@@ -365,33 +388,33 @@
       if (!node.querySelector(selector))
         return;
       const old = node.editor;
-      const group = ((_a = node.closest("[aria-label][data-mode-id]")) == null ? void 0 : _a.getAttribute("aria-label")) ?? old;
-      node.editor = group;
+      const label = ((_a = node.closest("[aria-label][data-mode-id]")) == null ? void 0 : _a.getAttribute("aria-label")) ?? old;
+      node.editor = label;
       const top = Number((_c = (_b = node.style) == null ? void 0 : _b.top.match(/\d+/)) == null ? void 0 : _c[0]);
       if (isNaN(top) || set.has(top) === add || !add && // most likely a node previous the lifecycle
-      (!group || // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+      (!label || // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
       document.querySelector(
         highlightSelector + `>[style*="${top}"]>` + selector
       ))) {
         return;
       }
-      if (!add && !group) {
+      if (!add && !label) {
         return console.warn("no group", node, top);
       }
       set[add ? "add" : "delete"](top);
       const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
-      const uid = (group ?? windowId) + selector;
+      const uid = (label ?? windowId) + selector;
       let style = stylesContainer.querySelector(
-        `[data-editor="${uid}"]`
+        `[aria-label="${uid}"]`
       );
       if (!style || !stylesContainer.contains(style)) {
         style = document.createElement("style");
-        style.dataset.editor = uid;
+        style.dataset.label = uid;
         stylesContainer.appendChild(style);
       }
       styleIt(
         style,
-        `[aria-label="${group}"]${linesSelector} :is(${lines}) {
+        `[aria-label="${label}"]${linesSelector} :is(${lines}) {
 					--r: ${color};
 			}`
       );
@@ -426,6 +449,7 @@
     };
     const EditorOverlayMap = /* @__PURE__ */ new Map();
     const EditorOverlay = {
+      usingUnobservable: true,
       added(editor) {
         var _a, _b;
         const overlays = (_a = editor.querySelector) == null ? void 0 : _a.call(editor, highlightSelector);
@@ -433,30 +457,46 @@
           return;
         const languageObserver = createAttributeMutation({
           watchAttribute: "data-mode-id",
-          activate: swap,
-          inactive: swap
+          activate(language) {
+            var _a2;
+            if (!language)
+              return;
+            highlightObserver.disconnect();
+            if (language === "typescriptreact") {
+              const overlays2 = (_a2 = editor.querySelector) == null ? void 0 : _a2.call(editor, highlightSelector);
+              if (!overlays2)
+                return console.warn("no overlays");
+              console.log("overlays", arguments);
+              highlightObserver.observe(overlays2, {
+                childList: true
+              });
+            }
+          },
+          inactive(language) {
+            console.log("inactive", arguments);
+            highlightObserver.disconnect();
+          }
+        });
+        const groupObserver = createAttributeMutation({
+          watchAttribute: "aria-label",
+          activate(label) {
+            console.log("activate", arguments);
+            stylesContainer.querySelectorAll(`[aria-label="${label}"]`).forEach((style) => style.remove());
+          },
+          inactive(label) {
+            console.log("inactive", arguments);
+            stylesContainer.querySelectorAll(`[aria-label="${label}"]`).forEach((style) => style.remove());
+          }
         });
         const highlightObserver = createMutation(Highlight);
-        function swap({ attribute }) {
-          var _a2;
-          if (!attribute)
-            return;
-          highlightObserver.disconnect();
-          if (attribute === "typescriptreact") {
-            const overlays2 = (_a2 = editor.querySelector) == null ? void 0 : _a2.call(editor, highlightSelector);
-            if (!overlays2)
-              return console.warn("no overlays");
-            highlightObserver.observe(overlays2, {
-              childList: true
-            });
-          }
-        }
         (_b = EditorOverlayMap.get(editor)) == null ? void 0 : _b.dispose();
         languageObserver.activate(editor);
+        groupObserver.activate(editor);
         EditorOverlayMap.set(editor, {
           dispose() {
             highlightObserver.disconnect();
-            languageObserver == null ? void 0 : languageObserver.dispose();
+            languageObserver.dispose();
+            groupObserver.dispose();
           }
         });
       },
@@ -472,20 +512,56 @@
     const cycle = lifecycle({
       dom() {
         var _a;
-        const overlays = (_a = document.querySelector(highlightSelector)) == null ? void 0 : _a.parentElement;
-        const editor = document.querySelector(idSelector);
+        const root = document.querySelector(
+          "#workbench\\.parts\\.editor > div.content > div > div > div > div > div.monaco-scrollable-element > div.split-view-container"
+        );
+        const editor = root == null ? void 0 : root.querySelector(idSelector);
+        const overlays = (_a = editor == null ? void 0 : editor.querySelector(highlightSelector)) == null ? void 0 : _a.parentElement;
         return {
           check() {
-            return !!(overlays && editor);
+            return !!(root && editor && overlays);
           },
-          watchForRemoval: editor
+          watchForRemoval: root
         };
       },
       activate(dom) {
-        EditorOverlay.added(dom.watchForRemoval);
-        EditorOverlayDeployer.observe(dom.watchForRemoval, {
-          childList: true
+        let editorContainersMap = /* @__PURE__ */ new Set();
+        const rootContainerObserver = createMutation({
+          added(node) {
+            const editorContainers = Array.from(
+              node.querySelectorAll(".editor-container")
+            );
+            editorContainers.forEach((node2) => {
+              if (!editorContainersMap.has(node2)) {
+                debugger;
+                EditorOverlay.added(node2);
+                EditorOverlayDeployer.observe(node2, {
+                  childList: true
+                });
+              } else {
+                editorContainersMap.add(node2);
+              }
+            });
+          },
+          removed(node) {
+            const editorContainers = Array.from(
+              node.querySelectorAll(".editor-container")
+            );
+            editorContainers.forEach((node2) => {
+              if (editorContainersMap.has(node2)) {
+                debugger;
+                EditorOverlay.removed(node2);
+                EditorOverlayDeployer.disconnect();
+                editorContainersMap.delete(node2);
+              }
+            });
+          }
         });
+        rootContainerObserver.observe(dom.watchForRemoval, {
+          childList: true,
+          subtree: true
+        });
+        return () => rootContainerObserver.disconnect();
       },
       dispose() {
         Object.values(EditorOverlayMap).forEach((observer) => observer.dispose());
@@ -493,6 +569,7 @@
         EditorOverlayDeployer.disconnect();
         selectedLines.clear();
         currentLines.clear();
+        stylesContainer.querySelectorAll("[aria-label]").forEach((style) => style.remove());
         stylesContainer.querySelectorAll("style").forEach((style) => {
           style.textContent = "";
         });
@@ -504,7 +581,6 @@
   const highlight = createHighlightLifeCycle();
   const conciseSyntax = {
     activate() {
-      this.dispose();
       syntax.activate();
       highlight.activate();
     },

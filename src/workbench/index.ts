@@ -7,7 +7,6 @@ const highlight = createHighlightLifeCycle()
 
 const conciseSyntax = {
   activate() {
-    this.dispose()
     syntax.activate()
     highlight.activate()
   },
