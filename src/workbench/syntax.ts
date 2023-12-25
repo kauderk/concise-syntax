@@ -20,7 +20,7 @@ const bridgeAttribute = (target: any) =>
  */
 export function createSyntaxLifecycle() {
   let Extension: null | Extension
-  const syntaxStyle = createStyles('')
+  const syntaxStyle = createStyles('hide')
 
   function activate(extension: Extension) {
     Extension = extension // alright...
@@ -38,13 +38,13 @@ export function createSyntaxLifecycle() {
   }
 
   const attributeObserver = createAttributeMutation({
+    watchAttribute: bridgeBetweenVscodeExtension,
     activate() {
       activate(domExtension())
     },
     inactive() {
       inactive()
     },
-    watchAttribute: bridgeBetweenVscodeExtension,
   })
 
   const cycle = lifecycle<Extension>({
@@ -59,12 +59,10 @@ export function createSyntaxLifecycle() {
       }
     },
     activate(dom) {
-      activate(dom)
       attributeObserver.activate(dom.item)
     },
     dispose() {
-      inactive()
-      attributeObserver.disconnect()
+      attributeObserver.dispose()
       syntaxStyle.dispose()
     },
   })

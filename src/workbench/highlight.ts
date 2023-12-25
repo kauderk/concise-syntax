@@ -1,4 +1,4 @@
-import { highlightSelector, linesSelector } from './keys'
+import { highlightSelector, idSelector, linesSelector } from './keys'
 import { lifecycle } from './lifecycle'
 import {
   MutationOptions,
@@ -80,75 +80,79 @@ export function createHighlightLifeCycle() {
         styleIt: selectedStyles.styleIt,
       })
   }
-
-  const Highlight: MutationOptions = {
+  const Highlight = {
     added(node) {
       highlightStyles(node, true)
     },
     removed(node) {
       highlightStyles(node, false)
     },
-  }
-  const highlightEditorMap = new Map<Element, MutationObserver>()
-  const Deployer: MutationOptions = {
-    added(node) {
-      if (!node.matches?.(highlightSelector)) return
+  } satisfies MutationOptions
 
-      const highlightEditor = createMutation(Highlight)
-      highlightEditorMap.get(node)?.disconnect()
-      highlightEditor.observe(node, {
-        childList: true,
+  const EditorOverlayMap = new Map<Element, { dispose(): void }>()
+  const EditorOverlay = {
+    added(editor) {
+      const overlays = editor.querySelector?.(highlightSelector)
+      if (!overlays) return
+      const languageObserver = createAttributeMutation({
+        watchAttribute: 'data-mode-id',
+        activate: swap,
+        inactive: swap,
       })
-      highlightEditorMap.set(node, highlightEditor)
-    },
-    removed(node) {
-      if (!node.matches?.(highlightSelector)) return
+      const highlightObserver = createMutation(Highlight)
+      function swap({ attribute }: any) {
+        if (!attribute) return // hydrating...
+        highlightObserver.disconnect()
 
-      highlightEditorMap.get(node)?.disconnect()
-      highlightEditorMap.delete(node)
+        if (attribute === 'typescriptreact') {
+          const overlays = editor.querySelector?.(highlightSelector)
+          if (!overlays) return console.warn('no overlays')
+          highlightObserver.observe(overlays, {
+            childList: true,
+          })
+        }
+      }
+
+      EditorOverlayMap.get(editor)?.dispose()
+      languageObserver.activate(editor)
+      EditorOverlayMap.set(editor, {
+        dispose() {
+          highlightObserver.disconnect()
+          languageObserver?.dispose()
+        },
+      })
     },
-  }
-  const highlightDeployer = createMutation(Deployer)
-  const attributeObserver = createAttributeMutation({
-    activate({ target }) {
-      Deployer.added(target)
+    removed(editor) {
+      if (!editor.querySelector?.(highlightSelector)) return
+
+      EditorOverlayMap.get(editor)?.dispose()
+      EditorOverlayMap.delete(editor)
     },
-    inactive({ current }) {
-      if (current !== 'typescript') return
-      // highlightDeployer.disconnect()
-      console.log('inactive')
-    },
-    watchAttribute: 'data-mode-id',
-  })
-  const cycle = lifecycle<{
-    watchForRemoval: HTMLElement
-    closestEditorAncestor: HTMLElement
-  }>({
+  } satisfies MutationOptions
+  const EditorOverlayDeployer = createMutation(EditorOverlay)
+
+  const cycle = lifecycle({
     dom() {
-      const editor = document.querySelector(highlightSelector) as HTMLElement
-      const closestEditorAncestor = document.querySelector(
-        '.monaco-scrollable-element'
-      ) as HTMLElement
+      const overlays = document.querySelector(highlightSelector)
+        ?.parentElement as HTMLElement
+      const editor = document.querySelector(idSelector) as HTMLElement
       return {
         check() {
-          return !!(editor && closestEditorAncestor)
+          return !!(overlays && editor)
         },
         watchForRemoval: editor,
-        closestEditorAncestor,
       }
     },
     activate(dom) {
-      attributeObserver.activate(dom.watchForRemoval)
-      highlightDeployer.observe(dom.closestEditorAncestor, {
+      EditorOverlay.added(dom.watchForRemoval)
+      EditorOverlayDeployer.observe(dom.watchForRemoval, {
         childList: true,
-        subtree: true,
       })
     },
     dispose() {
-      attributeObserver.disconnect()
-      Object.values(highlightEditorMap).forEach((editor) => editor.disconnect())
-      highlightEditorMap.clear()
-      highlightDeployer.disconnect()
+      Object.values(EditorOverlayMap).forEach((observer) => observer.dispose())
+      EditorOverlayMap.clear()
+      EditorOverlayDeployer.disconnect()
       selectedLines.clear()
       currentLines.clear()
       selectedStyles.dispose()

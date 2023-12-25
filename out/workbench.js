@@ -49,8 +49,7 @@
         previousData = newData;
         const payload = {
           target: mutation.target,
-          current: newData,
-          previous: previousData
+          attribute: newData
         };
         if (newData) {
           props.activate(payload);
@@ -59,14 +58,19 @@
         }
       }
     });
+    let freezeTarget;
     return {
       activate(target) {
+        freezeTarget = target;
+        previousData = bridgeAttribute2(target);
+        props.activate({ target, attribute: previousData });
         observer.observe(target, {
           attributes: true,
-          attributeFilter: ["data-mode-id"]
+          attributeFilter: [props.watchAttribute]
         });
       },
-      disconnect() {
+      dispose() {
+        props.inactive({ target: freezeTarget, attribute: previousData });
         observer.disconnect();
       }
     };
@@ -81,6 +85,7 @@
         const nodes = Array.from(mutation.removedNodes);
         if (nodes.indexOf(targetElement) > -1 || // parent match
         nodes.some((parent) => parent.contains(targetElement))) {
+          debugger;
           dispose();
           callback();
           return;
@@ -308,7 +313,7 @@
   };
   function createSyntaxLifecycle() {
     let Extension;
-    const syntaxStyle = createStyles("");
+    const syntaxStyle = createStyles("hide");
     function activate(extension) {
       Extension = extension;
       const on = bridgeAttribute(extension.item);
@@ -324,13 +329,13 @@
       Extension.icon.style.removeProperty("font-weight");
     }
     const attributeObserver = createAttributeMutation({
+      watchAttribute: bridgeBetweenVscodeExtension,
       activate() {
         activate(domExtension());
       },
       inactive() {
         inactive();
-      },
-      watchAttribute: bridgeBetweenVscodeExtension
+      }
     });
     const cycle = lifecycle({
       dom() {
@@ -345,12 +350,10 @@
         };
       },
       activate(dom) {
-        activate(dom);
         attributeObserver.activate(dom.item);
       },
       dispose() {
-        inactive();
-        attributeObserver.disconnect();
+        attributeObserver.dispose();
         syntaxStyle.dispose();
       }
     });
@@ -414,65 +417,73 @@
         highlightStyles(node, false);
       }
     };
-    const highlightEditorMap = /* @__PURE__ */ new Map();
-    const Deployer = {
-      added(node) {
+    const EditorOverlayMap = /* @__PURE__ */ new Map();
+    const EditorOverlay = {
+      added(editor) {
         var _a, _b;
-        if (!((_a = node.matches) == null ? void 0 : _a.call(node, highlightSelector)))
+        const overlays = (_a = editor.querySelector) == null ? void 0 : _a.call(editor, highlightSelector);
+        if (!overlays)
           return;
-        const highlightEditor = createMutation(Highlight);
-        (_b = highlightEditorMap.get(node)) == null ? void 0 : _b.disconnect();
-        highlightEditor.observe(node, {
-          childList: true
+        const languageObserver = createAttributeMutation({
+          watchAttribute: "data-mode-id",
+          activate: swap,
+          inactive: swap
         });
-        highlightEditorMap.set(node, highlightEditor);
+        const highlightObserver = createMutation(Highlight);
+        function swap({ attribute }) {
+          var _a2;
+          if (!attribute)
+            return;
+          highlightObserver.disconnect();
+          if (attribute === "typescriptreact") {
+            const overlays2 = (_a2 = editor.querySelector) == null ? void 0 : _a2.call(editor, highlightSelector);
+            if (!overlays2)
+              return console.warn("no overlays");
+            highlightObserver.observe(overlays2, {
+              childList: true
+            });
+          }
+        }
+        (_b = EditorOverlayMap.get(editor)) == null ? void 0 : _b.dispose();
+        languageObserver.activate(editor);
+        EditorOverlayMap.set(editor, {
+          dispose() {
+            highlightObserver.disconnect();
+            languageObserver == null ? void 0 : languageObserver.dispose();
+          }
+        });
       },
-      removed(node) {
+      removed(editor) {
         var _a, _b;
-        if (!((_a = node.matches) == null ? void 0 : _a.call(node, highlightSelector)))
+        if (!((_a = editor.querySelector) == null ? void 0 : _a.call(editor, highlightSelector)))
           return;
-        (_b = highlightEditorMap.get(node)) == null ? void 0 : _b.disconnect();
-        highlightEditorMap.delete(node);
+        (_b = EditorOverlayMap.get(editor)) == null ? void 0 : _b.dispose();
+        EditorOverlayMap.delete(editor);
       }
     };
-    const highlightDeployer = createMutation(Deployer);
-    const attributeObserver = createAttributeMutation({
-      activate({ target }) {
-        Deployer.added(target);
-      },
-      inactive({ current }) {
-        if (current !== "typescript")
-          return;
-        console.log("inactive");
-      },
-      watchAttribute: "data-mode-id"
-    });
+    const EditorOverlayDeployer = createMutation(EditorOverlay);
     const cycle = lifecycle({
       dom() {
-        const editor = document.querySelector(highlightSelector);
-        const closestEditorAncestor = document.querySelector(
-          ".monaco-scrollable-element"
-        );
+        var _a;
+        const overlays = (_a = document.querySelector(highlightSelector)) == null ? void 0 : _a.parentElement;
+        const editor = document.querySelector(idSelector);
         return {
           check() {
-            return !!(editor && closestEditorAncestor);
+            return !!(overlays && editor);
           },
-          watchForRemoval: editor,
-          closestEditorAncestor
+          watchForRemoval: editor
         };
       },
       activate(dom) {
-        attributeObserver.activate(dom.watchForRemoval);
-        highlightDeployer.observe(dom.closestEditorAncestor, {
-          childList: true,
-          subtree: true
+        EditorOverlay.added(dom.watchForRemoval);
+        EditorOverlayDeployer.observe(dom.watchForRemoval, {
+          childList: true
         });
       },
       dispose() {
-        attributeObserver.disconnect();
-        Object.values(highlightEditorMap).forEach((editor) => editor.disconnect());
-        highlightEditorMap.clear();
-        highlightDeployer.disconnect();
+        Object.values(EditorOverlayMap).forEach((observer) => observer.dispose());
+        EditorOverlayMap.clear();
+        EditorOverlayDeployer.disconnect();
         selectedLines.clear();
         currentLines.clear();
         selectedStyles.dispose();
@@ -498,7 +509,6 @@
     window.conciseSyntax.dispose();
   }
   window.conciseSyntax = conciseSyntax;
-  debugger;
   conciseSyntax.activate();
 });
 //# sourceMappingURL=workbench.js.map

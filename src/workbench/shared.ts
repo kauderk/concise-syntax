@@ -39,16 +39,15 @@ export function createMutation(option: MutationOptions) {
   })
 }
 
-type D = string
-type Bridge = (payload: {
+type D = string | undefined
+type Bridge = {
   target: HTMLElement
-  current: string
-  previous: string
-}) => void
+  attribute: D
+}
 export function createAttributeMutation(props: {
-  activate: Bridge
-  inactive: Bridge
   watchAttribute: string
+  activate: (payload: Bridge) => void
+  inactive: (payload: Partial<Bridge>) => void
 }) {
   let previousData: D
   const bridgeAttribute = (target: any): D =>
@@ -62,8 +61,7 @@ export function createAttributeMutation(props: {
 
       const payload = {
         target: mutation.target as HTMLElement,
-        current: newData,
-        previous: previousData,
+        attribute: newData,
       }
       if (newData) {
         props.activate(payload)
@@ -73,14 +71,21 @@ export function createAttributeMutation(props: {
     }
   })
 
+  let freezeTarget: HTMLElement
   return {
     activate(target: HTMLElement) {
+      freezeTarget = target // this is annoying
+      previousData = bridgeAttribute(target)
+
+      props.activate({ target, attribute: previousData })
       observer.observe(target, {
         attributes: true,
-        attributeFilter: ['data-mode-id'],
+        attributeFilter: [props.watchAttribute],
       })
     },
-    disconnect() {
+    dispose() {
+      // lol this could be a problem
+      props.inactive({ target: freezeTarget, attribute: previousData })
       observer.disconnect()
     },
   }
@@ -108,6 +113,7 @@ export function watchForRemoval(targetElement: Element, callback: Function) {
         // parent match
         nodes.some((parent) => parent.contains(targetElement))
       ) {
+        debugger
         dispose()
         callback()
         return

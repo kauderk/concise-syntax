@@ -169,7 +169,7 @@ export async function activate(context: vscode.ExtensionContext) {
       })
       .catch(__catch)
   } else if (wasActive) {
-    await statusBarItem(context)
+    await statusBarItem(context, true)
   }
 
   console.log('vscode-concise-syntax is active')

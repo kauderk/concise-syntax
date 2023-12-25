@@ -212,7 +212,7 @@ async function activate(context) {
       }
     }).catch(__catch);
   } else if (wasActive) {
-    await statusBarItem(context);
+    await statusBarItem(context, true);
   }
   console.log("vscode-concise-syntax is active");
   function __catch(e) {

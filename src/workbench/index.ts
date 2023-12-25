@@ -23,5 +23,4 @@ if (window.conciseSyntax) {
 }
 // @ts-ignore
 window.conciseSyntax = conciseSyntax
-debugger
 conciseSyntax.activate()
