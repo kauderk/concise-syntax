@@ -6,6 +6,8 @@ import {
   styleIt,
   stylesContainer,
 } from './shared'
+const overlaySelector = '.view-overlays'
+
 
 /**
  * @description Change color of highlighted or selected lines
@@ -19,12 +21,7 @@ import {
 export function createHighlightLifeCycle() {
   function createHighlight({ node, selector, add, set, color }: Selected) {
     if (!node.querySelector(selector)) return
-    // @ts-ignore
-    const label = (node.editor =
-      node.closest('[aria-label][data-mode-id]')?.getAttribute('aria-label') ??
-      // @ts-ignore
-      node.editor)
-
+    const label = tryGetAttribute(node, 'aria-label')
     const top = Number(node.style?.top.match(/\d+/)?.[0])
     if (
       isNaN(top) ||
@@ -94,6 +91,47 @@ export function createHighlightLifeCycle() {
         color: 'brown',
       })
   }
+	
+	const OverlayLineTracker = createMutation({
+		options: {
+			childList: true,
+		},
+		added(node) {
+			highlightStyles(node, true)
+		},
+		removed(node) {
+			highlightStyles(node, false)
+		},
+	})
+
+	const EditorLanguageTracker = createAttributeArrayMutation({
+		watchAttribute: ['data-mode-id', 'aria-label'],
+		change(editor:HTMLElement,[language, label], [_, oldLabel]) {
+			if (!language || !label) return // hydrating...
+
+			const overlay = editor.querySelector(overlaySelector)
+			overlay?.setAttribute('aria-label', label)
+			if (!overlay) {
+				return console.error('no overlays')
+			}
+			OverlayLineTracker.untrack(overlay) // maybe disconnect is better a api
+
+			if (!label.match(/(\.tsx$)|(\.tsx, E)/)) {
+				if (!oldLabel) {
+					console.error('no old label', arguments)
+					return
+				}
+				stylesContainer
+					.querySelectorAll(`[aria-label="${oldLabel}"]`)
+					.forEach((style) => style.remove())
+				return
+			}
+			if (language === 'typescriptreact') {
+				console.log('overlays', arguments)
+				OverlayLineTracker.track(overlay)
+			}
+		},
+	})
 
   const cycle = lifecycle({
     dom() {
@@ -118,100 +156,65 @@ export function createHighlightLifeCycle() {
        * 				- editor-instance
        */
       debugger
-      const overlaySelector = '.view-overlays'
       const editorSelector = '.editor-instance'
-      const rootContainerTracker = createMutation({
+      const RootContainerTracker = createMutation({
         options: {
           childList: true,
           subtree: true,
         },
         added(node) {
           if (!node.querySelector) return
-          const overlays = Array.from(node.querySelectorAll(overlaySelector))
-          if (node.matches(overlaySelector)) overlays.push(node)
 
-          overlays.forEach((overlay: any) => {
-            if (!OverlayLinesDeployer.targets.includes(overlay)) {
-              debugger
-              OverlayLinesDeployer.track(overlay)
-            }
-          })
+          // const overlays = Array.from(node.querySelectorAll(overlaySelector))
+          // if (node.matches(overlaySelector)) overlays.push(node)
+
+          // overlays.forEach((overlay: any) => {
+          //   if (!OverlayLineTracker.targets.includes(overlay)) {
+          //     debugger
+          //     OverlayLineTracker.track(overlay)
+          //   }
+          // })
+
+					const editors = Array.from(node.querySelectorAll(editorSelector))
+					if (node.matches(editorSelector)) editors.push(node)
+					editors.forEach((editor: any) => {
+							if (!EditorLanguageTracker.targets.includes(editor)) {
+								debugger
+								EditorLanguageTracker.track(editor)
+							}
+						}
+					)
         },
         removed(node) {
           if (!node.querySelector) return
-          const overlays = Array.from(node.querySelectorAll(overlaySelector))
-          if (node.matches(overlaySelector)) overlays.push(node)
 
-          overlays.forEach((overlay: any) => {
-            if (OverlayLinesDeployer.targets.includes(overlay)) {
-              debugger
-              OverlayLinesDeployer.untrack(overlay)
-            }
-          })
+          // const overlays = Array.from(node.querySelectorAll(overlaySelector))
+          // if (node.matches(overlaySelector)) overlays.push(node)
+
+          // overlays.forEach((overlay: any) => {
+          //   if (OverlayLineTracker.targets.includes(overlay)) {
+          //     debugger
+          //     OverlayLineTracker.untrack(overlay)
+          //   }
+          // })
+
+					const editors = Array.from(node.querySelectorAll(editorSelector))
+					if (node.matches(editorSelector)) editors.push(node)
+					editors.forEach((editor: any) => {
+							if (EditorLanguageTracker.targets.includes(editor)) {
+								debugger
+								EditorLanguageTracker.untrack(editor)
+							}
+						}
+					)
         },
       })
 
-      const OverlayLinesDeployer = createMutation({
-        options: {
-          childList: true,
-        },
-        added(editor) {
-          const getOverlays = () => editor.querySelector?.(highlightSelector)
-          if (!getOverlays()) return
-
-          const languageObserver = createAttributeArrayMutation({
-            watchAttribute: ['data-mode-id', 'aria-label'],
-            change([language, label], [_, oldLabel]) {
-              if (!language || !label) return // hydrating...
-
-              const overlays = getOverlays()
-              if (!overlays) {
-                return console.error('no overlays')
-              }
-              OverlayLineTracker.untrack(overlays) // maybe disconnect is better a api
-
-              if (!label.match(/(\.tsx$)|(\.tsx, E)/)) {
-                if (!oldLabel) {
-                  console.error('no old label', arguments)
-                  return
-                }
-                stylesContainer
-                  .querySelectorAll(`[aria-label="${oldLabel}"]`)
-                  .forEach((style) => style.remove())
-                return
-              }
-              if (language === 'typescriptreact') {
-                console.log('overlays', arguments)
-                OverlayLineTracker.track(overlays)
-              }
-            },
-          })
-
-          const OverlayLineTracker = createMutation({
-            options: {
-              childList: true,
-            },
-            added(node) {
-              highlightStyles(node, true)
-            },
-            removed(node) {
-              highlightStyles(node, false)
-            },
-          })
-
-          languageObserver.activate(editor)
-
-          return function dispose() {
-            OverlayLineTracker.clear()
-            languageObserver.dispose()
-          }
-        },
-      })
-
-      rootContainerTracker.track(dom.watchForRemoval)
+      RootContainerTracker.track(dom.watchForRemoval)
       return () => {
-        rootContainerTracker.clear()
-        OverlayLinesDeployer.clear()
+        RootContainerTracker.clear()
+				EditorLanguageTracker.clear()
+				OverlayLineTracker.clear()
       }
     },
     dispose() {
@@ -236,3 +239,11 @@ type Selected = {
   set: Set<number>
   color: string
 }
+function tryGetAttribute(node: HTMLElement, attribute:string) {
+	// @ts-ignore
+	return node.editor =
+		node.closest(`[${attribute}][data-mode-id]`)?.getAttribute(attribute) ??
+		// @ts-ignore
+		node.editor
+}
+

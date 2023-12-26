@@ -1,13 +1,7 @@
 (function(factory) {
   typeof ignoreDefine === "function" && ignoreDefine.amd ? ignoreDefine(factory) : factory();
 })(function() {
-  "use strict";var __defProp = Object.defineProperty;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __publicField = (obj, key, value) => {
-  __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-  return value;
-};
-
+  "use strict";
   const extensionId = "kauderk.concise-syntax";
   const windowId = "window." + extensionId;
   const bridgeBetweenVscodeExtension = "aria-label";
@@ -34,13 +28,46 @@ var __publicField = (obj, key, value) => {
     return style.textContent = text.replace(/\r|\n/g, "").replaceAll(/\t+/g, "\n");
   }
   function createMutation(option) {
-    const mutationObserver = option.usingUnobservable ? MutationUnObserver : MutationObserver;
-    return new mutationObserver((mutations) => {
+    const trackNodes = /* @__PURE__ */ new Map();
+    const nodes = () => Array.from(trackNodes.keys());
+    function add(node) {
+      trackNodes.set(node, option.added(node));
+    }
+    function remove(node) {
+      var _a, _b;
+      if (nodes().includes(node)) {
+        (_a = trackNodes.get(node)) == null ? void 0 : _a();
+        trackNodes.delete(node);
+      }
+      (_b = option.removed) == null ? void 0 : _b.call(option, node);
+    }
+    const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => option.added(node));
-        mutation.removedNodes.forEach((node) => option.removed(node));
+        mutation.addedNodes.forEach(add);
+        mutation.removedNodes.forEach(remove);
       });
     });
+    return {
+      get targets() {
+        return nodes();
+      },
+      track(target) {
+        add(target);
+        return observer.observe(target, option.options);
+      },
+      untrack(target) {
+        remove(target);
+        observer.disconnect();
+        nodes().forEach((_target) => {
+          observer.observe(_target, option.options);
+        });
+      },
+      clear() {
+        trackNodes.forEach((_, node) => remove(node));
+        trackNodes.clear();
+        observer.disconnect();
+      }
+    };
   }
   function createAttributeMutation(props) {
     let previousData;
@@ -76,6 +103,37 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
+  function createAttributeArrayMutation(props) {
+    let previousData = [];
+    const bridgeAttribute2 = (target) => props.watchAttribute.map((a) => {
+      var _a;
+      return (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, a);
+    });
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        const newData = bridgeAttribute2(mutation.target);
+        if (previousData.some((d, i) => d !== newData[i]))
+          return;
+        const oldAttributes = [...previousData];
+        previousData = newData;
+        props.change(newData, oldAttributes);
+      }
+    });
+    return {
+      activate(target) {
+        previousData = bridgeAttribute2(target);
+        props.change(previousData, previousData);
+        observer.observe(target, {
+          attributes: true,
+          attributeFilter: props.watchAttribute
+        });
+      },
+      dispose() {
+        props.change(previousData, previousData);
+        observer.disconnect();
+      }
+    };
+  }
   function watchForRemoval(targetElement, callback) {
     let done = false;
     let stack = [];
@@ -86,7 +144,7 @@ var __publicField = (obj, key, value) => {
         const nodes = Array.from(mutation.removedNodes);
         if (nodes.indexOf(targetElement) > -1 || // parent match
         nodes.some((parent) => parent.contains(targetElement))) {
-          debugger;
+          console.log("removed", targetElement, stack);
           dispose();
           callback();
           return;
@@ -109,26 +167,6 @@ var __publicField = (obj, key, value) => {
       rootObserver.disconnect();
     }
     return dispose;
-  }
-  class MutationUnObserver extends MutationObserver {
-    constructor() {
-      super(...arguments);
-      __publicField(this, "observerTargets", []);
-    }
-    observe(target, options) {
-      this.observerTargets.push({ target, options });
-      return super.observe(target, options);
-    }
-    unobserve(target) {
-      const newObserverTargets = this.observerTargets.filter(
-        (ot) => ot.target !== target
-      );
-      this.observerTargets = [];
-      this.disconnect();
-      newObserverTargets.forEach((ot) => {
-        this.observe(ot.target, ot.options);
-      });
-    }
   }
   function lifecycle(props) {
     let running = false;
@@ -387,9 +425,8 @@ var __publicField = (obj, key, value) => {
       var _a, _b, _c;
       if (!node.querySelector(selector))
         return;
-      const old = node.editor;
-      const label = ((_a = node.closest("[aria-label][data-mode-id]")) == null ? void 0 : _a.getAttribute("aria-label")) ?? old;
-      node.editor = label;
+      const label = node.editor = ((_a = node.closest("[aria-label][data-mode-id]")) == null ? void 0 : _a.getAttribute("aria-label")) ?? // @ts-ignore
+      node.editor;
       const top = Number((_c = (_b = node.style) == null ? void 0 : _b.top.match(/\d+/)) == null ? void 0 : _c[0]);
       if (isNaN(top) || set.has(top) === add || !add && // most likely a node previous the lifecycle
       (!label || // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
@@ -408,8 +445,9 @@ var __publicField = (obj, key, value) => {
         `[aria-label="${uid}"]`
       );
       if (!style || !stylesContainer.contains(style)) {
+        console.log("creating style", uid);
         style = document.createElement("style");
-        style.dataset.label = uid;
+        style.setAttribute("aria-label", uid);
         stylesContainer.appendChild(style);
       }
       styleIt(
@@ -439,76 +477,6 @@ var __publicField = (obj, key, value) => {
         color: "brown"
       });
     }
-    const Highlight = {
-      added(node) {
-        highlightStyles(node, true);
-      },
-      removed(node) {
-        highlightStyles(node, false);
-      }
-    };
-    const EditorOverlayMap = /* @__PURE__ */ new Map();
-    const EditorOverlay = {
-      usingUnobservable: true,
-      added(editor) {
-        var _a, _b;
-        const overlays = (_a = editor.querySelector) == null ? void 0 : _a.call(editor, highlightSelector);
-        if (!overlays)
-          return;
-        const languageObserver = createAttributeMutation({
-          watchAttribute: "data-mode-id",
-          activate(language) {
-            var _a2;
-            if (!language)
-              return;
-            highlightObserver.disconnect();
-            if (language === "typescriptreact") {
-              const overlays2 = (_a2 = editor.querySelector) == null ? void 0 : _a2.call(editor, highlightSelector);
-              if (!overlays2)
-                return console.warn("no overlays");
-              console.log("overlays", arguments);
-              highlightObserver.observe(overlays2, {
-                childList: true
-              });
-            }
-          },
-          inactive(language) {
-            console.log("inactive", arguments);
-            highlightObserver.disconnect();
-          }
-        });
-        const groupObserver = createAttributeMutation({
-          watchAttribute: "aria-label",
-          activate(label) {
-            console.log("activate", arguments);
-            stylesContainer.querySelectorAll(`[aria-label="${label}"]`).forEach((style) => style.remove());
-          },
-          inactive(label) {
-            console.log("inactive", arguments);
-            stylesContainer.querySelectorAll(`[aria-label="${label}"]`).forEach((style) => style.remove());
-          }
-        });
-        const highlightObserver = createMutation(Highlight);
-        (_b = EditorOverlayMap.get(editor)) == null ? void 0 : _b.dispose();
-        languageObserver.activate(editor);
-        groupObserver.activate(editor);
-        EditorOverlayMap.set(editor, {
-          dispose() {
-            highlightObserver.disconnect();
-            languageObserver.dispose();
-            groupObserver.dispose();
-          }
-        });
-      },
-      removed(editor) {
-        var _a, _b;
-        if (!((_a = editor.querySelector) == null ? void 0 : _a.call(editor, highlightSelector)))
-          return;
-        (_b = EditorOverlayMap.get(editor)) == null ? void 0 : _b.dispose();
-        EditorOverlayMap.delete(editor);
-      }
-    };
-    const EditorOverlayDeployer = createMutation(EditorOverlay);
     const cycle = lifecycle({
       dom() {
         var _a;
@@ -525,48 +493,100 @@ var __publicField = (obj, key, value) => {
         };
       },
       activate(dom) {
-        let editorContainersMap = /* @__PURE__ */ new Set();
-        const rootContainerObserver = createMutation({
+        debugger;
+        const overlaySelector = ".view-overlays";
+        const rootContainerTracker = createMutation({
+          options: {
+            childList: true,
+            subtree: true
+          },
           added(node) {
-            const editorContainers = Array.from(
-              node.querySelectorAll(".editor-container")
-            );
-            editorContainers.forEach((node2) => {
-              if (!editorContainersMap.has(node2)) {
+            if (!node.querySelector)
+              return;
+            const overlays = Array.from(node.querySelectorAll(overlaySelector));
+            if (node.matches(overlaySelector))
+              overlays.push(node);
+            overlays.forEach((overlay) => {
+              if (!OverlayLinesDeployer.targets.includes(overlay)) {
                 debugger;
-                EditorOverlay.added(node2);
-                EditorOverlayDeployer.observe(node2, {
-                  childList: true
-                });
-              } else {
-                editorContainersMap.add(node2);
+                OverlayLinesDeployer.track(overlay);
               }
             });
           },
           removed(node) {
-            const editorContainers = Array.from(
-              node.querySelectorAll(".editor-container")
-            );
-            editorContainers.forEach((node2) => {
-              if (editorContainersMap.has(node2)) {
+            if (!node.querySelector)
+              return;
+            const overlays = Array.from(node.querySelectorAll(overlaySelector));
+            if (node.matches(overlaySelector))
+              overlays.push(node);
+            overlays.forEach((overlay) => {
+              if (OverlayLinesDeployer.targets.includes(overlay)) {
                 debugger;
-                EditorOverlay.removed(node2);
-                EditorOverlayDeployer.disconnect();
-                editorContainersMap.delete(node2);
+                OverlayLinesDeployer.untrack(overlay);
               }
             });
           }
         });
-        rootContainerObserver.observe(dom.watchForRemoval, {
-          childList: true,
-          subtree: true
+        const OverlayLinesDeployer = createMutation({
+          options: {
+            childList: true
+          },
+          added(editor) {
+            const getOverlays = () => {
+              var _a;
+              return (_a = editor.querySelector) == null ? void 0 : _a.call(editor, highlightSelector);
+            };
+            if (!getOverlays())
+              return;
+            const languageObserver = createAttributeArrayMutation({
+              watchAttribute: ["data-mode-id", "aria-label"],
+              change([language, label], [_, oldLabel]) {
+                if (!language || !label)
+                  return;
+                const overlays = getOverlays();
+                if (!overlays) {
+                  return console.error("no overlays");
+                }
+                OverlayLineTracker.untrack(overlays);
+                if (!label.match(/(\.tsx$)|(\.tsx, E)/)) {
+                  if (!oldLabel) {
+                    console.error("no old label", arguments);
+                    return;
+                  }
+                  stylesContainer.querySelectorAll(`[aria-label="${oldLabel}"]`).forEach((style) => style.remove());
+                  return;
+                }
+                if (language === "typescriptreact") {
+                  console.log("overlays", arguments);
+                  OverlayLineTracker.track(overlays);
+                }
+              }
+            });
+            const OverlayLineTracker = createMutation({
+              options: {
+                childList: true
+              },
+              added(node) {
+                highlightStyles(node, true);
+              },
+              removed(node) {
+                highlightStyles(node, false);
+              }
+            });
+            languageObserver.activate(editor);
+            return function dispose() {
+              OverlayLineTracker.clear();
+              languageObserver.dispose();
+            };
+          }
         });
-        return () => rootContainerObserver.disconnect();
+        rootContainerTracker.track(dom.watchForRemoval);
+        return () => {
+          rootContainerTracker.clear();
+          OverlayLinesDeployer.clear();
+        };
       },
       dispose() {
-        Object.values(EditorOverlayMap).forEach((observer) => observer.dispose());
-        EditorOverlayMap.clear();
-        EditorOverlayDeployer.disconnect();
         selectedLines.clear();
         currentLines.clear();
         stylesContainer.querySelectorAll("[aria-label]").forEach((style) => style.remove());

@@ -29,23 +29,55 @@ export function styleIt(style: Element, text: string) {
 }
 
 export type MutationOptions = {
-  added(node: HTMLElement): void
-  removed(node: HTMLElement): void
-  usingUnobservable?: boolean
+  added(node: HTMLElement): void | (() => void)
+  removed?(node: HTMLElement): void
+  options: MutationObserverInit
 }
 export function createMutation<M extends MutationOptions>(option: M) {
-  const mutationObserver = option.usingUnobservable
-    ? MutationUnObserver
-    : MutationObserver
-  return new mutationObserver((mutations) => {
+  const trackNodes = new Map<HTMLElement, void | (() => void)>()
+  const nodes = () => Array.from(trackNodes.keys())
+
+  // https://github.com/whatwg/dom/issues/126#issuecomment-1049814948
+
+  function add(node: any) {
+    trackNodes.set(node, option.added(node))
+  }
+  function remove(node: any) {
+    if (nodes().includes(node)) {
+      trackNodes.get(node)?.()
+      trackNodes.delete(node)
+    }
+    option.removed?.(node)
+  }
+
+  const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node: any) => option.added(node))
-      mutation.removedNodes.forEach((node: any) => option.removed(node))
+      mutation.addedNodes.forEach(add)
+      mutation.removedNodes.forEach(remove)
     })
-    // typescript should infer this, right?
-  }) as M['usingUnobservable'] extends true
-    ? MutationUnObserver
-    : MutationObserver
+  })
+
+  return {
+    get targets() {
+      return nodes()
+    },
+    track(target: Element) {
+      add(target)
+      return observer.observe(target, option.options)
+    },
+    untrack(target: Element) {
+      remove(target)
+      observer.disconnect()
+      nodes().forEach((_target) => {
+        observer.observe(_target, option.options)
+      })
+    },
+    clear() {
+      trackNodes.forEach((_, node) => remove(node))
+      trackNodes.clear()
+      observer.disconnect()
+    },
+  }
 }
 
 type D = string | undefined
@@ -76,10 +108,8 @@ export function createAttributeMutation(props: {
     }
   })
 
-  let freezeTarget: HTMLElement
   return {
     activate(target: HTMLElement) {
-      freezeTarget = target // this is annoying
       previousData = bridgeAttribute(target)
 
       props.activate(previousData)
@@ -91,6 +121,40 @@ export function createAttributeMutation(props: {
     dispose() {
       // lol this could be a problem
       props.inactive(previousData)
+      observer.disconnect()
+    },
+  }
+}
+export function createAttributeArrayMutation(props: {
+  watchAttribute: string[]
+  change: (newAttributes: D[], oldAttributes: D[]) => void
+}) {
+  let previousData: D[] = []
+  const bridgeAttribute = (target: any): D[] =>
+    props.watchAttribute.map((a) => target?.getAttribute?.(a))
+
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      const newData = bridgeAttribute(mutation.target)
+      if (previousData.some((d, i) => d !== newData[i])) return
+      const oldAttributes = [...previousData]
+      previousData = newData
+
+      props.change(newData, oldAttributes)
+    }
+  })
+
+  return {
+    activate(target: HTMLElement) {
+      previousData = bridgeAttribute(target)
+      props.change(previousData, previousData)
+      observer.observe(target, {
+        attributes: true,
+        attributeFilter: props.watchAttribute,
+      })
+    },
+    dispose() {
+      props.change(previousData, previousData)
       observer.disconnect()
     },
   }
@@ -118,7 +182,7 @@ export function watchForRemoval(targetElement: Element, callback: Function) {
         // parent match
         nodes.some((parent) => parent.contains(targetElement))
       ) {
-        debugger
+        console.log('removed', targetElement, stack)
         dispose()
         callback()
         return
@@ -145,29 +209,4 @@ export function watchForRemoval(targetElement: Element, callback: Function) {
     rootObserver.disconnect()
   }
   return dispose
-}
-
-// https://github.com/whatwg/dom/issues/126#issuecomment-1049814948
-class MutationUnObserver extends MutationObserver {
-  private observerTargets: Array<{
-    target: Node
-    options?: MutationObserverInit
-  }> = []
-
-  observe(target: Node, options?: MutationObserverInit): void {
-    this.observerTargets.push({ target, options })
-
-    return super.observe(target, options)
-  }
-
-  unobserve(target: Node): void {
-    const newObserverTargets = this.observerTargets.filter(
-      (ot) => ot.target !== target
-    )
-    this.observerTargets = []
-    this.disconnect()
-    newObserverTargets.forEach((ot) => {
-      this.observe(ot.target, ot.options)
-    })
-  }
 }
