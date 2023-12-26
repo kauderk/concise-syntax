@@ -1,0 +1,20 @@
+{
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "scope": "keyword.control.flow.ts, keyword.control.conditional.ts, keyword.control.loop.ts",
+        "settings": {
+          "foreground": "#e9cf3c",
+          "fontStyle": "italic underline"
+        }
+      },
+      {
+        // const, let, var to gray
+        "scope": "storage.type.js, storage.type.ts",
+        "settings": {
+          "foreground": "#c792eab5"
+        }
+      }
+    ]
+  }
+}
