@@ -59,9 +59,11 @@ export function createSyntaxLifecycle() {
       }
     },
     activate(dom) {
+      debugger
       attributeObserver.activate(dom.item)
     },
     dispose() {
+      debugger
       attributeObserver.dispose()
       syntaxStyle.dispose()
     },

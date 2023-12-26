@@ -1,11 +1,17 @@
-import { highlightSelector, idSelector, linesSelector, windowId } from './keys'
+import {
+  highlightSelector,
+  idSelector,
+  linesSelector,
+  overlaySelector,
+} from './keys'
 import { lifecycle } from './lifecycle'
 import {
   createAttributeArrayMutation,
   createMutation,
+  createSimpleMutation,
   styleIt,
-  stylesContainer,
 } from './shared'
+import { Selected, tryGetAttribute, styles, queryEditors } from './utils'
 
 /**
  * @description Change color of highlighted or selected lines
@@ -19,29 +25,20 @@ import {
 export function createHighlightLifeCycle() {
   function createHighlight({ node, selector, add, set, color }: Selected) {
     if (!node.querySelector(selector)) return
-    // @ts-ignore
-    const label = (node.editor =
-      node.closest('[aria-label][data-mode-id]')?.getAttribute('aria-label') ??
-      // @ts-ignore
-      node.editor)
-
+    const label = tryGetAttribute(node, 'aria-label')
     const top = Number(node.style?.top.match(/\d+/)?.[0])
     if (
+      !label ||
       isNaN(top) ||
       set.has(top) === add ||
       (!add &&
         // most likely a node previous the lifecycle
-        (!label ||
-          // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
-          document.querySelector(
-            highlightSelector + `>[style*="${top}"]>` + selector
-          )))
+        // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+        document.querySelector(
+          highlightSelector + `>[style*="${top}"]>` + selector
+        ))
     ) {
       return
-    }
-
-    if (!add && !label) {
-      return console.warn('no group', node, top)
     }
 
     // funny code
@@ -51,19 +48,8 @@ export function createHighlightLifeCycle() {
       .reduce((acc, top) => acc + `[style*="${top}"],`, '')
       .slice(0, -1)
 
-    const uid = (label ?? windowId) + selector
-    let style = stylesContainer.querySelector(
-      `[aria-label="${uid}"]`
-    ) as HTMLElement
-    if (!style || !stylesContainer.contains(style)) {
-      console.log('creating style', uid)
-      style = document.createElement('style')
-      style.setAttribute('aria-label', uid)
-      stylesContainer.appendChild(style)
-    }
-
     styleIt(
-      style,
+      styles.getOrCreateLabeledStyle(label + selector),
       `[aria-label="${label}"]${linesSelector} :is(${lines}) {
 					--r: ${color};
 			}`
@@ -95,6 +81,68 @@ export function createHighlightLifeCycle() {
       })
   }
 
+  const OverlayLineTracker = createMutation({
+    options: {
+      childList: true,
+    },
+    added(node) {
+      highlightStyles(node, true)
+    },
+    removed(node) {
+      highlightStyles(node, false)
+    },
+  })
+
+  const EditorLanguageTracker = createAttributeArrayMutation({
+    watchAttribute: ['data-mode-id', 'aria-label'],
+    change(editor: HTMLElement, [language, label], [, oldLabel]) {
+      if (!language || !label) return // hydrating...
+
+      const overlay = editor.querySelector(overlaySelector)
+      overlay?.setAttribute('aria-label', label) // TODO: find a better way to pass this data, it is this to prevent virtual dom shenanigans
+      if (!overlay) {
+        return console.error('no overlays')
+      }
+      OverlayLineTracker.untrack(overlay)
+
+      if (label != oldLabel || !label.match(/(\.tsx$)|(\.tsx, E)/)) {
+        if (!oldLabel) {
+          console.error('no old label', arguments)
+          return
+        }
+        styles.clear(oldLabel)
+        return
+      }
+      if (language === 'typescriptreact') {
+        console.log('overlays', arguments)
+        OverlayLineTracker.track(overlay) // FIXME: the target shouldn't be part of the tracker internal state
+      }
+    },
+  })
+
+  const RootContainerTracker = createSimpleMutation({
+    options: {
+      childList: true,
+      subtree: true,
+    },
+    added(node) {
+      queryEditors(node).forEach((editor) => {
+        if (!EditorLanguageTracker.targets.includes(editor)) {
+          debugger
+          EditorLanguageTracker.track(editor)
+        }
+      })
+    },
+    removed(node) {
+      queryEditors(node).forEach((editor) => {
+        if (EditorLanguageTracker.targets.includes(editor)) {
+          debugger
+          EditorLanguageTracker.untrack(editor)
+        }
+      })
+    },
+  })
+
   const cycle = lifecycle({
     dom() {
       const root = document.querySelector(
@@ -111,128 +159,18 @@ export function createHighlightLifeCycle() {
       }
     },
     activate(dom) {
-      /**
-       * - split-view-container
-       * 		- split-view-view -> Recursion
-       * 			- editor-container
-       * 				- editor-instance
-       */
       debugger
-      const overlaySelector = '.view-overlays'
-      const editorSelector = '.editor-instance'
-      const rootContainerTracker = createMutation({
-        options: {
-          childList: true,
-          subtree: true,
-        },
-        added(node) {
-          if (!node.querySelector) return
-          const overlays = Array.from(node.querySelectorAll(overlaySelector))
-          if (node.matches(overlaySelector)) overlays.push(node)
-
-          overlays.forEach((overlay: any) => {
-            if (!OverlayLinesDeployer.targets.includes(overlay)) {
-              debugger
-              OverlayLinesDeployer.track(overlay)
-            }
-          })
-        },
-        removed(node) {
-          if (!node.querySelector) return
-          const overlays = Array.from(node.querySelectorAll(overlaySelector))
-          if (node.matches(overlaySelector)) overlays.push(node)
-
-          overlays.forEach((overlay: any) => {
-            if (OverlayLinesDeployer.targets.includes(overlay)) {
-              debugger
-              OverlayLinesDeployer.untrack(overlay)
-            }
-          })
-        },
-      })
-
-      const OverlayLinesDeployer = createMutation({
-        options: {
-          childList: true,
-        },
-        added(editor) {
-          const getOverlays = () => editor.querySelector?.(highlightSelector)
-          if (!getOverlays()) return
-
-          const languageObserver = createAttributeArrayMutation({
-            watchAttribute: ['data-mode-id', 'aria-label'],
-            change([language, label], [_, oldLabel]) {
-              if (!language || !label) return // hydrating...
-
-              const overlays = getOverlays()
-              if (!overlays) {
-                return console.error('no overlays')
-              }
-              OverlayLineTracker.untrack(overlays) // maybe disconnect is better a api
-
-              if (!label.match(/(\.tsx$)|(\.tsx, E)/)) {
-                if (!oldLabel) {
-                  console.error('no old label', arguments)
-                  return
-                }
-                stylesContainer
-                  .querySelectorAll(`[aria-label="${oldLabel}"]`)
-                  .forEach((style) => style.remove())
-                return
-              }
-              if (language === 'typescriptreact') {
-                console.log('overlays', arguments)
-                OverlayLineTracker.track(overlays)
-              }
-            },
-          })
-
-          const OverlayLineTracker = createMutation({
-            options: {
-              childList: true,
-            },
-            added(node) {
-              highlightStyles(node, true)
-            },
-            removed(node) {
-              highlightStyles(node, false)
-            },
-          })
-
-          languageObserver.activate(editor)
-
-          return function dispose() {
-            OverlayLineTracker.clear()
-            languageObserver.dispose()
-          }
-        },
-      })
-
-      rootContainerTracker.track(dom.watchForRemoval)
-      return () => {
-        rootContainerTracker.clear()
-        OverlayLinesDeployer.clear()
-      }
+      RootContainerTracker.track(dom.watchForRemoval)
+      return () => RootContainerTracker.untrack(dom.watchForRemoval)
     },
     dispose() {
+      EditorLanguageTracker.clear()
+      OverlayLineTracker.clear()
       selectedLines.clear()
       currentLines.clear()
-      stylesContainer
-        .querySelectorAll('[aria-label]')
-        .forEach((style) => style.remove())
-      stylesContainer.querySelectorAll('style').forEach((style) => {
-        style.textContent = ''
-      })
+      styles.clearAll()
     },
   })
 
   return cycle
-}
-
-type Selected = {
-  node: HTMLElement
-  selector: string
-  add: boolean
-  set: Set<number>
-  color: string
 }

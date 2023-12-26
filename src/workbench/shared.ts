@@ -28,12 +28,12 @@ export function styleIt(style: Element, text: string) {
     .replaceAll(/\t+/g, '\n'))
 }
 
-export type MutationOptions = {
+export type MutationOptions<T> = {
   added(node: HTMLElement): void | (() => void)
-  removed?(node: HTMLElement): void
+  removed(node: HTMLElement): void
   options: MutationObserverInit
 }
-export function createMutation<M extends MutationOptions>(option: M) {
+export function createMutation<M>(option: MutationOptions<M>) {
   const trackNodes = new Map<HTMLElement, void | (() => void)>()
   const nodes = () => Array.from(trackNodes.keys())
 
@@ -46,8 +46,8 @@ export function createMutation<M extends MutationOptions>(option: M) {
     if (nodes().includes(node)) {
       trackNodes.get(node)?.()
       trackNodes.delete(node)
+      option.removed?.(node)
     }
-    option.removed?.(node)
   }
 
   const observer = new MutationObserver((mutations) => {
@@ -75,6 +75,30 @@ export function createMutation<M extends MutationOptions>(option: M) {
     clear() {
       trackNodes.forEach((_, node) => remove(node))
       trackNodes.clear()
+      observer.disconnect()
+    },
+  }
+}
+
+export function createSimpleMutation(options: {
+  added(node: HTMLElement): void
+  removed(node: HTMLElement): void
+  options: MutationObserverInit
+}) {
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => options.added(node as any))
+      mutation.removedNodes.forEach((node) => options.added(node as any))
+    })
+  })
+
+  return {
+    track(target: HTMLElement) {
+      options.added(target)
+      observer.observe(target, options.options)
+    },
+    untrack(target: HTMLElement) {
+      options.removed(target)
       observer.disconnect()
     },
   }
@@ -127,35 +151,56 @@ export function createAttributeMutation(props: {
 }
 export function createAttributeArrayMutation(props: {
   watchAttribute: string[]
-  change: (newAttributes: D[], oldAttributes: D[]) => void
+  change: (target: HTMLElement, newAttributes: D[], oldAttributes: D[]) => void
 }) {
-  let previousData: D[] = []
+  const trackNodes = new Map<HTMLElement, D[]>()
+  const nodes = () => Array.from(trackNodes.keys())
   const bridgeAttribute = (target: any): D[] =>
     props.watchAttribute.map((a) => target?.getAttribute?.(a))
 
+  function change(target: HTMLElement) {
+    const newData = bridgeAttribute(target)
+    const previousData = trackNodes.get(target) ?? []
+    if (newData.every((d, i) => d === previousData[i])) return
+    const oldAttributes = [...previousData]
+    trackNodes.set(target, newData)
+
+    props.change(target, newData, oldAttributes)
+  }
+  function remove(target: HTMLElement) {
+    if (nodes().includes(target)) {
+      change(target)
+      trackNodes.delete(target)
+    }
+  }
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      const newData = bridgeAttribute(mutation.target)
-      if (previousData.some((d, i) => d !== newData[i])) return
-      const oldAttributes = [...previousData]
-      previousData = newData
-
-      props.change(newData, oldAttributes)
+      change(mutation.target as HTMLElement)
     }
   })
-
+  const options = {
+    attributes: true,
+    attributeFilter: props.watchAttribute,
+  }
   return {
-    activate(target: HTMLElement) {
-      previousData = bridgeAttribute(target)
-      props.change(previousData, previousData)
-      observer.observe(target, {
-        attributes: true,
-        attributeFilter: props.watchAttribute,
+    get targets() {
+      return nodes()
+    },
+    track(target: HTMLElement) {
+      trackNodes.set(target, [])
+      change(target)
+
+      observer.observe(target, options)
+    },
+    untrack(target: HTMLElement) {
+      remove(target)
+      observer.disconnect()
+      nodes().forEach((target) => {
+        observer.observe(target, options)
       })
     },
-    dispose() {
-      props.change(previousData, previousData)
-      observer.disconnect()
+    clear() {
+      nodes().forEach(remove)
     },
   }
 }

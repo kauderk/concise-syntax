@@ -5,9 +5,11 @@
   const extensionId = "kauderk.concise-syntax";
   const windowId = "window." + extensionId;
   const bridgeBetweenVscodeExtension = "aria-label";
+  const editorSelector = ".editor-instance";
   const idSelector = '[data-mode-id="typescriptreact"]';
   const linesSelector = idSelector + ` .view-lines.monaco-mouse-cursor-text`;
-  const highlightSelector = idSelector + ` .view-overlays`;
+  const overlaySelector = ".view-overlays";
+  const highlightSelector = idSelector + ` ` + overlaySelector;
   const stylesContainer = document.getElementById(windowId) ?? document.createElement("div");
   stylesContainer.id = windowId;
   document.body.appendChild(stylesContainer);
@@ -38,8 +40,8 @@
       if (nodes().includes(node)) {
         (_a = trackNodes.get(node)) == null ? void 0 : _a();
         trackNodes.delete(node);
+        (_b = option.removed) == null ? void 0 : _b.call(option, node);
       }
-      (_b = option.removed) == null ? void 0 : _b.call(option, node);
     }
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
@@ -65,6 +67,24 @@
       clear() {
         trackNodes.forEach((_, node) => remove(node));
         trackNodes.clear();
+        observer.disconnect();
+      }
+    };
+  }
+  function createSimpleMutation(options) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => options.added(node));
+        mutation.removedNodes.forEach((node) => options.added(node));
+      });
+    });
+    return {
+      track(target) {
+        options.added(target);
+        observer.observe(target, options.options);
+      },
+      untrack(target) {
+        options.removed(target);
         observer.disconnect();
       }
     };
@@ -104,33 +124,54 @@
     };
   }
   function createAttributeArrayMutation(props) {
-    let previousData = [];
+    const trackNodes = /* @__PURE__ */ new Map();
+    const nodes = () => Array.from(trackNodes.keys());
     const bridgeAttribute2 = (target) => props.watchAttribute.map((a) => {
       var _a;
       return (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, a);
     });
+    function change(target) {
+      const newData = bridgeAttribute2(target);
+      const previousData = trackNodes.get(target) ?? [];
+      if (newData.every((d, i) => d === previousData[i]))
+        return;
+      const oldAttributes = [...previousData];
+      trackNodes.set(target, newData);
+      props.change(target, newData, oldAttributes);
+    }
+    function remove(target) {
+      if (nodes().includes(target)) {
+        change(target);
+        trackNodes.delete(target);
+      }
+    }
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        const newData = bridgeAttribute2(mutation.target);
-        if (previousData.some((d, i) => d !== newData[i]))
-          return;
-        const oldAttributes = [...previousData];
-        previousData = newData;
-        props.change(newData, oldAttributes);
+        change(mutation.target);
       }
     });
+    const options = {
+      attributes: true,
+      attributeFilter: props.watchAttribute
+    };
     return {
-      activate(target) {
-        previousData = bridgeAttribute2(target);
-        props.change(previousData, previousData);
-        observer.observe(target, {
-          attributes: true,
-          attributeFilter: props.watchAttribute
+      get targets() {
+        return nodes();
+      },
+      track(target) {
+        trackNodes.set(target, []);
+        change(target);
+        observer.observe(target, options);
+      },
+      untrack(target) {
+        remove(target);
+        observer.disconnect();
+        nodes().forEach((target2) => {
+          observer.observe(target2, options);
         });
       },
-      dispose() {
-        props.change(previousData, previousData);
-        observer.disconnect();
+      clear() {
+        nodes().forEach(remove);
       }
     };
   }
@@ -411,47 +452,74 @@
         };
       },
       activate(dom) {
+        debugger;
         attributeObserver.activate(dom.item);
       },
       dispose() {
+        debugger;
         attributeObserver.dispose();
         syntaxStyle.dispose();
       }
     });
     return cycle;
   }
+  function queryEditors(node) {
+    if (!node.querySelector)
+      return [];
+    const editors = Array.from(node.querySelectorAll(editorSelector));
+    if (node.matches(editorSelector))
+      editors.push(node);
+    return editors;
+  }
+  function clear(label) {
+    stylesContainer.querySelectorAll(label ? `[aria-label="${label}"]` : "[aria-label]").forEach((style) => style.remove());
+  }
+  const styles = {
+    clear(label) {
+      clear(label);
+    },
+    clearAll() {
+      clear();
+      stylesContainer.querySelectorAll("style").forEach((style) => {
+        style.textContent = "";
+      });
+    },
+    getOrCreateLabeledStyle(label) {
+      let style = stylesContainer.querySelector(
+        `[aria-label="${label}"]`
+      );
+      if (!style || !stylesContainer.contains(style)) {
+        console.log("creating style", label);
+        style = document.createElement("style");
+        style.setAttribute("aria-label", label);
+        stylesContainer.appendChild(style);
+      }
+      return style;
+    }
+  };
+  function tryGetAttribute(line, attribute) {
+    var _a;
+    return line.editor = ((_a = line.closest(`[${attribute}]`)) == null ? void 0 : _a.getAttribute(attribute)) ?? // @ts-ignore
+    line.editor;
+  }
   function createHighlightLifeCycle() {
     function createHighlight({ node, selector, add, set, color }) {
-      var _a, _b, _c;
+      var _a, _b;
       if (!node.querySelector(selector))
         return;
-      const label = node.editor = ((_a = node.closest("[aria-label][data-mode-id]")) == null ? void 0 : _a.getAttribute("aria-label")) ?? // @ts-ignore
-      node.editor;
-      const top = Number((_c = (_b = node.style) == null ? void 0 : _b.top.match(/\d+/)) == null ? void 0 : _c[0]);
-      if (isNaN(top) || set.has(top) === add || !add && // most likely a node previous the lifecycle
-      (!label || // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+      const label = tryGetAttribute(node, "aria-label");
+      const top = Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
+      if (!label || isNaN(top) || set.has(top) === add || !add && // most likely a node previous the lifecycle
+      // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
       document.querySelector(
         highlightSelector + `>[style*="${top}"]>` + selector
-      ))) {
+      )) {
         return;
-      }
-      if (!add && !label) {
-        return console.warn("no group", node, top);
       }
       set[add ? "add" : "delete"](top);
       const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
-      const uid = (label ?? windowId) + selector;
-      let style = stylesContainer.querySelector(
-        `[aria-label="${uid}"]`
-      );
-      if (!style || !stylesContainer.contains(style)) {
-        console.log("creating style", uid);
-        style = document.createElement("style");
-        style.setAttribute("aria-label", uid);
-        stylesContainer.appendChild(style);
-      }
       styleIt(
-        style,
+        styles.getOrCreateLabeledStyle(label + selector),
         `[aria-label="${label}"]${linesSelector} :is(${lines}) {
 					--r: ${color};
 			}`
@@ -477,6 +545,64 @@
         color: "brown"
       });
     }
+    const OverlayLineTracker = createMutation({
+      options: {
+        childList: true
+      },
+      added(node) {
+        highlightStyles(node, true);
+      },
+      removed(node) {
+        highlightStyles(node, false);
+      }
+    });
+    const EditorLanguageTracker = createAttributeArrayMutation({
+      watchAttribute: ["data-mode-id", "aria-label"],
+      change(editor, [language, label], [, oldLabel]) {
+        if (!language || !label)
+          return;
+        const overlay = editor.querySelector(overlaySelector);
+        overlay == null ? void 0 : overlay.setAttribute("aria-label", label);
+        if (!overlay) {
+          return console.error("no overlays");
+        }
+        OverlayLineTracker.untrack(overlay);
+        if (label != oldLabel || !label.match(/(\.tsx$)|(\.tsx, E)/)) {
+          if (!oldLabel) {
+            console.error("no old label", arguments);
+            return;
+          }
+          styles.clear(oldLabel);
+          return;
+        }
+        if (language === "typescriptreact") {
+          console.log("overlays", arguments);
+          OverlayLineTracker.track(overlay);
+        }
+      }
+    });
+    const RootContainerTracker = createSimpleMutation({
+      options: {
+        childList: true,
+        subtree: true
+      },
+      added(node) {
+        queryEditors(node).forEach((editor) => {
+          if (!EditorLanguageTracker.targets.includes(editor)) {
+            debugger;
+            EditorLanguageTracker.track(editor);
+          }
+        });
+      },
+      removed(node) {
+        queryEditors(node).forEach((editor) => {
+          if (EditorLanguageTracker.targets.includes(editor)) {
+            debugger;
+            EditorLanguageTracker.untrack(editor);
+          }
+        });
+      }
+    });
     const cycle = lifecycle({
       dom() {
         var _a;
@@ -494,105 +620,15 @@
       },
       activate(dom) {
         debugger;
-        const overlaySelector = ".view-overlays";
-        const rootContainerTracker = createMutation({
-          options: {
-            childList: true,
-            subtree: true
-          },
-          added(node) {
-            if (!node.querySelector)
-              return;
-            const overlays = Array.from(node.querySelectorAll(overlaySelector));
-            if (node.matches(overlaySelector))
-              overlays.push(node);
-            overlays.forEach((overlay) => {
-              if (!OverlayLinesDeployer.targets.includes(overlay)) {
-                debugger;
-                OverlayLinesDeployer.track(overlay);
-              }
-            });
-          },
-          removed(node) {
-            if (!node.querySelector)
-              return;
-            const overlays = Array.from(node.querySelectorAll(overlaySelector));
-            if (node.matches(overlaySelector))
-              overlays.push(node);
-            overlays.forEach((overlay) => {
-              if (OverlayLinesDeployer.targets.includes(overlay)) {
-                debugger;
-                OverlayLinesDeployer.untrack(overlay);
-              }
-            });
-          }
-        });
-        const OverlayLinesDeployer = createMutation({
-          options: {
-            childList: true
-          },
-          added(editor) {
-            const getOverlays = () => {
-              var _a;
-              return (_a = editor.querySelector) == null ? void 0 : _a.call(editor, highlightSelector);
-            };
-            if (!getOverlays())
-              return;
-            const languageObserver = createAttributeArrayMutation({
-              watchAttribute: ["data-mode-id", "aria-label"],
-              change([language, label], [_, oldLabel]) {
-                if (!language || !label)
-                  return;
-                const overlays = getOverlays();
-                if (!overlays) {
-                  return console.error("no overlays");
-                }
-                OverlayLineTracker.untrack(overlays);
-                if (!label.match(/(\.tsx$)|(\.tsx, E)/)) {
-                  if (!oldLabel) {
-                    console.error("no old label", arguments);
-                    return;
-                  }
-                  stylesContainer.querySelectorAll(`[aria-label="${oldLabel}"]`).forEach((style) => style.remove());
-                  return;
-                }
-                if (language === "typescriptreact") {
-                  console.log("overlays", arguments);
-                  OverlayLineTracker.track(overlays);
-                }
-              }
-            });
-            const OverlayLineTracker = createMutation({
-              options: {
-                childList: true
-              },
-              added(node) {
-                highlightStyles(node, true);
-              },
-              removed(node) {
-                highlightStyles(node, false);
-              }
-            });
-            languageObserver.activate(editor);
-            return function dispose() {
-              OverlayLineTracker.clear();
-              languageObserver.dispose();
-            };
-          }
-        });
-        rootContainerTracker.track(dom.watchForRemoval);
-        return () => {
-          rootContainerTracker.clear();
-          OverlayLinesDeployer.clear();
-        };
+        RootContainerTracker.track(dom.watchForRemoval);
+        return () => RootContainerTracker.untrack(dom.watchForRemoval);
       },
       dispose() {
+        EditorLanguageTracker.clear();
+        OverlayLineTracker.clear();
         selectedLines.clear();
         currentLines.clear();
-        stylesContainer.querySelectorAll("[aria-label]").forEach((style) => style.remove());
-        stylesContainer.querySelectorAll("style").forEach((style) => {
-          style.textContent = "";
-        });
+        styles.clearAll();
       }
     });
     return cycle;
