@@ -15,7 +15,7 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
   let running = false
   let anyUsage = false
   let interval: NodeJS.Timeout
-  let disposeObserver = () => {}
+  let disposeObserver: Function | void
   let disposeActivate: Function | void
 
   function patch() {
@@ -29,7 +29,10 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
   }
   function dispose() {
     disposeActivate?.()
-    disposeObserver()
+    disposeActivate = undefined
+    disposeObserver?.()
+    disposeObserver = undefined
+
     props.dispose?.()
     running = false
     clearInterval(interval)
@@ -44,6 +47,7 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
   return {
     activate() {
       reload()
+      return
       exhaust = setTimeout(() => {
         clearTimeout(exhaust)
         if (!anyUsage) {

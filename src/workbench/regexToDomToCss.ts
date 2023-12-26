@@ -3,7 +3,7 @@ import { linesSelector, customCSS } from './keys'
 export function regexToDomToCss() {
   const lineEditor = document.querySelector(linesSelector)
   if (!lineEditor) {
-    console.log('Fail to find Editor with selector:', linesSelector)
+    console.warn('Fail to find Editor with selector:', linesSelector)
     return ''
   }
   type Flag = {

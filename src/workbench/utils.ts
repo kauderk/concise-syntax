@@ -1,11 +1,11 @@
-import { editorSelector } from './keys'
+import { editorSelector, overlaySelector } from './keys'
 import { stylesContainer } from './shared'
 
-export function queryEditors(node: HTMLElement) {
-  if (!node.querySelector) return []
-  const editors = Array.from(node.querySelectorAll(editorSelector))
-  if (node.matches(editorSelector)) editors.push(node)
-  return editors as HTMLElement[]
+export function queryOverlays(node: Node) {
+  if (!(node instanceof HTMLElement)) return []
+  const overlays = Array.from(node.querySelectorAll(overlaySelector))
+  if (node.matches(overlaySelector)) overlays.push(node)
+  return overlays as HTMLElement[]
 }
 export function clear(label?: string) {
   stylesContainer
@@ -22,26 +22,36 @@ export const styles = {
       style.textContent = ''
     })
   },
-  getOrCreateLabeledStyle(label: string) {
+  getOrCreateLabeledStyle(label: string, selector: string) {
     let style = stylesContainer.querySelector(
-      `[aria-label="${label}"]`
+      `[aria-label="${label}"][selector="${selector}"]`
     ) as HTMLElement
     if (!style || !stylesContainer.contains(style)) {
-      console.log('creating style', label)
       style = document.createElement('style')
       style.setAttribute('aria-label', label)
+      style.setAttribute('selector', selector)
       stylesContainer.appendChild(style)
     }
     return style
   },
+  swapLabeledStyle(oldLabel: string, newLabel: string) {
+    const styles = stylesContainer.querySelectorAll(
+      `[aria-label="${oldLabel}"]`
+    )
+    styles.forEach((style) => {
+      style.setAttribute('aria-label', newLabel)
+      style.textContent = style.textContent?.replace(oldLabel, newLabel) ?? ''
+    })
+  },
 }
 
 export type Selected = {
-  node: HTMLElement
+  node: Node
   selector: string
   add: boolean
   set: Set<number>
   color: string
+  label: string
 }
 export function tryGetAttribute(
   line: HTMLElement,

@@ -29,19 +29,28 @@
   function styleIt(style, text) {
     return style.textContent = text.replace(/\r|\n/g, "").replaceAll(/\t+/g, "\n");
   }
-  function createMutation(option) {
-    const trackNodes = /* @__PURE__ */ new Map();
-    const nodes = () => Array.from(trackNodes.keys());
+  function createMutation(props) {
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach(props.added);
+        mutation.removedNodes.forEach(props.removed);
+      }
+    });
+    return {
+      observe() {
+        observer.observe(props.target(), props.options);
+      },
+      disconnect() {
+        observer.disconnect();
+      }
+    };
+  }
+  function createStackedMutation(options) {
     function add(node) {
-      trackNodes.set(node, option.added(node));
+      options.added(node);
     }
     function remove(node) {
-      var _a, _b;
-      if (nodes().includes(node)) {
-        (_a = trackNodes.get(node)) == null ? void 0 : _a();
-        trackNodes.delete(node);
-        (_b = option.removed) == null ? void 0 : _b.call(option, node);
-      }
+      options.removed(node);
     }
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
@@ -50,41 +59,12 @@
       });
     });
     return {
-      get targets() {
-        return nodes();
-      },
       track(target) {
         add(target);
-        return observer.observe(target, option.options);
-      },
-      untrack(target) {
-        remove(target);
-        observer.disconnect();
-        nodes().forEach((_target) => {
-          observer.observe(_target, option.options);
-        });
-      },
-      clear() {
-        trackNodes.forEach((_, node) => remove(node));
-        trackNodes.clear();
-        observer.disconnect();
-      }
-    };
-  }
-  function createSimpleMutation(options) {
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => options.added(node));
-        mutation.removedNodes.forEach((node) => options.added(node));
-      });
-    });
-    return {
-      track(target) {
-        options.added(target);
         observer.observe(target, options.options);
       },
       untrack(target) {
-        options.removed(target);
+        remove(target);
         observer.disconnect();
       }
     };
@@ -124,26 +104,18 @@
     };
   }
   function createAttributeArrayMutation(props) {
-    const trackNodes = /* @__PURE__ */ new Map();
-    const nodes = () => Array.from(trackNodes.keys());
+    let previousData = [];
     const bridgeAttribute2 = (target) => props.watchAttribute.map((a) => {
       var _a;
       return (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, a);
     });
     function change(target) {
       const newData = bridgeAttribute2(target);
-      const previousData = trackNodes.get(target) ?? [];
       if (newData.every((d, i) => d === previousData[i]))
         return;
       const oldAttributes = [...previousData];
-      trackNodes.set(target, newData);
-      props.change(target, newData, oldAttributes);
-    }
-    function remove(target) {
-      if (nodes().includes(target)) {
-        change(target);
-        trackNodes.delete(target);
-      }
+      previousData = newData;
+      props.change(newData, oldAttributes);
     }
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -155,23 +127,13 @@
       attributeFilter: props.watchAttribute
     };
     return {
-      get targets() {
-        return nodes();
-      },
-      track(target) {
-        trackNodes.set(target, []);
+      plug() {
+        const target = props.target();
         change(target);
         observer.observe(target, options);
       },
-      untrack(target) {
-        remove(target);
+      disconnect() {
         observer.disconnect();
-        nodes().forEach((target2) => {
-          observer.observe(target2, options);
-        });
-      },
-      clear() {
-        nodes().forEach(remove);
       }
     };
   }
@@ -211,16 +173,13 @@
   }
   function lifecycle(props) {
     let running = false;
-    let anyUsage = false;
     let interval;
-    let disposeObserver = () => {
-    };
+    let disposeObserver;
     let disposeActivate;
     function patch() {
       const dom = props.dom();
       if (running || !dom.check())
         return;
-      anyUsage = true;
       running = true;
       clearInterval(interval);
       disposeObserver = watchForRemoval(dom.watchForRemoval, reload);
@@ -229,7 +188,9 @@
     function dispose() {
       var _a;
       disposeActivate == null ? void 0 : disposeActivate();
-      disposeObserver();
+      disposeActivate = void 0;
+      disposeObserver == null ? void 0 : disposeObserver();
+      disposeObserver = void 0;
       (_a = props.dispose) == null ? void 0 : _a.call(props);
       running = false;
       clearInterval(interval);
@@ -242,12 +203,7 @@
     return {
       activate() {
         reload();
-        exhaust = setTimeout(() => {
-          clearTimeout(exhaust);
-          if (!anyUsage) {
-            clearInterval(interval);
-          }
-        }, 1e3 * 60 * 2);
+        return;
       },
       dispose() {
         dispose();
@@ -260,7 +216,7 @@
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
     const lineEditor = document.querySelector(linesSelector);
     if (!lineEditor) {
-      console.log("Fail to find Editor with selector:", linesSelector);
+      console.warn("Fail to find Editor with selector:", linesSelector);
       return "";
     }
     const flags = {
@@ -452,24 +408,21 @@
         };
       },
       activate(dom) {
-        debugger;
         attributeObserver.activate(dom.item);
       },
       dispose() {
-        debugger;
         attributeObserver.dispose();
-        syntaxStyle.dispose();
       }
     });
     return cycle;
   }
-  function queryEditors(node) {
-    if (!node.querySelector)
+  function queryOverlays(node) {
+    if (!(node instanceof HTMLElement))
       return [];
-    const editors = Array.from(node.querySelectorAll(editorSelector));
-    if (node.matches(editorSelector))
-      editors.push(node);
-    return editors;
+    const overlays = Array.from(node.querySelectorAll(overlaySelector));
+    if (node.matches(overlaySelector))
+      overlays.push(node);
+    return overlays;
   }
   function clear(label) {
     stylesContainer.querySelectorAll(label ? `[aria-label="${label}"]` : "[aria-label]").forEach((style) => style.remove());
@@ -484,123 +437,145 @@
         style.textContent = "";
       });
     },
-    getOrCreateLabeledStyle(label) {
+    getOrCreateLabeledStyle(label, selector) {
       let style = stylesContainer.querySelector(
-        `[aria-label="${label}"]`
+        `[aria-label="${label}"][selector="${selector}"]`
       );
       if (!style || !stylesContainer.contains(style)) {
-        console.log("creating style", label);
         style = document.createElement("style");
         style.setAttribute("aria-label", label);
+        style.setAttribute("selector", selector);
         stylesContainer.appendChild(style);
       }
       return style;
+    },
+    swapLabeledStyle(oldLabel, newLabel) {
+      const styles2 = stylesContainer.querySelectorAll(
+        `[aria-label="${oldLabel}"]`
+      );
+      styles2.forEach((style) => {
+        var _a;
+        style.setAttribute("aria-label", newLabel);
+        style.textContent = ((_a = style.textContent) == null ? void 0 : _a.replace(oldLabel, newLabel)) ?? "";
+      });
     }
   };
-  function tryGetAttribute(line, attribute) {
-    var _a;
-    return line.editor = ((_a = line.closest(`[${attribute}]`)) == null ? void 0 : _a.getAttribute(attribute)) ?? // @ts-ignore
-    line.editor;
-  }
   function createHighlightLifeCycle() {
-    function createHighlight({ node, selector, add, set, color }) {
+    function createHighlight({ node, selector, add, set, label, color }) {
       var _a, _b;
-      if (!node.querySelector(selector))
+      if (!(node instanceof HTMLElement) || !node.querySelector(selector))
         return;
-      const label = tryGetAttribute(node, "aria-label");
       const top = Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
-      if (!label || isNaN(top) || set.has(top) === add || !add && // most likely a node previous the lifecycle
-      // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+      if (isNaN(top) || set.has(top) === add || !add && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
       document.querySelector(
-        highlightSelector + `>[style*="${top}"]>` + selector
+        `[aria-label="${label}"]` + highlightSelector + `>[style*="${top}"]>` + selector
       )) {
         return;
       }
       set[add ? "add" : "delete"](top);
       const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
       styleIt(
-        styles.getOrCreateLabeledStyle(label + selector),
+        styles.getOrCreateLabeledStyle(label, selector),
         `[aria-label="${label}"]${linesSelector} :is(${lines}) {
 					--r: ${color};
 			}`
       );
       return true;
     }
-    let selectedLines = /* @__PURE__ */ new Set();
-    const selectedSelector = ".selected-text";
-    let currentLines = /* @__PURE__ */ new Set();
-    const currentLineSelector = ".current-line";
-    function highlightStyles(node, add) {
-      createHighlight({
-        node,
-        selector: selectedSelector,
-        add,
-        set: selectedLines,
-        color: "orange"
-      }) || createHighlight({
-        node,
-        selector: currentLineSelector,
-        add,
-        set: currentLines,
-        color: "brown"
-      });
-    }
-    const OverlayLineTracker = createMutation({
-      options: {
-        childList: true
-      },
-      added(node) {
-        highlightStyles(node, true);
-      },
-      removed(node) {
-        highlightStyles(node, false);
-      }
-    });
-    const EditorLanguageTracker = createAttributeArrayMutation({
-      watchAttribute: ["data-mode-id", "aria-label"],
-      change(editor, [language, label], [, oldLabel]) {
-        if (!language || !label)
-          return;
-        const overlay = editor.querySelector(overlaySelector);
-        overlay == null ? void 0 : overlay.setAttribute("aria-label", label);
-        if (!overlay) {
-          return console.error("no overlays");
-        }
-        OverlayLineTracker.untrack(overlay);
-        if (label != oldLabel || !label.match(/(\.tsx$)|(\.tsx, E)/)) {
-          if (!oldLabel) {
-            console.error("no old label", arguments);
+    function editorOverlayLifecycle(editor, overlay) {
+      let editorLabel;
+      const EditorLanguageTracker = createAttributeArrayMutation({
+        target: () => editor,
+        watchAttribute: ["data-mode-id", "aria-label"],
+        change([language, label], [, oldLabel]) {
+          editorLabel = label;
+          if (!language || !label)
             return;
+          OverlayLineTracker.disconnect();
+          if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
+            if (language === "typescriptreact") {
+              OverlayLineTracker.observe();
+            }
+            if (oldLabel && label != oldLabel) {
+              styles.clear(oldLabel);
+              mount();
+            }
+          } else {
+            styles.clear(label);
           }
-          styles.clear(oldLabel);
-          return;
         }
-        if (language === "typescriptreact") {
-          console.log("overlays", arguments);
-          OverlayLineTracker.track(overlay);
+      });
+      let selectedLines = /* @__PURE__ */ new Set();
+      let currentLines = /* @__PURE__ */ new Set();
+      const OverlayLineTracker = createMutation({
+        target: () => overlay,
+        options: {
+          childList: true
+        },
+        added(node) {
+          highlightStyles(node, true);
+        },
+        removed(node) {
+          highlightStyles(node, false);
         }
+      });
+      function mount() {
+        selectedLines.clear();
+        currentLines.clear();
+        overlay.childNodes.forEach((node) => highlightStyles(node, true));
       }
-    });
-    const RootContainerTracker = createSimpleMutation({
+      function highlightStyles(node, add) {
+        if (!editorLabel)
+          return;
+        const pre = { node, add, label: editorLabel };
+        createHighlight({
+          selector: ".selected-text",
+          color: "orange",
+          set: selectedLines,
+          ...pre
+        }) || createHighlight({
+          selector: ".current-line",
+          color: "brown",
+          set: currentLines,
+          ...pre
+        });
+      }
+      const layoutShiftInterval = setInterval(() => {
+        mount();
+        EditorLanguageTracker.plug();
+      }, 0);
+      return function dispose() {
+        clearInterval(layoutShiftInterval);
+        if (editorLabel)
+          styles.clear(editorLabel);
+        EditorLanguageTracker.disconnect();
+        OverlayLineTracker.disconnect();
+      };
+    }
+    let overlayStack = /* @__PURE__ */ new Map();
+    const RootContainerTracker = createStackedMutation({
       options: {
         childList: true,
         subtree: true
       },
       added(node) {
-        queryEditors(node).forEach((editor) => {
-          if (!EditorLanguageTracker.targets.includes(editor)) {
-            debugger;
-            EditorLanguageTracker.track(editor);
+        for (const overlay of queryOverlays(node)) {
+          if (overlayStack.has(overlay))
+            continue;
+          const editor = overlay.closest(editorSelector);
+          if (!(editor instanceof HTMLElement)) {
+            console.warn("Found overlay without editor", overlay);
+            continue;
           }
-        });
+          overlayStack.set(overlay, editorOverlayLifecycle(editor, overlay));
+        }
       },
       removed(node) {
-        queryEditors(node).forEach((editor) => {
-          if (EditorLanguageTracker.targets.includes(editor)) {
-            debugger;
-            EditorLanguageTracker.untrack(editor);
-          }
-        });
+        var _a;
+        for (const overlay of queryOverlays(node)) {
+          (_a = overlayStack.get(overlay)) == null ? void 0 : _a();
+          overlayStack.delete(overlay);
+        }
       }
     });
     const cycle = lifecycle({
@@ -619,15 +594,14 @@
         };
       },
       activate(dom) {
-        debugger;
         RootContainerTracker.track(dom.watchForRemoval);
-        return () => RootContainerTracker.untrack(dom.watchForRemoval);
+        return () => {
+          RootContainerTracker.untrack(dom.watchForRemoval);
+          overlayStack.forEach((cleanup) => cleanup());
+          overlayStack.clear();
+        };
       },
       dispose() {
-        EditorLanguageTracker.clear();
-        OverlayLineTracker.clear();
-        selectedLines.clear();
-        currentLines.clear();
         styles.clearAll();
       }
     });

@@ -28,26 +28,43 @@ export function styleIt(style: Element, text: string) {
     .replaceAll(/\t+/g, '\n'))
 }
 
-export type MutationOptions<T> = {
-  added(node: HTMLElement): void | (() => void)
-  removed(node: HTMLElement): void
+export type MutationOptions = {
+  added(node: Node): void
+  removed(node: Node): void
   options: MutationObserverInit
+  target(): HTMLElement
 }
-export function createMutation<M>(option: MutationOptions<M>) {
-  const trackNodes = new Map<HTMLElement, void | (() => void)>()
-  const nodes = () => Array.from(trackNodes.keys())
-
-  // https://github.com/whatwg/dom/issues/126#issuecomment-1049814948
-
-  function add(node: any) {
-    trackNodes.set(node, option.added(node))
-  }
-  function remove(node: any) {
-    if (nodes().includes(node)) {
-      trackNodes.get(node)?.()
-      trackNodes.delete(node)
-      option.removed?.(node)
+export function createMutation(props: MutationOptions) {
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      mutation.addedNodes.forEach(props.added)
+      mutation.removedNodes.forEach(props.removed)
     }
+  })
+
+  return {
+    observe() {
+      // const target = props.target()
+      // props.added(target)
+      observer.observe(props.target(), props.options)
+    },
+    disconnect() {
+      // props.removed(props.target())
+      observer.disconnect()
+    },
+  }
+}
+
+export function createStackedMutation<T>(options: {
+  added(node: Node): void
+  removed(node: Node): void
+  options: MutationObserverInit
+}) {
+  function add(node: Node) {
+    options.added(node)
+  }
+  function remove(node: Node) {
+    options.removed(node)
   }
 
   const observer = new MutationObserver((mutations) => {
@@ -58,57 +75,18 @@ export function createMutation<M>(option: MutationOptions<M>) {
   })
 
   return {
-    get targets() {
-      return nodes()
-    },
-    track(target: Element) {
-      add(target)
-      return observer.observe(target, option.options)
-    },
-    untrack(target: Element) {
-      remove(target)
-      observer.disconnect()
-      nodes().forEach((_target) => {
-        observer.observe(_target, option.options)
-      })
-    },
-    clear() {
-      trackNodes.forEach((_, node) => remove(node))
-      trackNodes.clear()
-      observer.disconnect()
-    },
-  }
-}
-
-export function createSimpleMutation(options: {
-  added(node: HTMLElement): void
-  removed(node: HTMLElement): void
-  options: MutationObserverInit
-}) {
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => options.added(node as any))
-      mutation.removedNodes.forEach((node) => options.added(node as any))
-    })
-  })
-
-  return {
     track(target: HTMLElement) {
-      options.added(target)
+      add(target)
       observer.observe(target, options.options)
     },
     untrack(target: HTMLElement) {
-      options.removed(target)
+      remove(target)
       observer.disconnect()
     },
   }
 }
 
 type D = string | undefined
-type Bridge = {
-  target: HTMLElement
-  attribute: D
-}
 export function createAttributeMutation(props: {
   watchAttribute: string
   activate: (payload: D) => void
@@ -151,27 +129,20 @@ export function createAttributeMutation(props: {
 }
 export function createAttributeArrayMutation(props: {
   watchAttribute: string[]
-  change: (target: HTMLElement, newAttributes: D[], oldAttributes: D[]) => void
+  change: (newAttributes: D[], oldAttributes: D[]) => void
+  target(): HTMLElement
 }) {
-  const trackNodes = new Map<HTMLElement, D[]>()
-  const nodes = () => Array.from(trackNodes.keys())
+  let previousData: D[] = []
   const bridgeAttribute = (target: any): D[] =>
     props.watchAttribute.map((a) => target?.getAttribute?.(a))
 
   function change(target: HTMLElement) {
     const newData = bridgeAttribute(target)
-    const previousData = trackNodes.get(target) ?? []
     if (newData.every((d, i) => d === previousData[i])) return
     const oldAttributes = [...previousData]
-    trackNodes.set(target, newData)
+    previousData = newData
 
-    props.change(target, newData, oldAttributes)
-  }
-  function remove(target: HTMLElement) {
-    if (nodes().includes(target)) {
-      change(target)
-      trackNodes.delete(target)
-    }
+    props.change(newData, oldAttributes)
   }
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
@@ -183,24 +154,14 @@ export function createAttributeArrayMutation(props: {
     attributeFilter: props.watchAttribute,
   }
   return {
-    get targets() {
-      return nodes()
-    },
-    track(target: HTMLElement) {
-      trackNodes.set(target, [])
+    plug() {
+      const target = props.target()
       change(target)
-
       observer.observe(target, options)
     },
-    untrack(target: HTMLElement) {
-      remove(target)
+    disconnect() {
+      // change(props.target())
       observer.disconnect()
-      nodes().forEach((target) => {
-        observer.observe(target, options)
-      })
-    },
-    clear() {
-      nodes().forEach(remove)
     },
   }
 }
