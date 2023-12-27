@@ -123,13 +123,13 @@ export function createHighlightLifeCycle() {
         })
     }
 
-    const layoutShiftInterval = setInterval(() => {
+    const layoutShift = setTimeout(() => {
       mount()
       EditorLanguageTracker.plug()
     }, 0)
 
     return function dispose() {
-      clearInterval(layoutShiftInterval)
+      clearInterval(layoutShift)
       if (editorLabel) styles.clear(editorLabel)
       EditorLanguageTracker.disconnect()
       OverlayLineTracker.disconnect()
@@ -180,27 +180,16 @@ export function createHighlightLifeCycle() {
     activate(dom) {
       /**
        * - split-view-container
-       * 		- split-view-view -> Recursion
-       * 			- editor-container
+       * 		- split-view-view
+       * 			- editor-container -> Recursion
        * 				- editor-instance
+       * 					- view-overlays
        */
-      function lookup(node: Node | null, up: number): Node {
-        return Array(up)
-          .fill(0)
-          .reduce((acc, _) => acc?.parentElement, node)
-      }
-      function lookupTo(
-        node: Node | null,
-        up: number,
-        to: Node
-      ): node is HTMLElement {
-        return lookup(node, up) === to
-      }
-      let viewStack = new Map<HTMLElement, Function>()
+      let recStack = new Map<HTMLElement, Function>()
       let editorStack = new Map<HTMLElement, Function>()
-      let observableEditorStack = new Map<HTMLElement, Function>()
-      // prettier-ignore
-      const REC_containerTracker = (target: HTMLElement) =>
+      let treeStack = new Map<HTMLElement, Function>()
+
+      const REC_EditorOverlayTracker = (target: HTMLElement) =>
         createChildrenMutation({
           target: () => target,
           options: {
@@ -209,164 +198,83 @@ export function createHighlightLifeCycle() {
           added(splitViewView) {
             if (!e(splitViewView)) return
 
-            // funny code, how do you select without any sub view?
-            const container = splitViewView.querySelector('.editor-container')
-            if (
-							
-							lookupTo(container,2,splitViewView) 
-							) {
-								
-							const editor = splitViewView.querySelector(editorSelector)
-							if(
-								lookupTo(editor,3,splitViewView) 
-							)
-							{
+            const elements = findScopeElements(splitViewView)
 
-								const overlay = editor.querySelector(overlaySelector)
-	
-								if (e(overlay)) {
-									if (!editorStack.has(editor)) {
-										console.log('Found new editor', editor)
-										editorStack.set(
-											editor,
-											editorOverlayLifecycle(editor, overlay)
-										)
-									} else {
-										console.warn('Duplicate editor', editor)
-									}
-								} else {
-									console.warn('Editor without overlay', editor)
-								}
-							}
-              else{
-								if (!observableEditorStack.has(container)) {
-									console.log('Found new editor', container)
-									const containerObserver = createChildrenMutation({
-										target: () => container,
-										options: {
-											childList: true,
-										},
-										added(editor) {
-											if (!e(editor)) return
+            if (elements.nested) {
+              const rec = REC_EditorOverlayTracker(elements.nested)
+              rec.plug()
 
-											
-											const overlay = editor.querySelector(overlaySelector)
-											if (e(overlay)) {
-												if (!editorStack.has(editor)) {
-													console.log('Found new editor from containerObserver', editor)
-													editorStack.set(
-														editor,
-														editorOverlayLifecycle(editor, overlay)
-													)
-												} else {
-													console.warn('Duplicate editor from containerObserver', editor)
-												}
-											} else {
-												console.warn('Editor without overlay from containerObserver', editor)
-											}
-											
-										},
-										removed(editor) {
-											if (!e(editor)) return
+              recStack.set(splitViewView, rec.unplug)
+            } else if (awkwardStack(elements)) {
+              // noop
+            } else if (!elements.overlay) {
+              const treeObserver = createChildrenMutation({
+                target: () => splitViewView,
+                options: {
+                  childList: true,
+                  subtree: true,
+                },
+                added(node) {
+                  const elements = findScopeElements(splitViewView)
+                  if (awkwardStack(elements)) {
+                    treeObserver.stop()
+                    return
+                  }
+                  if (
+                    // @ts-ignore
+                    node.querySelector?.('.view-overlays div') ||
+                    // @ts-ignore
+                    node.matches?.('.view-overlays div')
+                  ) {
+                    console.warn(
+                      'Possible memory leak: potential overlays',
+                      node
+                    )
+                    treeObserver.stop()
+                  }
+                },
+                removed() {},
+              })
 
-											console.log('SHould remove editor from containerObserver', editor)
-											// editorStack.get(editor)?.()
-											// editorStack.delete(editor)
-											
-										},
-									})
-
-									containerObserver.plug()
-
-									console.log('Found new container - instance of containerObserver', container)
-									observableEditorStack.set(
-										container,
-										containerObserver.unplug
-									)
-								} else {
-									console.warn('Duplicate editor', editor)
-								}
-
-							}
-            } else {
-              const nextContainer = splitViewView.querySelector(
-                '.split-view-container'
-              )
-              if (
-                e(nextContainer) &&
-                nextContainer.parentElement?.parentElement?.parentElement
-                  ?.parentElement === splitViewView
-              ) {
-                const recursive = REC_containerTracker(nextContainer)
-                recursive.plug()
-
-                console.log('Found new container', splitViewView)
-                viewStack.set(splitViewView, recursive.plug)
-              } else {
-                console.warn(
-                  'End of recursion or could not find view-container',
-                  splitViewView
-                )
-              }
+              treeObserver.plug()
+              treeStack.set(splitViewView, treeObserver.stop)
             }
           },
           removed(splitViewView) {
             if (!e(splitViewView)) return
 
-            const editor = splitViewView.querySelector(editorSelector)
-            if (
-              lookupTo(editor,3,splitViewView) &&
-              editorStack.has(editor)
-            ) {
-              console.log('Removed editor', editor)
-              editorStack.get(editor)?.()
-              editorStack.delete(editor)
-            } else {
-              console.warn(
-                'Could not remove --editor-- from stack',
-                splitViewView,
-                editor,
-                editorStack
-              )
+            // FIXME: this should be handled by each cycle, there is an unhandled cleanup
+            for (const stack of [recStack, editorStack, treeStack]) {
+              for (const [keyNode] of stack) {
+                // you could use document.contains but this is faster? maybe?
+                if (!dom.watchForRemoval.contains(keyNode)) {
+                  stack.get(keyNode)?.()
+                  stack.delete(keyNode)
+                }
+              }
             }
-						const container = splitViewView.querySelector('.editor-container')
-						if (
-							lookupTo(container,2,splitViewView) &&
-							observableEditorStack.has(container)
-						) {
-							console.log('Removed container', container)
-							observableEditorStack.get(container)?.()
-							observableEditorStack.delete(container)
-						}else{
-							console.warn(
-								'Could not remove **container** from stack',
-								splitViewView,
-								container,
-								observableEditorStack
-							)
-						}
-
-
-            console.log('Removed container', splitViewView)
-            viewStack.get(splitViewView)?.()
-            viewStack.delete(splitViewView)
           },
         })
+      function awkwardStack(elements: ReturnType<typeof findScopeElements>) {
+        const { overlay, editor } = elements
+        if (overlay && editor && !editorStack.has(editor)) {
+          editorStack.set(editor, editorOverlayLifecycle(editor, overlay))
+          return true
+        }
+      }
+
       debugger
-      const root = REC_containerTracker(dom.watchForRemoval)
+      const root = REC_EditorOverlayTracker(dom.watchForRemoval)
       root.plug()
 
-      // RootContainerTracker.track(dom.watchForRemoval)
       return () => {
-        root.unplug()
-        viewStack.forEach((cleanup) => cleanup())
-        viewStack.clear()
-        editorStack.forEach((cleanup) => cleanup())
-        editorStack.clear()
-
-        // RootContainerTracker.untrack(dom.watchForRemoval)
-        // overlayStack.forEach((cleanup) => cleanup())
-        // overlayStack.clear()
+        // FIXME: this should be handled by each cycle, there is an unhandled cleanup
+        for (const stack of [recStack, editorStack, treeStack]) {
+          for (const [keyNode] of stack) {
+            stack.get(keyNode)?.()
+            stack.delete(keyNode)
+          }
+        }
       }
     },
     dispose() {
@@ -375,6 +283,29 @@ export function createHighlightLifeCycle() {
   })
 
   return cycle
+}
+
+function findScopeElements(view: HTMLElement) {
+  type H = HTMLElement | null
+  const container = view.querySelector(':scope > div > .editor-container') as H
+  const nested = view.querySelector(
+    ':scope > div > div > div > .split-view-container'
+  ) as H
+  const editor = container?.querySelector(editorSelector) as H
+  const overlay = editor?.querySelector(overlaySelector) as H
+  return { nested, editor, overlay }
+}
+function lookup(node: Node | null, up: number): Node {
+  return Array(up)
+    .fill(0)
+    .reduce((acc, _) => acc?.parentElement, node)
+}
+function lookupTo(
+  node: Node | null,
+  up: number,
+  to: Node
+): node is HTMLElement {
+  return lookup(node, up) === to
 }
 
 function e(el: unknown): el is HTMLElement {
