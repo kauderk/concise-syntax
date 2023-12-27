@@ -59,13 +59,11 @@
       },
       plug() {
         const target = props.target();
-        console.log("plugging", target.childNodes);
         target.childNodes.forEach(props.added);
         observer.observe(target, props.options);
       },
       unplug() {
         const target = props.target();
-        console.log("unplugging", target.childNodes);
         target.childNodes.forEach(props.removed);
         observer.disconnect();
       }
@@ -454,6 +452,18 @@
       });
     }
   };
+  function findScopeElements(view) {
+    const container = view.querySelector(":scope > div > .editor-container");
+    const nested = view.querySelector(
+      ":scope > div > div > div > .split-view-container"
+    );
+    const editor = container == null ? void 0 : container.querySelector(editorSelector);
+    const overlay = editor == null ? void 0 : editor.querySelector(overlaySelector);
+    return { nested, editor, overlay };
+  }
+  function e(el) {
+    return el instanceof HTMLElement;
+  }
   function createHighlightLifeCycle() {
     function createHighlight({ node, selector, add, set, label, color }) {
       var _a, _b;
@@ -539,7 +549,7 @@
         EditorLanguageTracker.plug();
       }, 0);
       return function dispose() {
-        clearInterval(layoutShift);
+        clearTimeout(layoutShift);
         if (editorLabel)
           styles.clear(editorLabel);
         EditorLanguageTracker.disconnect();
@@ -581,52 +591,42 @@
             } else if (awkwardStack(elements))
               ;
             else if (!elements.overlay) {
-              const treeObserver = createChildrenMutation({
+              const treeTracker = createChildrenMutation({
                 target: () => splitViewView,
                 options: {
                   childList: true,
                   subtree: true
                 },
-                added(node) {
-                  var _a, _b;
+                added() {
                   const elements2 = findScopeElements(splitViewView);
                   if (awkwardStack(elements2)) {
-                    treeObserver.stop();
-                    return;
-                  }
-                  if (
-                    // @ts-ignore
-                    ((_a = node.querySelector) == null ? void 0 : _a.call(node, ".view-overlays div")) || // @ts-ignore
-                    ((_b = node.matches) == null ? void 0 : _b.call(node, ".view-overlays div"))
-                  ) {
-                    console.warn(
-                      "Possible memory leak: potential overlays",
-                      node
-                    );
-                    treeObserver.stop();
+                    treeTracker.stop();
                   }
                 },
                 removed() {
                 }
               });
-              treeObserver.plug();
-              treeStack.set(splitViewView, treeObserver.stop);
+              treeTracker.plug();
+              treeStack.set(splitViewView, treeTracker.stop);
             }
           },
           removed(splitViewView) {
-            var _a;
             if (!e(splitViewView))
               return;
-            for (const stack of [recStack, editorStack, treeStack]) {
-              for (const [keyNode] of stack) {
-                if (!dom.watchForRemoval.contains(keyNode)) {
-                  (_a = stack.get(keyNode)) == null ? void 0 : _a();
-                  stack.delete(keyNode);
-                }
-              }
-            }
+            clearStacks((keyNode) => keyNode.contains(splitViewView));
           }
         });
+        function clearStacks(condition) {
+          var _a;
+          for (const stack of [recStack, editorStack, treeStack]) {
+            for (const [keyNode] of stack) {
+              if (condition && !condition(keyNode))
+                continue;
+              (_a = stack.get(keyNode)) == null ? void 0 : _a();
+              stack.delete(keyNode);
+            }
+          }
+        }
         function awkwardStack(elements) {
           const { overlay, editor } = elements;
           if (overlay && editor && !editorStack.has(editor)) {
@@ -634,17 +634,10 @@
             return true;
           }
         }
-        debugger;
         const root = REC_EditorOverlayTracker(dom.watchForRemoval);
         root.plug();
         return () => {
-          var _a;
-          for (const stack of [recStack, editorStack, treeStack]) {
-            for (const [keyNode] of stack) {
-              (_a = stack.get(keyNode)) == null ? void 0 : _a();
-              stack.delete(keyNode);
-            }
-          }
+          clearStacks();
         };
       },
       dispose() {
@@ -652,18 +645,6 @@
       }
     });
     return cycle;
-  }
-  function findScopeElements(view) {
-    const container = view.querySelector(":scope > div > .editor-container");
-    const nested = view.querySelector(
-      ":scope > div > div > div > .split-view-container"
-    );
-    const editor = container == null ? void 0 : container.querySelector(editorSelector);
-    const overlay = editor == null ? void 0 : editor.querySelector(overlaySelector);
-    return { nested, editor, overlay };
-  }
-  function e(el) {
-    return el instanceof HTMLElement;
   }
   const syntax = createSyntaxLifecycle();
   const highlight = createHighlightLifeCycle();

@@ -1,19 +1,12 @@
-import {
-  editorSelector,
-  highlightSelector,
-  idSelector,
-  linesSelector,
-  overlaySelector,
-} from './keys'
+import { highlightSelector, idSelector, linesSelector } from './keys'
 import { lifecycle } from './lifecycle'
 import {
   createAttributeArrayMutation,
   createChildrenMutation,
   createMutation,
-  createStackedMutation,
   styleIt,
 } from './shared'
-import { Selected, queryOverlays, styles } from './utils'
+import { Selected, e, findScopeElements, styles } from './utils'
 
 /**
  * @description Change color of highlighted or selected lines
@@ -129,38 +122,12 @@ export function createHighlightLifeCycle() {
     }, 0)
 
     return function dispose() {
-      clearInterval(layoutShift)
+      clearTimeout(layoutShift)
       if (editorLabel) styles.clear(editorLabel)
       EditorLanguageTracker.disconnect()
       OverlayLineTracker.disconnect()
     }
   }
-
-  // let overlayStack = new Map<HTMLElement, Function>()
-  // const RootContainerTracker = createStackedMutation({
-  //   options: {
-  //     childList: true,
-  //     subtree: true,
-  //   },
-  //   added(node) {
-  //     for (const overlay of queryOverlays(node)) {
-  //       if (overlayStack.has(overlay)) continue
-
-  //       const editor = overlay.closest(editorSelector)
-  //       if (!(editor instanceof HTMLElement)) {
-  //         console.warn('Found overlay without editor', overlay)
-  //         continue
-  //       }
-  //       overlayStack.set(overlay, editorOverlayLifecycle(editor, overlay))
-  //     }
-  //   },
-  //   removed(node) {
-  //     for (const overlay of queryOverlays(node)) {
-  //       overlayStack.get(overlay)?.()
-  //       overlayStack.delete(overlay)
-  //     }
-  //   },
-  // })
 
   const cycle = lifecycle({
     dom() {
@@ -180,8 +147,8 @@ export function createHighlightLifeCycle() {
     activate(dom) {
       /**
        * - split-view-container
-       * 		- split-view-view
-       * 			- editor-container -> Recursion
+       * 		- split-view-view -> Recursion
+       * 			- editor-container
        * 				- editor-instance
        * 					- view-overlays
        */
@@ -208,53 +175,41 @@ export function createHighlightLifeCycle() {
             } else if (awkwardStack(elements)) {
               // noop
             } else if (!elements.overlay) {
-              const treeObserver = createChildrenMutation({
+              const treeTracker = createChildrenMutation({
                 target: () => splitViewView,
                 options: {
                   childList: true,
                   subtree: true,
                 },
-                added(node) {
+                added() {
                   const elements = findScopeElements(splitViewView)
                   if (awkwardStack(elements)) {
-                    treeObserver.stop()
-                    return
-                  }
-                  if (
-                    // @ts-ignore
-                    node.querySelector?.('.view-overlays div') ||
-                    // @ts-ignore
-                    node.matches?.('.view-overlays div')
-                  ) {
-                    console.warn(
-                      'Possible memory leak: potential overlays',
-                      node
-                    )
-                    treeObserver.stop()
+                    treeTracker.stop()
                   }
                 },
                 removed() {},
               })
 
-              treeObserver.plug()
-              treeStack.set(splitViewView, treeObserver.stop)
+              treeTracker.plug()
+              treeStack.set(splitViewView, treeTracker.stop)
             }
           },
           removed(splitViewView) {
             if (!e(splitViewView)) return
 
             // FIXME: this should be handled by each cycle, there is an unhandled cleanup
-            for (const stack of [recStack, editorStack, treeStack]) {
-              for (const [keyNode] of stack) {
-                // you could use document.contains but this is faster? maybe?
-                if (!dom.watchForRemoval.contains(keyNode)) {
-                  stack.get(keyNode)?.()
-                  stack.delete(keyNode)
-                }
-              }
-            }
+            clearStacks((keyNode) => keyNode.contains(splitViewView))
           },
         })
+      function clearStacks(condition?: (keyNode: HTMLElement) => boolean) {
+        for (const stack of [recStack, editorStack, treeStack]) {
+          for (const [keyNode] of stack) {
+            if (condition && !condition(keyNode)) continue
+            stack.get(keyNode)?.()
+            stack.delete(keyNode)
+          }
+        }
+      }
       function awkwardStack(elements: ReturnType<typeof findScopeElements>) {
         const { overlay, editor } = elements
         if (overlay && editor && !editorStack.has(editor)) {
@@ -263,18 +218,12 @@ export function createHighlightLifeCycle() {
         }
       }
 
-      debugger
       const root = REC_EditorOverlayTracker(dom.watchForRemoval)
       root.plug()
 
       return () => {
-        // FIXME: this should be handled by each cycle, there is an unhandled cleanup
-        for (const stack of [recStack, editorStack, treeStack]) {
-          for (const [keyNode] of stack) {
-            stack.get(keyNode)?.()
-            stack.delete(keyNode)
-          }
-        }
+        // root.unplug()
+        clearStacks()
       }
     },
     dispose() {
@@ -283,31 +232,4 @@ export function createHighlightLifeCycle() {
   })
 
   return cycle
-}
-
-function findScopeElements(view: HTMLElement) {
-  type H = HTMLElement | null
-  const container = view.querySelector(':scope > div > .editor-container') as H
-  const nested = view.querySelector(
-    ':scope > div > div > div > .split-view-container'
-  ) as H
-  const editor = container?.querySelector(editorSelector) as H
-  const overlay = editor?.querySelector(overlaySelector) as H
-  return { nested, editor, overlay }
-}
-function lookup(node: Node | null, up: number): Node {
-  return Array(up)
-    .fill(0)
-    .reduce((acc, _) => acc?.parentElement, node)
-}
-function lookupTo(
-  node: Node | null,
-  up: number,
-  to: Node
-): node is HTMLElement {
-  return lookup(node, up) === to
-}
-
-function e(el: unknown): el is HTMLElement {
-  return el instanceof HTMLElement
 }

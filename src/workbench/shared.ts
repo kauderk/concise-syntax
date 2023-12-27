@@ -69,13 +69,13 @@ export function createChildrenMutation(props: MutationOptions) {
     },
     plug() {
       const target = props.target()
-      console.log('plugging', target.childNodes)
+      // console.log('plugging', target.childNodes)
       target.childNodes.forEach(props.added)
       observer.observe(target, props.options)
     },
     unplug() {
       const target = props.target()
-      console.log('unplugging', target.childNodes)
+      // console.log('unplugging', target.childNodes)
       target.childNodes.forEach(props.removed)
       observer.disconnect()
     },

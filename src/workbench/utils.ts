@@ -63,3 +63,30 @@ export function tryGetAttribute(
     // @ts-ignore
     line.editor)
 }
+
+export function findScopeElements(view: HTMLElement) {
+  type H = HTMLElement | null
+  const container = view.querySelector(':scope > div > .editor-container') as H
+  const nested = view.querySelector(
+    ':scope > div > div > div > .split-view-container'
+  ) as H
+  const editor = container?.querySelector(editorSelector) as H
+  const overlay = editor?.querySelector(overlaySelector) as H
+  return { nested, editor, overlay }
+}
+function lookup(node: Node | null, up: number): Node {
+  return Array(up)
+    .fill(0)
+    .reduce((acc, _) => acc?.parentElement, node)
+}
+export function lookupTo(
+  node: Node | null,
+  up: number,
+  to: Node
+): node is HTMLElement {
+  return lookup(node, up) === to
+}
+
+export function e(el: unknown): el is HTMLElement {
+  return el instanceof HTMLElement
+}
