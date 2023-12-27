@@ -45,26 +45,24 @@
       }
     };
   }
-  function createStackedMutation(options) {
-    function add(node) {
-      options.added(node);
-    }
-    function remove(node) {
-      options.removed(node);
-    }
+  function createChildrenMutation(props) {
     const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach(add);
-        mutation.removedNodes.forEach(remove);
-      });
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach(props.added);
+        mutation.removedNodes.forEach(props.removed);
+      }
     });
     return {
-      track(target) {
-        add(target);
-        observer.observe(target, options.options);
+      plug() {
+        const target = props.target();
+        console.log("plugging", target.childNodes);
+        target.childNodes.forEach(props.added);
+        observer.observe(target, props.options);
       },
-      untrack(target) {
-        remove(target);
+      unplug() {
+        const target = props.target();
+        console.log("unplugging", target.childNodes);
+        target.childNodes.forEach(props.removed);
         observer.disconnect();
       }
     };
@@ -416,14 +414,6 @@
     });
     return cycle;
   }
-  function queryOverlays(node) {
-    if (!(node instanceof HTMLElement))
-      return [];
-    const overlays = Array.from(node.querySelectorAll(overlaySelector));
-    if (node.matches(overlaySelector))
-      overlays.push(node);
-    return overlays;
-  }
   function clear(label) {
     stylesContainer.querySelectorAll(label ? `[aria-label="${label}"]` : "[aria-label]").forEach((style) => style.remove());
   }
@@ -552,32 +542,6 @@
         OverlayLineTracker.disconnect();
       };
     }
-    let overlayStack = /* @__PURE__ */ new Map();
-    const RootContainerTracker = createStackedMutation({
-      options: {
-        childList: true,
-        subtree: true
-      },
-      added(node) {
-        for (const overlay of queryOverlays(node)) {
-          if (overlayStack.has(overlay))
-            continue;
-          const editor = overlay.closest(editorSelector);
-          if (!(editor instanceof HTMLElement)) {
-            console.warn("Found overlay without editor", overlay);
-            continue;
-          }
-          overlayStack.set(overlay, editorOverlayLifecycle(editor, overlay));
-        }
-      },
-      removed(node) {
-        var _a;
-        for (const overlay of queryOverlays(node)) {
-          (_a = overlayStack.get(overlay)) == null ? void 0 : _a();
-          overlayStack.delete(overlay);
-        }
-      }
-    });
     const cycle = lifecycle({
       dom() {
         var _a;
@@ -594,11 +558,145 @@
         };
       },
       activate(dom) {
-        RootContainerTracker.track(dom.watchForRemoval);
+        function lookup(node, up) {
+          return Array(up).fill(0).reduce((acc, _) => acc == null ? void 0 : acc.parentElement, node);
+        }
+        function lookupTo(node, up, to) {
+          return lookup(node, up) === to;
+        }
+        let viewStack = /* @__PURE__ */ new Map();
+        let editorStack = /* @__PURE__ */ new Map();
+        let observableEditorStack = /* @__PURE__ */ new Map();
+        const REC_containerTracker = (target) => createChildrenMutation({
+          target: () => target,
+          options: {
+            childList: true
+          },
+          added(splitViewView) {
+            var _a, _b, _c;
+            if (!e(splitViewView))
+              return;
+            const container = splitViewView.querySelector(".editor-container");
+            if (lookupTo(container, 2, splitViewView)) {
+              const editor = splitViewView.querySelector(editorSelector);
+              if (lookupTo(editor, 3, splitViewView)) {
+                const overlay = editor.querySelector(overlaySelector);
+                if (e(overlay)) {
+                  if (!editorStack.has(editor)) {
+                    console.log("Found new editor", editor);
+                    editorStack.set(
+                      editor,
+                      editorOverlayLifecycle(editor, overlay)
+                    );
+                  } else {
+                    console.warn("Duplicate editor", editor);
+                  }
+                } else {
+                  console.warn("Editor without overlay", editor);
+                }
+              } else {
+                if (!observableEditorStack.has(container)) {
+                  console.log("Found new editor", container);
+                  const containerObserver = createChildrenMutation({
+                    target: () => container,
+                    options: {
+                      childList: true
+                    },
+                    added(editor2) {
+                      if (!e(editor2))
+                        return;
+                      const overlay = editor2.querySelector(overlaySelector);
+                      if (e(overlay)) {
+                        if (!editorStack.has(editor2)) {
+                          console.log("Found new editor from containerObserver", editor2);
+                          editorStack.set(
+                            editor2,
+                            editorOverlayLifecycle(editor2, overlay)
+                          );
+                        } else {
+                          console.warn("Duplicate editor from containerObserver", editor2);
+                        }
+                      } else {
+                        console.warn("Editor without overlay from containerObserver", editor2);
+                      }
+                    },
+                    removed(editor2) {
+                      if (!e(editor2))
+                        return;
+                      console.log("SHould remove editor from containerObserver", editor2);
+                    }
+                  });
+                  containerObserver.plug();
+                  console.log("Found new container - instance of containerObserver", container);
+                  observableEditorStack.set(
+                    container,
+                    containerObserver.unplug
+                  );
+                } else {
+                  console.warn("Duplicate editor", editor);
+                }
+              }
+            } else {
+              const nextContainer = splitViewView.querySelector(
+                ".split-view-container"
+              );
+              if (e(nextContainer) && ((_c = (_b = (_a = nextContainer.parentElement) == null ? void 0 : _a.parentElement) == null ? void 0 : _b.parentElement) == null ? void 0 : _c.parentElement) === splitViewView) {
+                const recursive = REC_containerTracker(nextContainer);
+                recursive.plug();
+                console.log("Found new container", splitViewView);
+                viewStack.set(splitViewView, recursive.plug);
+              } else {
+                console.warn(
+                  "End of recursion or could not find view-container",
+                  splitViewView
+                );
+              }
+            }
+          },
+          removed(splitViewView) {
+            var _a, _b, _c;
+            if (!e(splitViewView))
+              return;
+            const editor = splitViewView.querySelector(editorSelector);
+            if (lookupTo(editor, 3, splitViewView) && editorStack.has(editor)) {
+              console.log("Removed editor", editor);
+              (_a = editorStack.get(editor)) == null ? void 0 : _a();
+              editorStack.delete(editor);
+            } else {
+              console.warn(
+                "Could not remove --editor-- from stack",
+                splitViewView,
+                editor,
+                editorStack
+              );
+            }
+            const container = splitViewView.querySelector(".editor-container");
+            if (lookupTo(container, 2, splitViewView) && observableEditorStack.has(container)) {
+              console.log("Removed container", container);
+              (_b = observableEditorStack.get(container)) == null ? void 0 : _b();
+              observableEditorStack.delete(container);
+            } else {
+              console.warn(
+                "Could not remove **container** from stack",
+                splitViewView,
+                container,
+                observableEditorStack
+              );
+            }
+            console.log("Removed container", splitViewView);
+            (_c = viewStack.get(splitViewView)) == null ? void 0 : _c();
+            viewStack.delete(splitViewView);
+          }
+        });
+        debugger;
+        const root = REC_containerTracker(dom.watchForRemoval);
+        root.plug();
         return () => {
-          RootContainerTracker.untrack(dom.watchForRemoval);
-          overlayStack.forEach((cleanup) => cleanup());
-          overlayStack.clear();
+          root.unplug();
+          viewStack.forEach((cleanup) => cleanup());
+          viewStack.clear();
+          editorStack.forEach((cleanup) => cleanup());
+          editorStack.clear();
         };
       },
       dispose() {
@@ -606,6 +704,9 @@
       }
     });
     return cycle;
+  }
+  function e(el) {
+    return el instanceof HTMLElement;
   }
   const syntax = createSyntaxLifecycle();
   const highlight = createHighlightLifeCycle();

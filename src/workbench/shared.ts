@@ -54,6 +54,29 @@ export function createMutation(props: MutationOptions) {
     },
   }
 }
+export function createChildrenMutation(props: MutationOptions) {
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      mutation.addedNodes.forEach(props.added)
+      mutation.removedNodes.forEach(props.removed)
+    }
+  })
+
+  return {
+    plug() {
+      const target = props.target()
+      console.log('plugging', target.childNodes)
+      target.childNodes.forEach(props.added)
+      observer.observe(target, props.options)
+    },
+    unplug() {
+      const target = props.target()
+      console.log('unplugging', target.childNodes)
+      target.childNodes.forEach(props.removed)
+      observer.disconnect()
+    },
+  }
+}
 
 export function createStackedMutation<T>(options: {
   added(node: Node): void
