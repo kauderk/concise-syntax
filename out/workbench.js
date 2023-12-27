@@ -10,6 +10,8 @@
   const linesSelector = idSelector + ` .view-lines.monaco-mouse-cursor-text`;
   const overlaySelector = ".view-overlays";
   const highlightSelector = idSelector + ` ` + overlaySelector;
+  const selectedSelector = ".selected-text";
+  const currentSelector = ".current-line";
   const stylesContainer = document.getElementById(windowId) ?? document.createElement("div");
   stylesContainer.id = windowId;
   document.body.appendChild(stylesContainer);
@@ -75,40 +77,6 @@
       }
     };
   }
-  function createAttributeMutation(props) {
-    let previousData;
-    const bridgeAttribute2 = (target) => {
-      var _a;
-      return (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, props.watchAttribute);
-    };
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        const newData = bridgeAttribute2(mutation.target);
-        if (previousData === newData)
-          return;
-        previousData = newData;
-        if (newData) {
-          props.activate(newData);
-        } else {
-          props.inactive(newData);
-        }
-      }
-    });
-    return {
-      activate(target) {
-        previousData = bridgeAttribute2(target);
-        props.activate(previousData);
-        observer.observe(target, {
-          attributes: true,
-          attributeFilter: [props.watchAttribute]
-        });
-      },
-      dispose() {
-        props.inactive(previousData);
-        observer.disconnect();
-      }
-    };
-  }
   function createAttributeArrayMutation(props) {
     let previousData = [];
     const bridgeAttribute2 = (target) => props.watchAttribute.map((a) => {
@@ -121,7 +89,7 @@
         return;
       const oldAttributes = [...previousData];
       previousData = newData;
-      props.change(newData, oldAttributes);
+      props.change(newData, oldAttributes, target);
     }
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -130,6 +98,8 @@
     });
     const options = {
       attributes: true,
+      subtree: props.children,
+      // childList: props.children,
       attributeFilter: props.watchAttribute
     };
     return {
@@ -137,6 +107,10 @@
         const target = props.target();
         change(target);
         observer.observe(target, options);
+      },
+      stop() {
+        observer.takeRecords();
+        observer.disconnect();
       },
       disconnect() {
         observer.disconnect();
@@ -392,15 +366,6 @@
       Extension.item.removeAttribute("title");
       Extension.icon.style.removeProperty("font-weight");
     }
-    const attributeObserver = createAttributeMutation({
-      watchAttribute: bridgeBetweenVscodeExtension,
-      activate() {
-        activate(domExtension());
-      },
-      inactive() {
-        inactive();
-      }
-    });
     const cycle = lifecycle({
       dom() {
         const dom = domExtension();
@@ -414,10 +379,21 @@
         };
       },
       activate(dom) {
-        attributeObserver.activate(dom.item);
+        const attributeObserver = createAttributeArrayMutation({
+          target: () => dom.item,
+          watchAttribute: [bridgeBetweenVscodeExtension],
+          change([bridge]) {
+            if (bridge) {
+              activate(domExtension());
+            } else {
+              inactive();
+            }
+          }
+        });
+        attributeObserver.plug();
+        return () => attributeObserver.disconnect();
       },
       dispose() {
-        attributeObserver.dispose();
       }
     });
     return cycle;
@@ -427,6 +403,7 @@
   }
   const styles = {
     clear(label) {
+      console.log("clear", label);
       clear(label);
     },
     clearAll() {
@@ -465,7 +442,13 @@
     );
     const editor = container == null ? void 0 : container.querySelector(editorSelector);
     const overlay = editor == null ? void 0 : editor.querySelector(overlaySelector);
-    return { nested, container, editor, overlay };
+    const anyLine = overlay == null ? void 0 : overlay.querySelector(
+      `${selectedSelector}, ${currentSelector}`
+    );
+    return { nested, container, editor, overlay, anyLine };
+  }
+  function e(el) {
+    return el instanceof HTMLElement;
   }
   function guardStack(stack, key, cleanup) {
     var _a;
@@ -476,12 +459,15 @@
     }
     stack.set(key, cleanup);
   }
+  function parseTopStyle(node) {
+    var _a, _b;
+    return Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
+  }
   function createHighlightLifeCycle() {
     function createHighlight({ node, selector, add, set, label, color }) {
-      var _a, _b;
-      if (!(node instanceof HTMLElement) || !node.querySelector(selector))
+      if (!e(node) || !node.querySelector(selector))
         return;
-      const top = Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
+      const top = parseTopStyle(node);
       if (isNaN(top) || set.has(top) === add || !add && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
       document.querySelector(
         `[aria-label="${label}"]` + highlightSelector + `>[style*="${top}"]>` + selector
@@ -499,6 +485,7 @@
       return true;
     }
     function editorOverlayLifecycle(editor, overlay) {
+      var _a;
       let editorLabel;
       const EditorLanguageTracker = createAttributeArrayMutation({
         target: () => editor,
@@ -521,6 +508,15 @@
           }
         }
       });
+      function mount() {
+        selectedLines.clear();
+        currentLines.clear();
+        overlay.childNodes.forEach((node) => highlightStyles(node, true));
+      }
+      function plug() {
+        EditorLanguageTracker.plug();
+        mount();
+      }
       let selectedLines = /* @__PURE__ */ new Set();
       let currentLines = /* @__PURE__ */ new Set();
       const OverlayLineTracker = createMutation({
@@ -535,33 +531,48 @@
           highlightStyles(node, false);
         }
       });
-      function mount() {
-        selectedLines.clear();
-        currentLines.clear();
-        overlay.childNodes.forEach((node) => highlightStyles(node, true));
-      }
       function highlightStyles(node, add) {
         if (!editorLabel)
           return;
         const pre = { node, add, label: editorLabel };
         createHighlight({
-          selector: ".selected-text",
+          selector: selectedSelector,
           color: "orange",
           set: selectedLines,
           ...pre
         }) || createHighlight({
-          selector: ".current-line",
+          selector: currentSelector,
           color: "brown",
           set: currentLines,
           ...pre
         });
       }
-      const layoutShift = setTimeout(() => {
-        EditorLanguageTracker.plug();
-        mount();
-      }, 100);
+      const selectedLine = (_a = overlay.querySelector(selectedSelector)) == null ? void 0 : _a.parentElement;
+      let clearFirstLine;
+      if (selectedLine) {
+        plug();
+      } else {
+        let done = false;
+        const lineTracker = createAttributeArrayMutation({
+          target: () => overlay,
+          children: true,
+          watchAttribute: ["style"],
+          change([style], [oldStyle], node) {
+            if (done)
+              return;
+            const top = parseTopStyle(node);
+            if (!isNaN(top) && style && oldStyle != style) {
+              done = true;
+              plug();
+              lineTracker.stop();
+            }
+          }
+        });
+        lineTracker.plug();
+        clearFirstLine = lineTracker.stop;
+      }
       return function dispose() {
-        clearTimeout(layoutShift);
+        clearFirstLine == null ? void 0 : clearFirstLine();
         if (editorLabel)
           styles.clear(editorLabel);
         EditorLanguageTracker.disconnect();

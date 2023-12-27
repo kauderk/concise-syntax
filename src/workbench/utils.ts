@@ -1,4 +1,9 @@
-import { editorSelector, overlaySelector } from './keys'
+import {
+  currentSelector,
+  editorSelector,
+  overlaySelector,
+  selectedSelector,
+} from './keys'
 import { stylesContainer } from './shared'
 
 export function queryOverlays(node: Node) {
@@ -14,6 +19,7 @@ export function clear(label?: string) {
 }
 export const styles = {
   clear(label: string) {
+    console.log('clear', label)
     clear(label)
   },
   clearAll() {
@@ -72,7 +78,10 @@ export function findScopeElements(view: HTMLElement) {
   ) as H
   const editor = container?.querySelector(editorSelector) as H
   const overlay = editor?.querySelector(overlaySelector) as H
-  return { nested, container, editor, overlay }
+  const anyLine = overlay?.querySelector(
+    `${selectedSelector}, ${currentSelector}`
+  ) as H
+  return { nested, container, editor, overlay, anyLine }
 }
 function lookup(node: Node | null, up: number): Node {
   return Array(up)
@@ -102,4 +111,8 @@ export function guardStack(
     stack.delete(key)
   }
   stack.set(key, cleanup)
+}
+
+export function parseTopStyle(node: HTMLElement) {
+  return Number(node.style?.top.match(/\d+/)?.[0])
 }

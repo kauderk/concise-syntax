@@ -1,7 +1,7 @@
 import { bridgeBetweenVscodeExtension, extensionId } from './keys'
 import { lifecycle } from './lifecycle'
 import { regexToDomToCss } from './regexToDomToCss'
-import { createAttributeMutation, createStyles } from './shared'
+import { createAttributeArrayMutation, createStyles } from './shared'
 
 function domExtension() {
   const statusBar = document.querySelector('.right-items') as HTMLElement
@@ -37,16 +37,6 @@ export function createSyntaxLifecycle() {
     Extension.icon.style.removeProperty('font-weight')
   }
 
-  const attributeObserver = createAttributeMutation({
-    watchAttribute: bridgeBetweenVscodeExtension,
-    activate() {
-      activate(domExtension())
-    },
-    inactive() {
-      inactive()
-    },
-  })
-
   const cycle = lifecycle<Extension>({
     dom() {
       const dom = domExtension()
@@ -59,10 +49,21 @@ export function createSyntaxLifecycle() {
       }
     },
     activate(dom) {
-      attributeObserver.activate(dom.item)
+      const attributeObserver = createAttributeArrayMutation({
+        target: () => dom.item,
+        watchAttribute: [bridgeBetweenVscodeExtension],
+        change([bridge]) {
+          if (bridge) {
+            activate(domExtension())
+          } else {
+            inactive()
+          }
+        },
+      })
+      attributeObserver.plug()
+      return () => attributeObserver.disconnect()
     },
     dispose() {
-      attributeObserver.dispose()
       // syntaxStyle.dispose() FIXME: create a global extension dispose hook
     },
   })

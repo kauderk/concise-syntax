@@ -132,49 +132,11 @@ export function createStackedMutation<T>(options: {
 }
 
 type D = string | undefined
-export function createAttributeMutation(props: {
-  watchAttribute: string
-  activate: (payload: D) => void
-  inactive: (payload: D) => void
-}) {
-  let previousData: D
-  const bridgeAttribute = (target: any): D =>
-    target?.getAttribute?.(props.watchAttribute)
 
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      const newData = bridgeAttribute(mutation.target)
-      if (previousData === newData) return
-      previousData = newData
-
-      if (newData) {
-        props.activate(newData)
-      } else {
-        props.inactive(newData)
-      }
-    }
-  })
-
-  return {
-    activate(target: HTMLElement) {
-      previousData = bridgeAttribute(target)
-
-      props.activate(previousData)
-      observer.observe(target, {
-        attributes: true,
-        attributeFilter: [props.watchAttribute],
-      })
-    },
-    dispose() {
-      // lol this could be a problem
-      props.inactive(previousData)
-      observer.disconnect()
-    },
-  }
-}
 export function createAttributeArrayMutation(props: {
   watchAttribute: string[]
-  change: (newAttributes: D[], oldAttributes: D[]) => void
+  children?: boolean
+  change: (newAttributes: D[], oldAttributes: D[], node: HTMLElement) => void
   target(): HTMLElement
 }) {
   let previousData: D[] = []
@@ -187,7 +149,7 @@ export function createAttributeArrayMutation(props: {
     const oldAttributes = [...previousData]
     previousData = newData
 
-    props.change(newData, oldAttributes)
+    props.change(newData, oldAttributes, target)
   }
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
@@ -196,6 +158,8 @@ export function createAttributeArrayMutation(props: {
   })
   const options = {
     attributes: true,
+    subtree: props.children,
+    // childList: props.children,
     attributeFilter: props.watchAttribute,
   }
   return {
@@ -204,8 +168,13 @@ export function createAttributeArrayMutation(props: {
       change(target)
       observer.observe(target, options)
     },
+    stop() {
+      observer.takeRecords()
+      observer.disconnect()
+    },
     disconnect() {
       // change(props.target())
+
       observer.disconnect()
     },
   }

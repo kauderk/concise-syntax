@@ -1,4 +1,10 @@
-import { highlightSelector, idSelector, linesSelector } from './keys'
+import {
+  currentSelector,
+  highlightSelector,
+  idSelector,
+  linesSelector,
+  selectedSelector,
+} from './keys'
 import { lifecycle } from './lifecycle'
 import {
   createAttributeArrayMutation,
@@ -6,7 +12,14 @@ import {
   createMutation,
   styleIt,
 } from './shared'
-import { Selected, e, findScopeElements, guardStack, styles } from './utils'
+import {
+  Selected,
+  e,
+  findScopeElements,
+  guardStack,
+  parseTopStyle,
+  styles,
+} from './utils'
 
 /**
  * @description Change color of highlighted or selected lines
@@ -20,8 +33,8 @@ import { Selected, e, findScopeElements, guardStack, styles } from './utils'
 export function createHighlightLifeCycle() {
   // prettier-ignore
   function createHighlight({ node, selector, add, set, label, color }: Selected) {
-    if (!(node instanceof HTMLElement) || !node.querySelector(selector)) return
-    const top = Number(node.style?.top.match(/\d+/)?.[0])
+    if (!e(node) || !node.querySelector(selector)) return
+    const top = parseTopStyle(node)
     if (
       isNaN(top) ||
       set.has(top) === add ||
@@ -77,6 +90,15 @@ export function createHighlightLifeCycle() {
         }
       },
     })
+    function mount() {
+      selectedLines.clear()
+      currentLines.clear()
+      overlay.childNodes.forEach((node) => highlightStyles(node, true)) // if you restart vscode, there might be selected lines already
+    }
+    function plug() {
+      EditorLanguageTracker.plug()
+      mount()
+    }
 
     // lookup state
     let selectedLines = new Set<number>()
@@ -94,35 +116,52 @@ export function createHighlightLifeCycle() {
         highlightStyles(node, false)
       },
     })
-    function mount() {
-      selectedLines.clear()
-      currentLines.clear()
-      overlay.childNodes.forEach((node) => highlightStyles(node, true)) // if you restart vscode, there might be selected lines already
-    }
+
     function highlightStyles(node: Node, add: boolean) {
       if (!editorLabel) return
       const pre = { node, add, label: editorLabel }
       createHighlight({
-        selector: '.selected-text',
+        selector: selectedSelector,
         color: 'orange',
         set: selectedLines,
         ...pre,
       }) ||
         createHighlight({
-          selector: '.current-line',
+          selector: currentSelector,
           color: 'brown',
           set: currentLines,
           ...pre,
         })
     }
 
-    const layoutShift = setTimeout(() => {
-      EditorLanguageTracker.plug()
-      mount() // mount after the editorLabel is set
-    }, 100) /* dude... */
+    // FIXME: find a better way to handle selected lines flickering and layout shifts
+    const selectedLine = overlay.querySelector(selectedSelector)?.parentElement
+    let clearFirstLine: Function | undefined
+    if (selectedLine) {
+      plug() // generally it is the very first editor
+    } else {
+      let done = false
+      const lineTracker = createAttributeArrayMutation({
+        target: () => overlay,
+        children: true,
+        watchAttribute: ['style'],
+        change([style], [oldStyle], node) {
+          if (done) return
+          // the top style shifts right before the last frame * sigh *
+          const top = parseTopStyle(node)
+          if (!isNaN(top) && style && oldStyle != style) {
+            done = true
+            plug()
+            lineTracker.stop()
+          }
+        },
+      })
+      lineTracker.plug()
+      clearFirstLine = lineTracker.stop
+    }
 
     return function dispose() {
-      clearTimeout(layoutShift)
+      clearFirstLine?.()
       if (editorLabel) styles.clear(editorLabel)
       EditorLanguageTracker.disconnect()
       OverlayLineTracker.disconnect()
@@ -151,6 +190,8 @@ export function createHighlightLifeCycle() {
        * 			- editor-container
        * 				- editor-instance
        * 					- view-overlays
+       * 							- selected-text
+       * 							- current-line
        */
       let recStack = new Map<HTMLElement, Function>()
       let editorStack = new Map<HTMLElement, Function>()

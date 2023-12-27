@@ -20,4 +20,6 @@ export const linesSelector =
   idSelector + ` .view-lines.monaco-mouse-cursor-text`
 export const overlaySelector = '.view-overlays'
 export const highlightSelector = idSelector + ` ` + overlaySelector
+export const selectedSelector = '.selected-text'
+export const currentSelector = '.current-line'
 export const languages = ['typescriptreact', 'javascriptreact']
