@@ -45,11 +45,15 @@
       }
     };
   }
-  function createChildrenMutation(props) {
+  function specialChildrenMutation(props) {
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        mutation.addedNodes.forEach(props.added);
-        mutation.removedNodes.forEach(props.removed);
+        for (const node of mutation.addedNodes) {
+          props.added(node);
+        }
+        for (const node of mutation.removedNodes) {
+          props.removed(node);
+        }
       }
     });
     return {
@@ -57,9 +61,11 @@
         observer.takeRecords();
         observer.disconnect();
       },
-      plug() {
+      plug(mapChildren) {
         const target = props.target();
-        target.childNodes.forEach(props.added);
+        ((mapChildren == null ? void 0 : mapChildren(target.childNodes)) ?? target.childNodes).forEach(
+          props.added
+        );
         observer.observe(target, props.options);
       },
       unplug() {
@@ -459,10 +465,16 @@
     );
     const editor = container == null ? void 0 : container.querySelector(editorSelector);
     const overlay = editor == null ? void 0 : editor.querySelector(overlaySelector);
-    return { nested, editor, overlay };
+    return { nested, container, editor, overlay };
   }
-  function e(el) {
-    return el instanceof HTMLElement;
+  function guardStack(stack, key, cleanup) {
+    var _a;
+    if (stack.has(key)) {
+      console.warn("stack has key", stack, key);
+      (_a = stack.get(key)) == null ? void 0 : _a();
+      stack.delete(key);
+    }
+    stack.set(key, cleanup);
   }
   function createHighlightLifeCycle() {
     function createHighlight({ node, selector, add, set, label, color }) {
@@ -545,9 +557,9 @@
         });
       }
       const layoutShift = setTimeout(() => {
-        mount();
         EditorLanguageTracker.plug();
-      }, 0);
+        mount();
+      }, 100);
       return function dispose() {
         clearTimeout(layoutShift);
         if (editorLabel)
@@ -575,46 +587,13 @@
         let recStack = /* @__PURE__ */ new Map();
         let editorStack = /* @__PURE__ */ new Map();
         let treeStack = /* @__PURE__ */ new Map();
-        const REC_EditorOverlayTracker = (target) => createChildrenMutation({
+        const REC_EditorOverlayTracker = (target) => specialChildrenMutation({
           target: () => target,
           options: {
             childList: true
           },
-          added(splitViewView) {
-            if (!e(splitViewView))
-              return;
-            const elements = findScopeElements(splitViewView);
-            if (elements.nested) {
-              const rec = REC_EditorOverlayTracker(elements.nested);
-              rec.plug();
-              recStack.set(splitViewView, rec.unplug);
-            } else if (awkwardStack(elements))
-              ;
-            else if (!elements.overlay) {
-              const treeTracker = createChildrenMutation({
-                target: () => splitViewView,
-                options: {
-                  childList: true,
-                  subtree: true
-                },
-                added() {
-                  const elements2 = findScopeElements(splitViewView);
-                  if (awkwardStack(elements2)) {
-                    treeTracker.stop();
-                  }
-                },
-                removed() {
-                }
-              });
-              treeTracker.plug();
-              treeStack.set(splitViewView, treeTracker.stop);
-            }
-          },
-          removed(splitViewView) {
-            if (!e(splitViewView))
-              return;
-            clearStacks((keyNode) => keyNode.contains(splitViewView));
-          }
+          added,
+          removed: bruteForceRemove
         });
         function clearStacks(condition) {
           var _a;
@@ -634,9 +613,56 @@
             return true;
           }
         }
+        function added(splitViewView) {
+          const elements = findScopeElements(splitViewView);
+          if (elements.nested) {
+            const rec = REC_EditorOverlayTracker(elements.nested);
+            rec.plug();
+            guardStack(recStack, splitViewView, rec.unplug);
+          } else if (awkwardStack(elements))
+            ;
+          else if (!elements.overlay) {
+            const treeTracker = specialChildrenMutation({
+              target: () => splitViewView,
+              options: {
+                childList: true,
+                subtree: true
+              },
+              added() {
+                const elements2 = findScopeElements(splitViewView);
+                if (awkwardStack(elements2)) {
+                  treeTracker.stop();
+                }
+              },
+              removed() {
+              }
+            });
+            treeTracker.plug();
+            guardStack(treeStack, splitViewView, treeTracker.unplug);
+          }
+        }
+        function bruteForceRemove(splitViewView) {
+          clearStacks((keyNode) => !dom.watchForRemoval.contains(keyNode));
+        }
         const root = REC_EditorOverlayTracker(dom.watchForRemoval);
-        root.plug();
+        const [firstView, ...restViews] = dom.watchForRemoval.childNodes;
+        const container = findScopeElements(firstView).container;
+        const firsContainerTracker = specialChildrenMutation({
+          target: () => container,
+          options: {
+            childList: true
+          },
+          added() {
+            added(firstView);
+          },
+          removed() {
+            bruteForceRemove();
+          }
+        });
+        root.plug(() => restViews);
+        firsContainerTracker.plug();
         return () => {
+          firsContainerTracker.stop();
           clearStacks();
         };
       },

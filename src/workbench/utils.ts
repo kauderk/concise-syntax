@@ -72,7 +72,7 @@ export function findScopeElements(view: HTMLElement) {
   ) as H
   const editor = container?.querySelector(editorSelector) as H
   const overlay = editor?.querySelector(overlaySelector) as H
-  return { nested, editor, overlay }
+  return { nested, container, editor, overlay }
 }
 function lookup(node: Node | null, up: number): Node {
   return Array(up)
@@ -89,4 +89,17 @@ export function lookupTo(
 
 export function e(el: unknown): el is HTMLElement {
   return el instanceof HTMLElement
+}
+
+export function guardStack(
+  stack: Map<HTMLElement, Function>,
+  key: HTMLElement,
+  cleanup: Function
+) {
+  if (stack.has(key)) {
+    console.warn('stack has key', stack, key)
+    stack.get(key)?.()
+    stack.delete(key)
+  }
+  stack.set(key, cleanup)
 }

@@ -2,11 +2,11 @@ import { highlightSelector, idSelector, linesSelector } from './keys'
 import { lifecycle } from './lifecycle'
 import {
   createAttributeArrayMutation,
-  createChildrenMutation,
+  specialChildrenMutation,
   createMutation,
   styleIt,
 } from './shared'
-import { Selected, e, findScopeElements, styles } from './utils'
+import { Selected, e, findScopeElements, guardStack, styles } from './utils'
 
 /**
  * @description Change color of highlighted or selected lines
@@ -117,9 +117,9 @@ export function createHighlightLifeCycle() {
     }
 
     const layoutShift = setTimeout(() => {
-      mount()
       EditorLanguageTracker.plug()
-    }, 0)
+      mount() // mount after the editorLabel is set
+    }, 100) /* dude... */
 
     return function dispose() {
       clearTimeout(layoutShift)
@@ -157,49 +157,13 @@ export function createHighlightLifeCycle() {
       let treeStack = new Map<HTMLElement, Function>()
 
       const REC_EditorOverlayTracker = (target: HTMLElement) =>
-        createChildrenMutation({
+        specialChildrenMutation({
           target: () => target,
           options: {
             childList: true,
           },
-          added(splitViewView) {
-            if (!e(splitViewView)) return
-
-            const elements = findScopeElements(splitViewView)
-
-            if (elements.nested) {
-              const rec = REC_EditorOverlayTracker(elements.nested)
-              rec.plug()
-
-              recStack.set(splitViewView, rec.unplug)
-            } else if (awkwardStack(elements)) {
-              // noop
-            } else if (!elements.overlay) {
-              const treeTracker = createChildrenMutation({
-                target: () => splitViewView,
-                options: {
-                  childList: true,
-                  subtree: true,
-                },
-                added() {
-                  const elements = findScopeElements(splitViewView)
-                  if (awkwardStack(elements)) {
-                    treeTracker.stop()
-                  }
-                },
-                removed() {},
-              })
-
-              treeTracker.plug()
-              treeStack.set(splitViewView, treeTracker.stop)
-            }
-          },
-          removed(splitViewView) {
-            if (!e(splitViewView)) return
-
-            // FIXME: this should be handled by each cycle, there is an unhandled cleanup
-            clearStacks((keyNode) => keyNode.contains(splitViewView))
-          },
+          added,
+          removed: bruteForceRemove,
         })
       function clearStacks(condition?: (keyNode: HTMLElement) => boolean) {
         for (const stack of [recStack, editorStack, treeStack]) {
@@ -217,11 +181,65 @@ export function createHighlightLifeCycle() {
           return true
         }
       }
+      function added(splitViewView: HTMLElement) {
+        const elements = findScopeElements(splitViewView)
+
+        if (elements.nested) {
+          const rec = REC_EditorOverlayTracker(elements.nested)
+          rec.plug()
+
+          guardStack(recStack, splitViewView, rec.unplug)
+        } else if (awkwardStack(elements)) {
+          // noop
+        } else if (!elements.overlay) {
+          const treeTracker = specialChildrenMutation({
+            target: () => splitViewView,
+            options: {
+              childList: true,
+              subtree: true,
+            },
+            added() {
+              const elements = findScopeElements(splitViewView)
+              if (awkwardStack(elements)) {
+                treeTracker.stop()
+              }
+            },
+            removed() {},
+          })
+
+          treeTracker.plug()
+          guardStack(treeStack, splitViewView, treeTracker.unplug)
+        }
+      }
+
+      function bruteForceRemove(splitViewView: HTMLElement) {
+        // FIXME: this should be handled by each cycle, there is an unhandled cleanup
+        clearStacks((keyNode) => !dom.watchForRemoval.contains(keyNode))
+      }
 
       const root = REC_EditorOverlayTracker(dom.watchForRemoval)
-      root.plug()
+
+      // root.plug() special case, the first view never gets removed * sigh *
+      const [firstView, ...restViews] = dom.watchForRemoval.childNodes
+      const container = findScopeElements(firstView as any).container
+      const firsContainerTracker = specialChildrenMutation({
+        target: () => container as any,
+        options: {
+          childList: true,
+        },
+        added() {
+          added(firstView as any)
+        },
+        removed() {
+          bruteForceRemove(firstView as any)
+        },
+      })
+
+      root.plug(() => restViews)
+      firsContainerTracker.plug()
 
       return () => {
+        firsContainerTracker.stop()
         // root.unplug()
         clearStacks()
       }

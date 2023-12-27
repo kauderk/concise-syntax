@@ -54,11 +54,27 @@ export function createMutation(props: MutationOptions) {
     },
   }
 }
-export function createChildrenMutation(props: MutationOptions) {
+type MatchMutationOptions = {
+  added(node: HTMLElement): void
+  removed(node: HTMLElement): void
+  // filter(node: Node): boolean
+  options: MutationObserverInit
+  target(): HTMLElement
+}
+
+export function specialChildrenMutation(props: MatchMutationOptions) {
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      mutation.addedNodes.forEach(props.added)
-      mutation.removedNodes.forEach(props.removed)
+      for (const node of mutation.addedNodes) {
+        // if (props.filter(node)) {
+        props.added(node as any)
+        // }
+      }
+      for (const node of mutation.removedNodes) {
+        // if (props.filter(node)) {
+        props.removed(node as any)
+        // }
+      }
     }
   })
 
@@ -67,16 +83,18 @@ export function createChildrenMutation(props: MutationOptions) {
       observer.takeRecords()
       observer.disconnect()
     },
-    plug() {
+    plug(mapChildren?: (children: NodeListOf<ChildNode>) => ChildNode[]) {
       const target = props.target()
-      // console.log('plugging', target.childNodes)
-      target.childNodes.forEach(props.added)
+
+      ;(mapChildren?.(target.childNodes) ?? target.childNodes).forEach(
+        props.added as any
+      )
       observer.observe(target, props.options)
     },
     unplug() {
       const target = props.target()
-      // console.log('unplugging', target.childNodes)
-      target.childNodes.forEach(props.removed)
+
+      target.childNodes.forEach(props.removed as any)
       observer.disconnect()
     },
   }
