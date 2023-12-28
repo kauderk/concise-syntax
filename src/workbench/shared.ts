@@ -9,7 +9,7 @@ document.body.appendChild(stylesContainer)
 // type ToastOptions = PropType<typeof Toastify, 'prototype'>['options']
 
 const levels = {
-  info: {
+  log: {
     background: 'linear-gradient(to right, #292d3e, #31364a)',
     'box-shadow': '0 3px 6px -1px #0000001f, 0 10px 36px -4px #4d60e84d',
     border: '1px dotted #e3e4e229',
@@ -19,7 +19,7 @@ const levels = {
     'box-shadow': '0 3px 6px -1px #ff475796, 0 10px 36px -4px #a944424d',
     border: '1px dotted #ff4757',
   },
-  warning: {
+  warn: {
     background: 'linear-gradient(to right, #8a6d3b, #7a5b32)',
     'box-shadow': '0 3px 6px -1px #8a6d3b70, 0 10px 36px -4px #8a6d3b4d',
     border: '1px dotted #e3e4e229',
@@ -30,7 +30,25 @@ const levels = {
     border: '1px dotted #e3e4e229',
   },
 } as const
-export function useToast(text: string, level: keyof typeof levels) {
+
+type ToastOptions = {
+  level: keyof typeof levels
+  message: string
+  objects?: Record<string, any>
+  onClick?: (e: MouseEvent) => void
+  callback?: () => void
+}
+export function useToast(options: ToastOptions) {
+  const { level, message } = options
+  const print = level.toUpperCase() + ' : ' + message
+
+  if (level === 'success') {
+    // add green ish color to the console.log
+    console.log('%c ' + print, 'background: #222; color: #bada55')
+  } else {
+    console[level](print, options.objects)
+  }
+
   const toastStyle = createStyles('toast')
   toastStyle.styleIt(minifiedCss)
   const toast = new Toastify({
@@ -40,9 +58,9 @@ export function useToast(text: string, level: keyof typeof levels) {
     position: 'left', // `left`, `center` or `right`
     stopOnFocus: true, // Prevents dismissing of toast on hover
     style: levels[level],
-    onClick(e) {},
-    callback() {},
-    text,
+    onClick: options.onClick,
+    callback: options.callback,
+    text: message,
   })
 
   return toast.showToast()

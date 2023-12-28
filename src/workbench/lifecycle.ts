@@ -1,4 +1,4 @@
-import { watchForRemoval } from './shared'
+import { useToast, watchForRemoval } from './shared'
 
 export type LifecycleProps<T> = {
   activate(dom: T): void | (() => void)
@@ -14,6 +14,7 @@ export type LifecycleProps<T> = {
 export function lifecycle<T>(props: LifecycleProps<T>) {
   let running = false
   let anyUsage = false
+  let tryFn = createTryFunction({ fallback: clean })
   let interval: NodeJS.Timeout
   let disposeObserver: Function | void
   let disposeActivate: Function | void
@@ -24,28 +25,45 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
     anyUsage = true
     running = true
     clearInterval(interval)
-    disposeObserver = watchForRemoval(dom.watchForRemoval, reload)
-    disposeActivate = props.activate(dom)
+
+    tryFn(() => {
+      disposeObserver = watchForRemoval(dom.watchForRemoval, reload)
+      disposeActivate = props.activate(dom)
+    }, 'Lifecycle crashed unexpectedly when activating')
   }
   function dispose() {
-    disposeActivate?.()
-    disposeActivate = undefined
-    disposeObserver?.()
-    disposeObserver = undefined
-
-    props.dispose?.()
-    running = false
     clearInterval(interval)
+
+    tryFn(() => {
+      disposeActivate?.()
+      disposeActivate = undefined
+      disposeObserver?.()
+      disposeObserver = undefined
+
+      props.dispose?.()
+
+      running = false
+    }, 'Lifecycle crashed unexpectedly when disposing')
   }
   function reload() {
     dispose()
     interval = setInterval(patch, 5000)
+  }
+  function clean() {
+    clearTimeout(exhaust)
+    clearInterval(interval)
   }
 
   let exhaust: any
 
   return {
     activate() {
+      if (
+        tryFn.guard('Lifecycle already crashed therefore not activating again')
+      ) {
+        return
+      }
+
       reload()
       return
       exhaust = setTimeout(() => {
@@ -56,9 +74,61 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
       }, 1000 * 60 * 2)
     },
     dispose() {
+      if (
+        tryFn.guard('Lifecycle already crashed therefore not disposing again')
+      ) {
+        return
+      }
+
       dispose()
-      clearTimeout(exhaust)
-      clearInterval(interval)
+      clean()
     },
+  }
+}
+
+type Guard = Partial<{ fallback: Function; message: string }>
+/**
+ * TODO: This gotta be a pattern or something
+ */
+export function createTryFunction(guard?: Guard) {
+  let crashed = false
+
+  function tryFunction(fn: Function, message: string) {
+    if (crashed) return
+
+    try {
+      fn()
+    } catch (error) {
+      crashed = true
+      useToast({
+        level: 'error',
+        message: 'Fatal - ' + message,
+        objects: [error],
+      })
+    }
+  }
+  // assign a getter to the tryFunction
+  Object.defineProperty(tryFunction, 'crashed', {
+    get() {
+      return crashed
+    },
+  })
+  // assign a guard function to the tryFunction
+  tryFunction.guard = (action: Function | string) => {
+    if (crashed) {
+      // just pass a function bruh...
+      const fallback = action ?? guard?.fallback
+      if (typeof fallback === 'function') {
+        fallback()
+      }
+      const message = action ?? guard?.message
+      if (typeof message === 'string') {
+        console.warn(message)
+      }
+    }
+    return crashed
+  }
+  return tryFunction as typeof tryFunction & {
+    get crashed(): boolean
   }
 }

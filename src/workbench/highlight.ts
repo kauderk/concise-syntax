@@ -21,7 +21,7 @@ import {
   parseTopStyle,
   styles,
 } from './utils'
-
+const splitViewContainerSelector = '.split-view-container'
 /**
  * @description Change color of highlighted or selected lines
  *
@@ -169,7 +169,8 @@ export function createHighlightLifeCycle() {
         '#workbench\\.parts\\.editor > div.content > div > div'
       ) as H
       const root = gridRoot.querySelector(
-        ':scope > div > div > div.monaco-scrollable-element > div.split-view-container'
+        ':scope > div > div > div.monaco-scrollable-element > ' +
+          splitViewContainerSelector
       ) as H
       const editor = root?.querySelector(idSelector) as H
       const overlays = editor?.querySelector(highlightSelector)
@@ -182,11 +183,6 @@ export function createHighlightLifeCycle() {
       }
     },
     activate(DOM) {
-      useToast('Test Error Toast', 'error')
-      useToast('Test Warning Toast', 'warning')
-      useToast('Test Info Toast', 'info')
-      useToast('Test Success Toast', 'success')
-
       /**
        * - split-view-container
        * 		- split-view-view -> Recursion
@@ -269,14 +265,35 @@ export function createHighlightLifeCycle() {
           childList: true,
         },
         added(node) {
-          if (rebootCleanup) throw new Error('reboot cleanup already exists')
+          if (rebootCleanup) {
+            useToast({
+              level: 'error',
+              message: `Reboot cleanup already exists`,
+              objects: { rebootCleanup },
+            })
+            return
+          }
 
           type H = HTMLElement | undefined
-          if (!e(node)) return console.warn('no node')
+          if (!e(node)) {
+            useToast({
+              level: 'warn',
+              message: `Reboot added node is not HTMLElement`,
+              objects: { node },
+            })
+            return
+          }
           const rootContainer = node.querySelector(
-            'div.split-view-container'
+            splitViewContainerSelector
           ) as H
-          if (!rootContainer) return console.warn('no root container')
+          if (!rootContainer) {
+            useToast({
+              level: 'warn',
+              message: `Reboot rootContainer not found with selector`,
+              objects: { node, splitViewContainerSelector },
+            })
+            return
+          }
 
           const root = REC_EditorOverlayTracker(rootContainer)
 
@@ -301,7 +318,11 @@ export function createHighlightLifeCycle() {
             firsContainerTracker.plug()
             stopFirstContainer = firsContainerTracker.stop
           } else {
-            useToast('No container', 'error')
+            useToast({
+              level: 'error',
+              message: `Reboot first view container not found`,
+              objects: { rootContainer, firstView },
+            })
           }
           root.plug(() => restViews)
 
