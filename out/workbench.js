@@ -572,19 +572,22 @@
     const cycle = lifecycle({
       dom() {
         var _a;
-        const root = document.querySelector(
+        const gridRoot = document.querySelector(
           "#workbench\\.parts\\.editor > div.content > div > div > div > div > div.monaco-scrollable-element > div.split-view-container"
+        );
+        const root = gridRoot.querySelector(
+          ":scope > div > div > div.monaco-scrollable-element > div.split-view-container"
         );
         const editor = root == null ? void 0 : root.querySelector(idSelector);
         const overlays = (_a = editor == null ? void 0 : editor.querySelector(highlightSelector)) == null ? void 0 : _a.parentElement;
         return {
           check() {
-            return !!(root && editor && overlays);
+            return !!overlays;
           },
-          watchForRemoval: root
+          watchForRemoval: gridRoot
         };
       },
-      activate(dom) {
+      activate(DOM) {
         let recStack = /* @__PURE__ */ new Map();
         let editorStack = /* @__PURE__ */ new Map();
         let treeStack = /* @__PURE__ */ new Map();
@@ -619,7 +622,7 @@
           if (elements.nested) {
             const rec = REC_EditorOverlayTracker(elements.nested);
             rec.plug();
-            guardStack(recStack, splitViewView, rec.unplug);
+            guardStack(recStack, splitViewView, rec.stop);
           } else if (awkwardStack(elements))
             ;
           else if (!elements.overlay) {
@@ -639,31 +642,64 @@
               }
             });
             treeTracker.plug();
-            guardStack(treeStack, splitViewView, treeTracker.unplug);
+            guardStack(treeStack, splitViewView, treeTracker.stop);
           }
         }
         function bruteForceRemove(splitViewView) {
-          clearStacks((keyNode) => !dom.watchForRemoval.contains(keyNode));
+          clearStacks((keyNode) => !DOM.watchForRemoval.contains(keyNode));
         }
-        const root = REC_EditorOverlayTracker(dom.watchForRemoval);
-        const [firstView, ...restViews] = dom.watchForRemoval.childNodes;
-        const container = findScopeElements(firstView).container;
-        const firsContainerTracker = specialChildrenMutation({
-          target: () => container,
+        let rebootCleanup;
+        const reboot = createMutation({
+          target: () => DOM.watchForRemoval,
           options: {
             childList: true
           },
-          added() {
-            added(firstView);
+          added(node) {
+            if (rebootCleanup)
+              throw new Error("reboot cleanup already exists");
+            if (!e(node))
+              return console.warn("no node");
+            const rootContainer = node.querySelector(
+              "div.split-view-container"
+            );
+            if (!rootContainer)
+              return console.warn("no root container");
+            const root = REC_EditorOverlayTracker(rootContainer);
+            const [firstView, ...restViews] = rootContainer.childNodes;
+            const container = findScopeElements(firstView).container;
+            let stopFirstContainer = () => {
+            };
+            if (container) {
+              const firsContainerTracker = specialChildrenMutation({
+                target: () => container,
+                options: {
+                  childList: true
+                },
+                added() {
+                  added(firstView);
+                },
+                removed() {
+                  bruteForceRemove();
+                }
+              });
+              firsContainerTracker.plug();
+              stopFirstContainer = firsContainerTracker.stop;
+            }
+            root.plug(() => restViews);
+            rebootCleanup = () => {
+              root.stop();
+              stopFirstContainer();
+            };
           },
-          removed() {
-            bruteForceRemove();
+          removed(node) {
+            rebootCleanup == null ? void 0 : rebootCleanup();
+            rebootCleanup = void 0;
           }
         });
-        root.plug(() => restViews);
-        firsContainerTracker.plug();
         return () => {
-          firsContainerTracker.stop();
+          reboot.disconnect();
+          rebootCleanup == null ? void 0 : rebootCleanup();
+          rebootCleanup = void 0;
           clearStacks();
         };
       },

@@ -163,20 +163,24 @@ export function createHighlightLifeCycle() {
 
   const cycle = lifecycle({
     dom() {
-      const root = document.querySelector(
+      type H = HTMLElement
+      const gridRoot = document.querySelector(
         '#workbench\\.parts\\.editor > div.content > div > div > div > div > div.monaco-scrollable-element > div.split-view-container'
-      ) as HTMLElement
-      const editor = root?.querySelector(idSelector) as HTMLElement
+      ) as H
+      const root = gridRoot.querySelector(
+        ':scope > div > div > div.monaco-scrollable-element > div.split-view-container'
+      ) as H
+      const editor = root?.querySelector(idSelector) as H
       const overlays = editor?.querySelector(highlightSelector)
-        ?.parentElement as HTMLElement
+        ?.parentElement as H
       return {
         check() {
-          return !!(root && editor && overlays)
+          return !!overlays
         },
-        watchForRemoval: root,
+        watchForRemoval: gridRoot,
       }
     },
-    activate(dom) {
+    activate(DOM) {
       /**
        * - split-view-container
        * 		- split-view-view -> Recursion
@@ -222,7 +226,7 @@ export function createHighlightLifeCycle() {
           const rec = REC_EditorOverlayTracker(elements.nested)
           rec.plug()
 
-          guardStack(recStack, splitViewView, rec.unplug)
+          guardStack(recStack, splitViewView, rec.stop) // don't "unplug" because the unwinding will cause a stack overflow plus the "removed" method is currently brute force
         } else if (awkwardStack(elements)) {
           // noop
         } else if (!elements.overlay) {
@@ -242,39 +246,72 @@ export function createHighlightLifeCycle() {
           })
 
           treeTracker.plug()
-          guardStack(treeStack, splitViewView, treeTracker.unplug)
+          guardStack(treeStack, splitViewView, treeTracker.stop) // don't "unplug" because the unwinding will cause a stack overflow plus the "removed" method is currently brute force
         }
       }
 
       function bruteForceRemove(splitViewView: HTMLElement) {
         // FIXME: this should be handled by each cycle, there is an unhandled cleanup
-        clearStacks((keyNode) => !dom.watchForRemoval.contains(keyNode))
+        clearStacks((keyNode) => !DOM.watchForRemoval.contains(keyNode))
       }
 
-      const root = REC_EditorOverlayTracker(dom.watchForRemoval)
-
-      // root.plug() special case, the first view never gets removed * sigh *
-      const [firstView, ...restViews] = dom.watchForRemoval.childNodes
-      const container = findScopeElements(firstView as any).container
-      const firsContainerTracker = specialChildrenMutation({
-        target: () => container as any,
+      let rebootCleanup: Function | undefined
+      const reboot = createMutation({
+        target: () => DOM.watchForRemoval,
         options: {
           childList: true,
         },
-        added() {
-          added(firstView as any)
+        added(node) {
+          if (rebootCleanup) throw new Error('reboot cleanup already exists')
+
+          type H = HTMLElement | undefined
+          if (!e(node)) return console.warn('no node')
+          const rootContainer = node.querySelector(
+            'div.split-view-container'
+          ) as H
+          if (!rootContainer) return console.warn('no root container')
+
+          const root = REC_EditorOverlayTracker(rootContainer)
+
+          // root.plug() special case, the first view never gets removed * sigh *
+          const [firstView, ...restViews] = rootContainer.childNodes
+          const container = findScopeElements(firstView as any)
+            .container as any as HTMLElement | undefined
+          let stopFirstContainer = () => {}
+          if (container) {
+            const firsContainerTracker = specialChildrenMutation({
+              target: () => container as any,
+              options: {
+                childList: true,
+              },
+              added() {
+                added(firstView as any)
+              },
+              removed() {
+                bruteForceRemove(firstView as any)
+              },
+            })
+            firsContainerTracker.plug()
+            stopFirstContainer = firsContainerTracker.stop
+          }
+          root.plug(() => restViews)
+
+          rebootCleanup = () => {
+            root.stop()
+            stopFirstContainer()
+            // rebootCleanup = undefined
+          }
         },
-        removed() {
-          bruteForceRemove(firstView as any)
+        removed(node) {
+          rebootCleanup?.()
+          rebootCleanup = undefined
         },
       })
 
-      root.plug(() => restViews)
-      firsContainerTracker.plug()
-
       return () => {
-        firsContainerTracker.stop()
-        // root.unplug()
+        reboot.disconnect()
+        rebootCleanup?.()
+        rebootCleanup = undefined
         clearStacks()
       }
     },
