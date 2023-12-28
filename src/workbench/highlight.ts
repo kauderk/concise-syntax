@@ -66,7 +66,7 @@ export function createHighlightLifeCycle() {
 
   function editorOverlayLifecycle(editor: HTMLElement, overlay: HTMLElement) {
     // lookup state
-    let editorLabel: string | undefined
+    let editorLabel = editor.getAttribute('aria-label') as any
 
     const EditorLanguageTracker = createAttributeArrayMutation({
       target: () => editor,
@@ -94,10 +94,6 @@ export function createHighlightLifeCycle() {
       selectedLines.clear()
       currentLines.clear()
       overlay.childNodes.forEach((node) => highlightStyles(node, true)) // if you restart vscode, there might be selected lines already
-    }
-    function plug() {
-      EditorLanguageTracker.plug()
-      mount()
     }
 
     // lookup state
@@ -135,33 +131,30 @@ export function createHighlightLifeCycle() {
     }
 
     // FIXME: find a better way to handle selected lines flickering and layout shifts
-    const selectedLine = overlay.querySelector(selectedSelector)?.parentElement
-    let clearFirstLine: Function | undefined
-    if (selectedLine) {
-      plug() // generally it is the very first editor
-    } else {
-      let done = false
-      const lineTracker = createAttributeArrayMutation({
-        target: () => overlay,
-        children: true,
-        watchAttribute: ['style'],
-        change([style], [oldStyle], node) {
-          if (done) return
-          // the top style shifts right before the last frame * sigh *
-          const top = parseTopStyle(node)
-          if (!isNaN(top) && style && oldStyle != style) {
-            done = true
-            plug()
-            lineTracker.stop()
-          }
-        },
-      })
-      lineTracker.plug()
-      clearFirstLine = lineTracker.stop
-    }
+    // issue: the top style shifts right before the last frame
+    let done = false
+    const lineTracker = createAttributeArrayMutation({
+      target: () => overlay,
+      children: true,
+      watchAttribute: ['style'],
+      change([style], [oldStyle], node) {
+        if (done) return
+        const top = parseTopStyle(node)
+        if (!isNaN(top) && style && oldStyle != style) {
+          done = true
+          mount()
+          lineTracker.stop()
+        }
+      },
+    })
+    mount()
+    EditorLanguageTracker.plug()
+    lineTracker.plug()
+    const layoutShift = setTimeout(lineTracker.stop, 500)
 
     return function dispose() {
-      clearFirstLine?.()
+      clearTimeout(layoutShift)
+      lineTracker.stop
       if (editorLabel) styles.clear(editorLabel)
       EditorLanguageTracker.disconnect()
       OverlayLineTracker.disconnect()

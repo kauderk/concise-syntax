@@ -19,7 +19,6 @@ export function clear(label?: string) {
 }
 export const styles = {
   clear(label: string) {
-    console.log('clear', label)
     clear(label)
   },
   clearAll() {

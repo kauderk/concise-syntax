@@ -403,7 +403,6 @@
   }
   const styles = {
     clear(label) {
-      console.log("clear", label);
       clear(label);
     },
     clearAll() {
@@ -485,8 +484,7 @@
       return true;
     }
     function editorOverlayLifecycle(editor, overlay) {
-      var _a;
-      let editorLabel;
+      let editorLabel = editor.getAttribute("aria-label");
       const EditorLanguageTracker = createAttributeArrayMutation({
         target: () => editor,
         watchAttribute: ["data-mode-id", "aria-label"],
@@ -512,10 +510,6 @@
         selectedLines.clear();
         currentLines.clear();
         overlay.childNodes.forEach((node) => highlightStyles(node, true));
-      }
-      function plug() {
-        EditorLanguageTracker.plug();
-        mount();
       }
       let selectedLines = /* @__PURE__ */ new Set();
       let currentLines = /* @__PURE__ */ new Set();
@@ -547,32 +541,28 @@
           ...pre
         });
       }
-      const selectedLine = (_a = overlay.querySelector(selectedSelector)) == null ? void 0 : _a.parentElement;
-      let clearFirstLine;
-      if (selectedLine) {
-        plug();
-      } else {
-        let done = false;
-        const lineTracker = createAttributeArrayMutation({
-          target: () => overlay,
-          children: true,
-          watchAttribute: ["style"],
-          change([style], [oldStyle], node) {
-            if (done)
-              return;
-            const top = parseTopStyle(node);
-            if (!isNaN(top) && style && oldStyle != style) {
-              done = true;
-              plug();
-              lineTracker.stop();
-            }
+      let done = false;
+      const lineTracker = createAttributeArrayMutation({
+        target: () => overlay,
+        children: true,
+        watchAttribute: ["style"],
+        change([style], [oldStyle], node) {
+          if (done)
+            return;
+          const top = parseTopStyle(node);
+          if (!isNaN(top) && style && oldStyle != style) {
+            done = true;
+            mount();
+            lineTracker.stop();
           }
-        });
-        lineTracker.plug();
-        clearFirstLine = lineTracker.stop;
-      }
+        }
+      });
+      mount();
+      EditorLanguageTracker.plug();
+      lineTracker.plug();
+      const layoutShift = setTimeout(lineTracker.stop, 500);
       return function dispose() {
-        clearFirstLine == null ? void 0 : clearFirstLine();
+        clearTimeout(layoutShift);
         if (editorLabel)
           styles.clear(editorLabel);
         EditorLanguageTracker.disconnect();
