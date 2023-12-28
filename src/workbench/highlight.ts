@@ -11,6 +11,7 @@ import {
   specialChildrenMutation,
   createMutation,
   styleIt,
+  useToast,
 } from './shared'
 import {
   Selected,
@@ -181,6 +182,11 @@ export function createHighlightLifeCycle() {
       }
     },
     activate(DOM) {
+      useToast('Test Error Toast', 'error')
+      useToast('Test Warning Toast', 'warning')
+      useToast('Test Info Toast', 'info')
+      useToast('Test Success Toast', 'success')
+
       /**
        * - split-view-container
        * 		- split-view-view -> Recursion
@@ -294,6 +300,8 @@ export function createHighlightLifeCycle() {
             })
             firsContainerTracker.plug()
             stopFirstContainer = firsContainerTracker.stop
+          } else {
+            useToast('No container', 'error')
           }
           root.plug(() => restViews)
 

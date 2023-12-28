@@ -1,9 +1,52 @@
 import { windowId } from './keys'
-
+import { Toastify, minifiedCss } from '../shared/toast.js'
 export const stylesContainer =
   document.getElementById(windowId) ?? document.createElement('div')
 stylesContainer.id = windowId
 document.body.appendChild(stylesContainer)
+
+// type PropType<TObj, TProp extends keyof TObj> = TObj[TProp]
+// type ToastOptions = PropType<typeof Toastify, 'prototype'>['options']
+
+const levels = {
+  info: {
+    background: 'linear-gradient(to right, #292d3e, #31364a)',
+    'box-shadow': '0 3px 6px -1px #0000001f, 0 10px 36px -4px #4d60e84d',
+    border: '1px dotted #e3e4e229',
+  },
+  error: {
+    background: 'linear-gradient(to right, #ff4757, #6e1e38)',
+    'box-shadow': '0 3px 6px -1px #ff475796, 0 10px 36px -4px #a944424d',
+    border: '1px dotted #ff4757',
+  },
+  warning: {
+    background: 'linear-gradient(to right, #8a6d3b, #7a5b32)',
+    'box-shadow': '0 3px 6px -1px #8a6d3b70, 0 10px 36px -4px #8a6d3b4d',
+    border: '1px dotted #e3e4e229',
+  },
+  success: {
+    background: 'linear-gradient(to right, #3c763d, #356635)',
+    'box-shadow': '0 3px 6px -1px #509d51b3, 0 10px 36px -4px #3c763d9c',
+    border: '1px dotted #e3e4e229',
+  },
+} as const
+export function useToast(text: string, level: keyof typeof levels) {
+  const toastStyle = createStyles('toast')
+  toastStyle.styleIt(minifiedCss)
+  const toast = new Toastify({
+    duration: 500_000,
+    close: true,
+    gravity: 'bottom', // `top` or `bottom`
+    position: 'left', // `left`, `center` or `right`
+    stopOnFocus: true, // Prevents dismissing of toast on hover
+    style: levels[level],
+    onClick(e) {},
+    callback() {},
+    text,
+  })
+
+  return toast.showToast()
+}
 
 export function createStyles(name: string) {
   const id = windowId + '.' + name

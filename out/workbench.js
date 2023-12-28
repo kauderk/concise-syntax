@@ -1,7 +1,13 @@
 (function(factory) {
   typeof ignoreDefine === "function" && ignoreDefine.amd ? ignoreDefine(factory) : factory();
 })(function() {
-  "use strict";
+  "use strict";var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => {
+  __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+  return value;
+};
+
   const extensionId = "kauderk.concise-syntax";
   const windowId = "window." + extensionId;
   const editorSelector = ".editor-instance";
@@ -11,9 +17,360 @@
   const highlightSelector = idSelector + ` ` + overlaySelector;
   const selectedSelector = ".selected-text";
   const currentSelector = ".current-line";
+  /*!
+  * Toastify js 1.12.0
+  * https://github.com/apvarun/toastify-js
+  * @license MIT licensed
+  *
+  * Copyright (C) 2018 Varun A P
+  */
+  class Toastify {
+    /**
+     * Create a new Toastify instance
+     * @param {Partial<ToastifyConfigurationObject>} options - The configuration object to configure Toastify
+     * 
+    */
+    constructor(options) {
+      __publicField(this, "defaults", {
+        oldestFirst: true,
+        text: "Toastify is awesome!",
+        node: void 0,
+        duration: 3e3,
+        selector: void 0,
+        callback: function() {
+        },
+        destination: void 0,
+        newWindow: false,
+        close: false,
+        gravity: "toastify-top",
+        positionLeft: false,
+        position: "",
+        backgroundColor: "",
+        avatar: "",
+        className: "",
+        stopOnFocus: true,
+        onClick: function() {
+        },
+        offset: { x: 0, y: 0 },
+        escapeMarkup: true,
+        ariaLive: "polite",
+        style: { background: "" }
+      });
+      this.version = "1.12.0";
+      this.options = {};
+      this.toastElement = null;
+      this._rootElement = document.body;
+      this._init(options);
+    }
+    /**
+     * Display the toast
+     * @public
+     */
+    showToast() {
+      this.toastElement = this._buildToast();
+      if (typeof this.options.selector === "string") {
+        this._rootElement = document.getElementById(this.options.selector);
+      } else if (this.options.selector instanceof HTMLElement || this.options.selector instanceof ShadowRoot) {
+        this._rootElement = this.options.selector;
+      } else {
+        this._rootElement = document.body;
+      }
+      if (!this._rootElement) {
+        throw "Root element is not defined";
+      }
+      this._rootElement.insertBefore(this.toastElement, this._rootElement.firstChild);
+      this._reposition();
+      if (this.options.duration > 0) {
+        this.toastElement.timeOutValue = window.setTimeout(
+          () => {
+            this._removeElement(this.toastElement);
+          },
+          this.options.duration
+        );
+      }
+      return this;
+    }
+    /**
+     * Hide the toast
+     * @public
+     */
+    hideToast() {
+      if (this.toastElement.timeOutValue) {
+        clearTimeout(this.toastElement.timeOutValue);
+      }
+      this._removeElement(this.toastElement);
+    }
+    /**
+     * Init the Toastify class
+     * @param {ToastifyConfigurationObject} options - The configuration object to configure Toastify
+     * @param {string} [options.text=Hi there!] - Message to be displayed in the toast
+     * @param {Element} [options.node] - Provide a node to be mounted inside the toast. node takes higher precedence over text
+     * @param {number} [options.duration=3000] - Duration for which the toast should be displayed. -1 for permanent toast
+     * @param {string} [options.selector] - CSS Selector on which the toast should be added
+     * @param {url} [options.destination] - URL to which the browser should be navigated on click of the toast
+     * @param {boolean} [options.newWindow=false] - Decides whether the destination should be opened in a new window or not
+     * @param {boolean} [options.close=false] - To show the close icon or not
+     * @param {string} [options.gravity=toastify-top] - To show the toast from top or bottom
+     * @param {string} [options.position=right] - To show the toast on left or right
+     * @param {string} [options.backgroundColor] - Sets the background color of the toast (To be deprecated)
+     * @param {url} [options.avatar] - Image/icon to be shown before text
+     * @param {string} [options.className] - Ability to provide custom class name for further customization
+     * @param {boolean} [options.stopOnFocus] - To stop timer when hovered over the toast (Only if duration is set)
+     * @param {Function} [options.callback] - Invoked when the toast is dismissed
+     * @param {Function} [options.onClick] - Invoked when the toast is clicked
+     * @param {Object} [options.offset] - Ability to add some offset to axis
+     * @param {boolean} [options.escapeMarkup=true] - Toggle the default behavior of escaping HTML markup
+     * @param {string} [options.ariaLive] - Announce the toast to screen readers
+     * @param {Object} [options.style] - Use the HTML DOM style property to add styles to toast
+     * @private
+     */
+    _init(options) {
+      this.options = Object.assign(this.defaults, options);
+      if (this.options.backgroundColor) {
+        console.warn('DEPRECATION NOTICE: "backgroundColor" is being deprecated. Please use the "style.background" property.');
+      }
+      this.toastElement = null;
+      this.options.gravity = options.gravity === "bottom" ? "toastify-bottom" : "toastify-top";
+      this.options.stopOnFocus = options.stopOnFocus === void 0 ? true : options.stopOnFocus;
+      if (options.backgroundColor) {
+        this.options.style.background = options.backgroundColor;
+      }
+    }
+    /**
+     * Build the Toastify element
+     * @returns {Element}
+     * @private
+     */
+    _buildToast() {
+      if (!this.options) {
+        throw "Toastify is not initialized";
+      }
+      let divElement = document.createElement("div");
+      divElement.className = `toastify on ${this.options.className}`;
+      divElement.className += ` toastify-${this.options.position}`;
+      divElement.className += ` ${this.options.gravity}`;
+      for (const property in this.options.style) {
+        divElement.style[property] = this.options.style[property];
+      }
+      if (this.options.ariaLive) {
+        divElement.setAttribute("aria-live", this.options.ariaLive);
+      }
+      if (this.options.node && this.options.node.nodeType === Node.ELEMENT_NODE) {
+        divElement.appendChild(this.options.node);
+      } else {
+        if (this.options.escapeMarkup) {
+          divElement.innerText = this.options.text;
+        } else {
+          divElement.innerText = this.options.text;
+        }
+        if (this.options.avatar !== "") {
+          let avatarElement = document.createElement("img");
+          avatarElement.src = this.options.avatar;
+          avatarElement.className = "toastify-avatar";
+          if (this.options.position == "left") {
+            divElement.appendChild(avatarElement);
+          } else {
+            divElement.insertAdjacentElement("afterbegin", avatarElement);
+          }
+        }
+      }
+      if (this.options.close === true) {
+        let closeElement = document.createElement("button");
+        closeElement.type = "button";
+        closeElement.setAttribute("aria-label", "Close");
+        closeElement.className = "toast-close";
+        closeElement.innerText = "X";
+        closeElement.addEventListener(
+          "click",
+          (event) => {
+            event.stopPropagation();
+            this._removeElement(this.toastElement);
+            window.clearTimeout(this.toastElement.timeOutValue);
+          }
+        );
+        const width = window.innerWidth > 0 ? window.innerWidth : screen.width;
+        if (this.options.position == "left" && width > 360) {
+          divElement.insertAdjacentElement("afterbegin", closeElement);
+        } else {
+          divElement.appendChild(closeElement);
+        }
+      }
+      if (this.options.stopOnFocus && this.options.duration > 0) {
+        divElement.addEventListener(
+          "mouseover",
+          (event) => {
+            window.clearTimeout(divElement.timeOutValue);
+          }
+        );
+        divElement.addEventListener(
+          "mouseleave",
+          () => {
+            divElement.timeOutValue = window.setTimeout(
+              () => {
+                this._removeElement(divElement);
+              },
+              this.options.duration
+            );
+          }
+        );
+      }
+      if (typeof this.options.destination !== "undefined") {
+        divElement.addEventListener(
+          "click",
+          (event) => {
+            event.stopPropagation();
+            if (this.options.newWindow === true) {
+              window.open(this.options.destination, "_blank");
+            } else {
+              window.location = this.options.destination;
+            }
+          }
+        );
+      }
+      if (typeof this.options.onClick === "function" && typeof this.options.destination === "undefined") {
+        divElement.addEventListener(
+          "click",
+          (event) => {
+            event.stopPropagation();
+            this.options.onClick();
+          }
+        );
+      }
+      if (typeof this.options.offset === "object") {
+        const x = this._getAxisOffsetAValue("x", this.options);
+        const y = this._getAxisOffsetAValue("y", this.options);
+        const xOffset = this.options.position == "left" ? x : `-${x}`;
+        const yOffset = this.options.gravity == "toastify-top" ? y : `-${y}`;
+        divElement.style.transform = `translate(${xOffset},${yOffset})`;
+      }
+      return divElement;
+    }
+    /**
+     * Remove the toast from the DOM
+     * @param {Element} toastElement
+     */
+    _removeElement(toastElement) {
+      toastElement.className = toastElement.className.replace(" on", "");
+      window.setTimeout(
+        () => {
+          if (this.options.node && this.options.node.parentNode) {
+            this.options.node.parentNode.removeChild(this.options.node);
+          }
+          if (toastElement.parentNode) {
+            toastElement.parentNode.removeChild(toastElement);
+          }
+          this.options.callback.call(toastElement);
+          this._reposition();
+        },
+        400
+      );
+    }
+    /**
+     * Position the toast on the DOM
+     * @private
+     */
+    _reposition() {
+      let topLeftOffsetSize = {
+        top: 15,
+        bottom: 15
+      };
+      let topRightOffsetSize = {
+        top: 15,
+        bottom: 15
+      };
+      let offsetSize = {
+        top: 15,
+        bottom: 15
+      };
+      let allToasts = this._rootElement.querySelectorAll(".toastify");
+      let classUsed;
+      for (let i = 0; i < allToasts.length; i++) {
+        if (allToasts[i].classList.contains("toastify-top") === true) {
+          classUsed = "toastify-top";
+        } else {
+          classUsed = "toastify-bottom";
+        }
+        let height = allToasts[i].offsetHeight;
+        classUsed = classUsed.substr(9, classUsed.length - 1);
+        let offset = 15;
+        let width = window.innerWidth > 0 ? window.innerWidth : screen.width;
+        if (width <= 360) {
+          allToasts[i].style[classUsed] = `${offsetSize[classUsed]}px`;
+          offsetSize[classUsed] += height + offset;
+        } else {
+          if (allToasts[i].classList.contains("toastify-left") === true) {
+            allToasts[i].style[classUsed] = `${topLeftOffsetSize[classUsed]}px`;
+            topLeftOffsetSize[classUsed] += height + offset;
+          } else {
+            allToasts[i].style[classUsed] = `${topRightOffsetSize[classUsed]}px`;
+            topRightOffsetSize[classUsed] += height + offset;
+          }
+        }
+      }
+    }
+    /**
+     * Helper function to get offset
+     * @param {string} axis - 'x' or 'y'
+     * @param {ToastifyConfigurationObject} options - The options object containing the offset object
+     */
+    _getAxisOffsetAValue(axis, options) {
+      if (options.offset[axis]) {
+        if (isNaN(options.offset[axis])) {
+          return options.offset[axis];
+        } else {
+          return `${options.offset[axis]}px`;
+        }
+      }
+      return "0px";
+    }
+  }
+  const minifiedCss = `.toastify{padding:12px 20px;color:#fff;display:inline-block;box-shadow:0 3px 6px -1px rgba(0,0,0,.12),0 10px 36px -4px rgba(77,96,232,.3);background:-webkit-linear-gradient(315deg,#73a5ff,#5477f5);background:linear-gradient(135deg,#73a5ff,#5477f5);position:fixed;opacity:0;transition:all .4s cubic-bezier(.215, .61, .355, 1);border-radius:2px;cursor:pointer;text-decoration:none;max-width:calc(50% - 20px);z-index:2147483647}.toastify.on{opacity:1}.toast-close{background:0 0;border:0;color:#fff;cursor:pointer;font-family:inherit;font-size:1em;opacity:.4;padding:0 5px}.toastify-right{right:15px}.toastify-left{left:15px}.toastify-top{top:-150px}.toastify-bottom{bottom:-150px}.toastify-rounded{border-radius:25px}.toastify-avatar{width:1.5em;height:1.5em;margin:-7px 5px;border-radius:2px}.toastify-center{margin-left:auto;margin-right:auto;left:0;right:0;max-width:fit-content;max-width:-moz-fit-content}@media only screen and (max-width:360px){.toastify-left,.toastify-right{margin-left:auto;margin-right:auto;left:0;right:0;max-width:fit-content}}`;
   const stylesContainer = document.getElementById(windowId) ?? document.createElement("div");
   stylesContainer.id = windowId;
   document.body.appendChild(stylesContainer);
+  const levels = {
+    info: {
+      background: "linear-gradient(to right, #292d3e, #31364a)",
+      "box-shadow": "0 3px 6px -1px #0000001f, 0 10px 36px -4px #4d60e84d",
+      border: "1px dotted #e3e4e229"
+    },
+    error: {
+      background: "linear-gradient(to right, #ff4757, #6e1e38)",
+      "box-shadow": "0 3px 6px -1px #ff475796, 0 10px 36px -4px #a944424d",
+      border: "1px dotted #ff4757"
+    },
+    warning: {
+      background: "linear-gradient(to right, #8a6d3b, #7a5b32)",
+      "box-shadow": "0 3px 6px -1px #8a6d3b70, 0 10px 36px -4px #8a6d3b4d",
+      border: "1px dotted #e3e4e229"
+    },
+    success: {
+      background: "linear-gradient(to right, #3c763d, #356635)",
+      "box-shadow": "0 3px 6px -1px #509d51b3, 0 10px 36px -4px #3c763d9c",
+      border: "1px dotted #e3e4e229"
+    }
+  };
+  function useToast(text, level) {
+    const toastStyle = createStyles("toast");
+    toastStyle.styleIt(minifiedCss);
+    const toast = new Toastify({
+      duration: 5e5,
+      close: true,
+      gravity: "bottom",
+      // `top` or `bottom`
+      position: "left",
+      // `left`, `center` or `right`
+      stopOnFocus: true,
+      // Prevents dismissing of toast on hover
+      style: levels[level],
+      onClick(e2) {
+      },
+      callback() {
+      },
+      text
+    });
+    return toast.showToast();
+  }
   function createStyles(name) {
     const id = windowId + "." + name;
     const style = stylesContainer.querySelector(`[id="${id}"]`) ?? document.createElement("style");
@@ -408,6 +765,10 @@
         };
       },
       activate(DOM) {
+        useToast("Test Error Toast", "error");
+        useToast("Test Warning Toast", "warning");
+        useToast("Test Info Toast", "info");
+        useToast("Test Success Toast", "success");
         let recStack = /* @__PURE__ */ new Map();
         let editorStack = /* @__PURE__ */ new Map();
         let treeStack = /* @__PURE__ */ new Map();
@@ -505,6 +866,8 @@
               });
               firsContainerTracker.plug();
               stopFirstContainer = firsContainerTracker.stop;
+            } else {
+              useToast("No container", "error");
             }
             root.plug(() => restViews);
             rebootCleanup = () => {
