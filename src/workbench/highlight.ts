@@ -165,7 +165,7 @@ export function createHighlightLifeCycle() {
     dom() {
       type H = HTMLElement
       const gridRoot = document.querySelector(
-        '#workbench\\.parts\\.editor > div.content > div > div > div > div > div.monaco-scrollable-element > div.split-view-container'
+        '#workbench\\.parts\\.editor > div.content > div > div'
       ) as H
       const root = gridRoot.querySelector(
         ':scope > div > div > div.monaco-scrollable-element > div.split-view-container'
@@ -256,7 +256,8 @@ export function createHighlightLifeCycle() {
       }
 
       let rebootCleanup: Function | undefined
-      const reboot = createMutation({
+      debugger
+      const reboot = specialChildrenMutation({
         target: () => DOM.watchForRemoval,
         options: {
           childList: true,
@@ -307,9 +308,10 @@ export function createHighlightLifeCycle() {
           rebootCleanup = undefined
         },
       })
+      reboot.plug()
 
       return () => {
-        reboot.disconnect()
+        reboot.stop()
         rebootCleanup?.()
         rebootCleanup = undefined
         clearStacks()

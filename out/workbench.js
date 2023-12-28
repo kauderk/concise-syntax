@@ -4,7 +4,6 @@
   "use strict";
   const extensionId = "kauderk.concise-syntax";
   const windowId = "window." + extensionId;
-  const bridgeBetweenVscodeExtension = "aria-label";
   const editorSelector = ".editor-instance";
   const idSelector = '[data-mode-id="typescriptreact"]';
   const linesSelector = idSelector + ` .view-lines.monaco-mouse-cursor-text`;
@@ -79,12 +78,12 @@
   }
   function createAttributeArrayMutation(props) {
     let previousData = [];
-    const bridgeAttribute2 = (target) => props.watchAttribute.map((a) => {
+    const bridgeAttribute = (target) => props.watchAttribute.map((a) => {
       var _a;
       return (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, a);
     });
     function change(target) {
-      const newData = bridgeAttribute2(target);
+      const newData = bridgeAttribute(target);
       if (newData.every((d, i) => d === previousData[i]))
         return;
       const oldAttributes = [...previousData];
@@ -192,180 +191,17 @@
       }
     };
   }
-  function regexToDomToCss() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
-    const lineEditor = document.querySelector(linesSelector);
-    if (!lineEditor) {
-      console.warn("Fail to find Editor with selector:", linesSelector);
-      return "";
-    }
-    const flags = {
-      jsxTag: null,
-      jsxTernaryBrace: null,
-      jsxTernaryOtherwise: null,
-      vsCodeHiddenTokens: null,
-      beginQuote: null,
-      endQuote: null
-    };
-    const customFlags = {
-      singleQuotes: null
-    };
-    const root = `${linesSelector}>div>span`;
-    const lines = Array.from(lineEditor.querySelectorAll("div>span"));
-    function toFlatClassList(Array2) {
-      return Array2.reduce(
-        (acc, val) => acc.concat(val.join(".")),
-        []
-      );
-    }
-    function SliceClassList(line, slice) {
-      const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
-      return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
-    }
-    parser:
-      for (const line of lines) {
-        const text = line.textContent;
-        if (!text)
-          continue;
-        let anyFlag = false;
-        if ((_b = (_a = text.match(".+(</(?<jsxTag>.*)?>)$")) == null ? void 0 : _a.groups) == null ? void 0 : _b.jsxTag) {
-          if (flags.jsxTag || flags.vsCodeHiddenTokens)
-            continue;
-          const closing = SliceClassList(line, -3);
-          if (!closing.okLength)
-            continue;
-          const [angleBracket, tag, right] = closing.flat();
-          if (angleBracket !== right)
-            continue;
-          flags.jsxTag = {
-            // find the last </tag> and hide it "tag" which is the second to last child
-            hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
-            hover: `.${angleBracket}+.${tag}`
-          };
-          flags.vsCodeHiddenTokens = {
-            // this is the most common case, you could derive it from other flags
-            hide: `>.${angleBracket}`,
-            hover: `.${angleBracket}`
-          };
-          anyFlag = true;
-        } else if ((_d = (_c = text.match(/(\{).+\?.+?(?<ternaryBrace>\()$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.ternaryBrace) {
-          if (flags.jsxTernaryBrace)
-            continue;
-          const closing = SliceClassList(line, -4);
-          if (!closing.okLength)
-            continue;
-          const [blank, questionMark, blank2, openBrace] = toFlatClassList(closing);
-          const selector = `.${blank}+.${questionMark}+.${blank}+.${openBrace}:last-child`;
-          flags.jsxTernaryBrace = {
-            // find the last open brace in " ? ("
-            hide: `:has(${selector}) :last-child`,
-            hover: selector
-          };
-          anyFlag = true;
-        } else if ((_f = (_e = text.match(/(?<ternaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.ternaryOtherwise) {
-          if (flags.jsxTernaryOtherwise)
-            continue;
-          const closing = SliceClassList(line, -7);
-          if (!closing.okLength)
-            continue;
-          const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing);
-          const selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
-          flags.jsxTernaryOtherwise = {
-            // find ") : null}" then hide it all
-            hide: `:has(${selector}) *`,
-            hover: selector
-          };
-          anyFlag = true;
-        } else if ((_h = (_g = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.singleQuotes) {
-          if (customFlags.singleQuotes)
-            continue;
-          const array = Array.from(line.children);
-          const quote = /"|'|`/;
-          singleQuotes:
-            for (let i = 0; i < array.length; i++) {
-              const child = array[i];
-              const current = (_i = child.textContent) == null ? void 0 : _i.match(quote);
-              const next = (_k = (_j = array[i + 1]) == null ? void 0 : _j.textContent) == null ? void 0 : _k.match(quote);
-              if ((current == null ? void 0 : current[0].length) == 1 && current[0] === (next == null ? void 0 : next[0])) {
-                const beginQuote = Array.from(child.classList).join(".");
-                const endQuote = Array.from(array[i + 1].classList).join(".");
-                customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {
-							color: gray;
-						}`;
-                flags.beginQuote = {
-                  // this is the most common case, you could derive it from other flags
-                  hide: `>.${beginQuote}`,
-                  hover: `.${beginQuote}`
-                };
-                flags.endQuote = {
-                  // this is the most common case, you could derive it from other flags
-                  hide: `>.${endQuote}`,
-                  hover: `.${endQuote}`
-                };
-                anyFlag = true;
-                break singleQuotes;
-              }
-            }
-        }
-        if (anyFlag && Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f)) {
-          break parser;
-        }
-      }
-    const validFlags = Object.values(flags).filter(
-      (f) => (f == null ? void 0 : f.hide) && f.hover
-    );
-    if (validFlags.length && ((_l = flags.vsCodeHiddenTokens) == null ? void 0 : _l.hover)) {
-      const toHover = validFlags.map((f) => f.hover).join(",");
-      const toHidden = validFlags.map((f) => root + f.hide).join(",");
-      const toCustom = Object.values(customFlags).filter((f) => !!f).join("\n");
-      return `
-			.view-lines {
-				--r: transparent;
-			}
-			.view-lines > div:hover {
-				--r: yellow;
-			}
-			.view-lines:has(:is(${toHover}):hover) {
-				--r: red;
-			}
-			${toHidden} {
-				color: var(--r);
-			}
-			${toCustom}
-			`.replace(/\r|\n/g, "").replaceAll(/\t+/g, "\n");
-    }
-    return "";
-  }
   function domExtension() {
     const statusBar = document.querySelector(".right-items");
     const item = statusBar == null ? void 0 : statusBar.querySelector(`[id="${extensionId}"]`);
     const icon = item == null ? void 0 : item.querySelector(".codicon");
     return { icon, item, statusBar };
   }
-  const bridgeAttribute = (target) => {
-    var _a, _b;
-    return (
-      // You could pass stringified data
-      !((_b = (_a = target.getAttribute) == null ? void 0 : _a.call(target, bridgeBetweenVscodeExtension)) == null ? void 0 : _b.includes("inactive"))
-    );
-  };
   function createSyntaxLifecycle() {
-    let Extension;
     const syntaxStyle = createStyles("hide");
-    function activate(extension) {
-      Extension = extension;
-      const on = bridgeAttribute(extension.item);
-      extension.icon.style.fontWeight = on ? "bold" : "normal";
-      const title = "Concise Syntax";
-      extension.item.title = on ? `${title}: active` : `${title}: inactive`;
-      syntaxStyle.styleIt(on ? regexToDomToCss() : "");
-    }
-    function inactive() {
-      if (!Extension)
-        return;
-      Extension.item.removeAttribute("title");
-      Extension.icon.style.removeProperty("font-weight");
-    }
+    syntaxStyle.styleIt(
+      `.view-lines {--r: transparent;}.view-lines > div:hover {--r: yellow;}.view-lines:has(:is(.mtk35+.mtk14,.mtk35,.mtk36,.mtk37):hover) {--r: red;}[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span:has(:nth-last-child(3).mtk35+.mtk14+.mtk35) :nth-last-child(2),[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk35,[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk36,[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk37 {color: var(--r);}.mtk36:has(+.mtk37), .mtk36+.mtk37 {color: gray;}`
+    );
     const cycle = lifecycle({
       dom() {
         const dom = domExtension();
@@ -379,19 +215,6 @@
         };
       },
       activate(dom) {
-        const attributeObserver = createAttributeArrayMutation({
-          target: () => dom.item,
-          watchAttribute: [bridgeBetweenVscodeExtension],
-          change([bridge]) {
-            if (bridge) {
-              activate(domExtension());
-            } else {
-              inactive();
-            }
-          }
-        });
-        attributeObserver.plug();
-        return () => attributeObserver.disconnect();
       },
       dispose() {
       }
@@ -407,9 +230,6 @@
     },
     clearAll() {
       clear();
-      stylesContainer.querySelectorAll("style").forEach((style) => {
-        style.textContent = "";
-      });
     },
     getOrCreateLabeledStyle(label, selector) {
       let style = stylesContainer.querySelector(
@@ -573,7 +393,7 @@
       dom() {
         var _a;
         const gridRoot = document.querySelector(
-          "#workbench\\.parts\\.editor > div.content > div > div > div > div > div.monaco-scrollable-element > div.split-view-container"
+          "#workbench\\.parts\\.editor > div.content > div > div"
         );
         const root = gridRoot.querySelector(
           ":scope > div > div > div.monaco-scrollable-element > div.split-view-container"
@@ -649,7 +469,8 @@
           clearStacks((keyNode) => !DOM.watchForRemoval.contains(keyNode));
         }
         let rebootCleanup;
-        const reboot = createMutation({
+        debugger;
+        const reboot = specialChildrenMutation({
           target: () => DOM.watchForRemoval,
           options: {
             childList: true
@@ -696,8 +517,9 @@
             rebootCleanup = void 0;
           }
         });
+        reboot.plug();
         return () => {
-          reboot.disconnect();
+          reboot.stop();
           rebootCleanup == null ? void 0 : rebootCleanup();
           rebootCleanup = void 0;
           clearStacks();

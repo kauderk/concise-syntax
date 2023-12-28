@@ -23,9 +23,9 @@ export const styles = {
   },
   clearAll() {
     clear()
-    stylesContainer.querySelectorAll('style').forEach((style) => {
-      style.textContent = ''
-    })
+    // stylesContainer.querySelectorAll('style').forEach((style) => {
+    //   style.textContent = ''
+    // })
   },
   getOrCreateLabeledStyle(label: string, selector: string) {
     let style = stylesContainer.querySelector(
