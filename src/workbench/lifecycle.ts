@@ -1,4 +1,4 @@
-import { useToast, watchForRemoval } from './shared'
+import { toastConsole, watchForRemoval } from './shared'
 
 export type LifecycleProps<T> = {
   activate(dom: T): void | (() => void)
@@ -100,11 +100,7 @@ export function createTryFunction(guard?: Guard) {
       fn()
     } catch (error) {
       crashed = true
-      useToast({
-        level: 'error',
-        message: 'Fatal - ' + message,
-        objects: [error],
-      })
+      toastConsole.error('Fatal - ' + message, { error })
     }
   }
   // assign a getter to the tryFunction

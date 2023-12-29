@@ -5,9 +5,6 @@ export const stylesContainer =
 stylesContainer.id = windowId
 document.body.appendChild(stylesContainer)
 
-// type PropType<TObj, TProp extends keyof TObj> = TObj[TProp]
-// type ToastOptions = PropType<typeof Toastify, 'prototype'>['options']
-
 const levels = {
   log: {
     background: 'linear-gradient(to right, #292d3e, #31364a)',
@@ -24,47 +21,53 @@ const levels = {
     'box-shadow': '0 3px 6px -1px #8a6d3b70, 0 10px 36px -4px #8a6d3b4d',
     border: '1px dotted #e3e4e229',
   },
-  success: {
-    background: 'linear-gradient(to right, #3c763d, #356635)',
-    'box-shadow': '0 3px 6px -1px #509d51b3, 0 10px 36px -4px #3c763d9c',
-    border: '1px dotted #e3e4e229',
-  },
+  // success: {
+  //   background: 'linear-gradient(to right, #3c763d, #356635)',
+  //   'box-shadow': '0 3px 6px -1px #509d51b3, 0 10px 36px -4px #3c763d9c',
+  //   border: '1px dotted #e3e4e229',
+  // },
 } as const
 
-type ToastOptions = {
-  level: keyof typeof levels
-  message: string
-  objects?: Record<string, any>
-  onClick?: (e: MouseEvent) => void
-  callback?: () => void
-}
-export function useToast(options: ToastOptions) {
-  const { level, message } = options
-  const print = level.toUpperCase() + ' : ' + message
-
-  if (level === 'success') {
-    // add green ish color to the console.log
-    console.log('%c ' + print, 'background: #222; color: #bada55')
-  } else {
-    console[level](print, options.objects)
+// Experiment with Proxy
+export const toastConsole = new Proxy(
+  <Record<keyof typeof levels, Fn>>{}, // dangerous type casting
+  {
+    get(target, level: keyof typeof levels): Fn {
+      if (!(level in levels)) {
+        throw new Error('invalid console level')
+      }
+      return (message, objects, options = {}) => {
+        const print = 'Concise Syntax ' + level + ': ' + message
+        console[level](print, objects ?? {})
+        // FIXME: accommodate to the user's theme
+        const toastStyle = createStyles('toast')
+        toastStyle.styleIt(minifiedCss)
+        // FIXME: find a way to pass data to the actual vscode extension
+        const toast = new Toastify({
+          duration: 500_000,
+          close: true,
+          gravity: 'bottom',
+          position: 'left',
+          stopOnFocus: true,
+          style: levels[level],
+          text: message,
+          ...options,
+        })
+        // FIXME: find a way to trigger the actual vscode extension toast system
+        toast.showToast()
+      }
+    },
   }
-
-  const toastStyle = createStyles('toast')
-  toastStyle.styleIt(minifiedCss)
-  const toast = new Toastify({
-    duration: 500_000,
-    close: true,
-    gravity: 'bottom', // `top` or `bottom`
-    position: 'left', // `left`, `center` or `right`
-    stopOnFocus: true, // Prevents dismissing of toast on hover
-    style: levels[level],
-    onClick: options.onClick,
-    callback: options.callback,
-    text: message,
-  })
-
-  return toast.showToast()
+)
+type ToastOptions = {
+  onClick: (e: MouseEvent) => void
+  callback: () => void
 }
+type Fn = (
+  message: string,
+  objects?: any,
+  options?: Partial<ToastOptions>
+) => void
 
 export function createStyles(name: string) {
   const id = windowId + '.' + name

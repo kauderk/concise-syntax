@@ -329,7 +329,7 @@ var __publicField = (obj, key, value) => {
   stylesContainer.id = windowId;
   document.body.appendChild(stylesContainer);
   const levels = {
-    info: {
+    log: {
       background: "linear-gradient(to right, #292d3e, #31364a)",
       "box-shadow": "0 3px 6px -1px #0000001f, 0 10px 36px -4px #4d60e84d",
       border: "1px dotted #e3e4e229"
@@ -339,38 +339,45 @@ var __publicField = (obj, key, value) => {
       "box-shadow": "0 3px 6px -1px #ff475796, 0 10px 36px -4px #a944424d",
       border: "1px dotted #ff4757"
     },
-    warning: {
+    warn: {
       background: "linear-gradient(to right, #8a6d3b, #7a5b32)",
       "box-shadow": "0 3px 6px -1px #8a6d3b70, 0 10px 36px -4px #8a6d3b4d",
       border: "1px dotted #e3e4e229"
-    },
-    success: {
-      background: "linear-gradient(to right, #3c763d, #356635)",
-      "box-shadow": "0 3px 6px -1px #509d51b3, 0 10px 36px -4px #3c763d9c",
-      border: "1px dotted #e3e4e229"
     }
+    // success: {
+    //   background: 'linear-gradient(to right, #3c763d, #356635)',
+    //   'box-shadow': '0 3px 6px -1px #509d51b3, 0 10px 36px -4px #3c763d9c',
+    //   border: '1px dotted #e3e4e229',
+    // },
   };
-  function useToast(text, level) {
-    const toastStyle = createStyles("toast");
-    toastStyle.styleIt(minifiedCss);
-    const toast = new Toastify({
-      duration: 5e5,
-      close: true,
-      gravity: "bottom",
-      // `top` or `bottom`
-      position: "left",
-      // `left`, `center` or `right`
-      stopOnFocus: true,
-      // Prevents dismissing of toast on hover
-      style: levels[level],
-      onClick(e2) {
-      },
-      callback() {
-      },
-      text
-    });
-    return toast.showToast();
-  }
+  const toastConsole = new Proxy(
+    {},
+    // dangerous type casting
+    {
+      get(target, level) {
+        if (!(level in levels)) {
+          throw new Error("invalid console level");
+        }
+        return (message, objects, options = {}) => {
+          const print = "Concise Syntax " + level + ": " + message;
+          console[level](print, objects ?? {});
+          const toastStyle = createStyles("toast");
+          toastStyle.styleIt(minifiedCss);
+          const toast = new Toastify({
+            duration: 5e5,
+            close: true,
+            gravity: "bottom",
+            position: "left",
+            stopOnFocus: true,
+            style: levels[level],
+            text: message,
+            ...options
+          });
+          toast.showToast();
+        };
+      }
+    }
+  );
   function createStyles(name) {
     const id = windowId + "." + name;
     const style = stylesContainer.querySelector(`[id="${id}"]`) ?? document.createElement("style");
@@ -509,6 +516,7 @@ var __publicField = (obj, key, value) => {
   }
   function lifecycle(props) {
     let running = false;
+    let tryFn2 = createTryFunction({ fallback: clean });
     let interval;
     let disposeObserver;
     let disposeActivate;
@@ -518,35 +526,80 @@ var __publicField = (obj, key, value) => {
         return;
       running = true;
       clearInterval(interval);
-      disposeObserver = watchForRemoval(dom.watchForRemoval, reload);
-      disposeActivate = props.activate(dom);
+      tryFn2(() => {
+        disposeObserver = watchForRemoval(dom.watchForRemoval, reload);
+        disposeActivate = props.activate(dom);
+      }, "Lifecycle crashed unexpectedly when activating");
     }
     function dispose() {
-      var _a;
-      disposeActivate == null ? void 0 : disposeActivate();
-      disposeActivate = void 0;
-      disposeObserver == null ? void 0 : disposeObserver();
-      disposeObserver = void 0;
-      (_a = props.dispose) == null ? void 0 : _a.call(props);
-      running = false;
       clearInterval(interval);
+      tryFn2(() => {
+        var _a;
+        disposeActivate == null ? void 0 : disposeActivate();
+        disposeActivate = void 0;
+        disposeObserver == null ? void 0 : disposeObserver();
+        disposeObserver = void 0;
+        (_a = props.dispose) == null ? void 0 : _a.call(props);
+        running = false;
+      }, "Lifecycle crashed unexpectedly when disposing");
     }
     function reload() {
       dispose();
       interval = setInterval(patch, 5e3);
     }
+    function clean() {
+      clearTimeout(exhaust);
+      clearInterval(interval);
+    }
     let exhaust;
     return {
       activate() {
+        if (tryFn2.guard("Lifecycle already crashed therefore not activating again")) {
+          return;
+        }
         reload();
         return;
       },
       dispose() {
+        if (tryFn2.guard("Lifecycle already crashed therefore not disposing again")) {
+          return;
+        }
         dispose();
-        clearTimeout(exhaust);
-        clearInterval(interval);
+        clean();
       }
     };
+  }
+  function createTryFunction(guard) {
+    let crashed = false;
+    function tryFunction(fn, message) {
+      if (crashed)
+        return;
+      try {
+        fn();
+      } catch (error) {
+        crashed = true;
+        toastConsole.error("Fatal - " + message, { error });
+      }
+    }
+    Object.defineProperty(tryFunction, "crashed", {
+      get() {
+        return crashed;
+      }
+    });
+    tryFunction.guard = (action) => {
+      if (crashed) {
+        const fallback = action ?? (guard == null ? void 0 : guard.fallback);
+        if (typeof fallback === "function") {
+          fallback();
+        }
+        const message = action ?? (guard == null ? void 0 : guard.message);
+        if (typeof message === "string") {
+          console.warn(message);
+        }
+      }
+      return crashed;
+    };
+    return tryFunction;
   }
   function domExtension() {
     const statusBar = document.querySelector(".right-items");
@@ -639,6 +692,7 @@ var __publicField = (obj, key, value) => {
     var _a, _b;
     return Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
   }
+  const splitViewContainerSelector = ".split-view-container";
   function createHighlightLifeCycle() {
     function createHighlight({ node, selector, add, set, label, color }) {
       if (!e(node) || !node.querySelector(selector))
@@ -753,7 +807,7 @@ var __publicField = (obj, key, value) => {
           "#workbench\\.parts\\.editor > div.content > div > div"
         );
         const root = gridRoot.querySelector(
-          ":scope > div > div > div.monaco-scrollable-element > div.split-view-container"
+          ":scope > div > div > div.monaco-scrollable-element > " + splitViewContainerSelector
         );
         const editor = root == null ? void 0 : root.querySelector(idSelector);
         const overlays = (_a = editor == null ? void 0 : editor.querySelector(highlightSelector)) == null ? void 0 : _a.parentElement;
@@ -765,10 +819,6 @@ var __publicField = (obj, key, value) => {
         };
       },
       activate(DOM) {
-        useToast("Test Error Toast", "error");
-        useToast("Test Warning Toast", "warning");
-        useToast("Test Info Toast", "info");
-        useToast("Test Success Toast", "success");
         let recStack = /* @__PURE__ */ new Map();
         let editorStack = /* @__PURE__ */ new Map();
         let treeStack = /* @__PURE__ */ new Map();
@@ -830,24 +880,41 @@ var __publicField = (obj, key, value) => {
           clearStacks((keyNode) => !DOM.watchForRemoval.contains(keyNode));
         }
         let rebootCleanup;
-        debugger;
         const reboot = specialChildrenMutation({
           target: () => DOM.watchForRemoval,
           options: {
             childList: true
           },
           added(node) {
-            if (rebootCleanup)
-              throw new Error("reboot cleanup already exists");
-            if (!e(node))
-              return console.warn("no node");
+            if (rebootCleanup) {
+              toastConsole.error("Reboot cleanup already exists", {
+                rebootCleanup
+              });
+              return;
+            }
+            if (!e(node)) {
+              toastConsole.warn("Reboot added node is not HTMLElement", { node });
+              return;
+            }
             const rootContainer = node.querySelector(
-              "div.split-view-container"
+              splitViewContainerSelector
             );
-            if (!rootContainer)
-              return console.warn("no root container");
+            if (!rootContainer) {
+              toastConsole.warn("Reboot rootContainer not found with selector", {
+                node,
+                splitViewContainerSelector
+              });
+              return;
+            }
             const root = REC_EditorOverlayTracker(rootContainer);
             const [firstView, ...restViews] = rootContainer.childNodes;
+            if (!e(firstView)) {
+              toastConsole.warn("Reboot first view element is not HTMLElement", {
+                rootContainer,
+                firstView
+              });
+              return;
+            }
             const container = findScopeElements(firstView).container;
             let stopFirstContainer = () => {
             };
@@ -867,7 +934,10 @@ var __publicField = (obj, key, value) => {
               firsContainerTracker.plug();
               stopFirstContainer = firsContainerTracker.stop;
             } else {
-              useToast("No container", "error");
+              toastConsole.error("Reboot first view container not found", {
+                rootContainer,
+                firstView
+              });
             }
             root.plug(() => restViews);
             rebootCleanup = () => {
@@ -896,14 +966,19 @@ var __publicField = (obj, key, value) => {
   }
   const syntax = createSyntaxLifecycle();
   const highlight = createHighlightLifeCycle();
+  const tryFn = createTryFunction();
   const conciseSyntax = {
     activate() {
-      syntax.activate();
-      highlight.activate();
+      tryFn(() => {
+        syntax.activate();
+        highlight.activate();
+      }, "Concise Syntax Extension crashed unexpectedly when activating");
     },
     dispose() {
-      syntax.dispose();
-      highlight.dispose();
+      tryFn(() => {
+        syntax.dispose();
+        highlight.dispose();
+      }, "Concise Syntax Extension crashed unexpectedly when disposing");
     }
   };
   if (window.conciseSyntax) {

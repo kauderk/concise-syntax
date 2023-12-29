@@ -21,7 +21,6 @@ const bridgeAttribute = (target: any) =>
 export function createSyntaxLifecycle() {
   let Extension: null | Extension
   const syntaxStyle = createStyles('hide')
-  // debugger
   syntaxStyle.styleIt(
     `.view-lines {--r: transparent;}.view-lines > div:hover {--r: yellow;}.view-lines:has(:is(.mtk35+.mtk14,.mtk35,.mtk36,.mtk37):hover) {--r: red;}[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span:has(:nth-last-child(3).mtk35+.mtk14+.mtk35) :nth-last-child(2),[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk35,[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk36,[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk37 {color: var(--r);}.mtk36:has(+.mtk37), .mtk36+.mtk37 {color: gray;}`
   )

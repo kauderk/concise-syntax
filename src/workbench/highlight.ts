@@ -11,7 +11,7 @@ import {
   specialChildrenMutation,
   createMutation,
   styleIt,
-  useToast,
+  toastConsole,
 } from './shared'
 import {
   Selected,
@@ -258,7 +258,6 @@ export function createHighlightLifeCycle() {
       }
 
       let rebootCleanup: Function | undefined
-      debugger
       const reboot = specialChildrenMutation({
         target: () => DOM.watchForRemoval,
         options: {
@@ -266,31 +265,24 @@ export function createHighlightLifeCycle() {
         },
         added(node) {
           if (rebootCleanup) {
-            useToast({
-              level: 'error',
-              message: `Reboot cleanup already exists`,
-              objects: { rebootCleanup },
+            toastConsole.error('Reboot cleanup already exists', {
+              rebootCleanup,
             })
             return
           }
 
           type H = HTMLElement | undefined
           if (!e(node)) {
-            useToast({
-              level: 'warn',
-              message: `Reboot added node is not HTMLElement`,
-              objects: { node },
-            })
+            toastConsole.warn('Reboot added node is not HTMLElement', { node })
             return
           }
           const rootContainer = node.querySelector(
             splitViewContainerSelector
           ) as H
           if (!rootContainer) {
-            useToast({
-              level: 'warn',
-              message: `Reboot rootContainer not found with selector`,
-              objects: { node, splitViewContainerSelector },
+            toastConsole.warn('Reboot rootContainer not found with selector', {
+              node,
+              splitViewContainerSelector,
             })
             return
           }
@@ -299,29 +291,34 @@ export function createHighlightLifeCycle() {
 
           // root.plug() special case, the first view never gets removed * sigh *
           const [firstView, ...restViews] = rootContainer.childNodes
-          const container = findScopeElements(firstView as any)
-            .container as any as HTMLElement | undefined
+          if (!e(firstView)) {
+            toastConsole.warn('Reboot first view element is not HTMLElement', {
+              rootContainer,
+              firstView,
+            })
+            return
+          }
+          const container = findScopeElements(firstView).container
           let stopFirstContainer = () => {}
           if (container) {
             const firsContainerTracker = specialChildrenMutation({
-              target: () => container as any,
+              target: () => container,
               options: {
                 childList: true,
               },
               added() {
-                added(firstView as any)
+                added(firstView)
               },
               removed() {
-                bruteForceRemove(firstView as any)
+                bruteForceRemove(firstView)
               },
             })
             firsContainerTracker.plug()
             stopFirstContainer = firsContainerTracker.stop
           } else {
-            useToast({
-              level: 'error',
-              message: `Reboot first view container not found`,
-              objects: { rootContainer, firstView },
+            toastConsole.error('Reboot first view container not found', {
+              rootContainer,
+              firstView,
             })
           }
           root.plug(() => restViews)
