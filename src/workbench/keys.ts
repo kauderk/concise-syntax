@@ -23,3 +23,4 @@ export const highlightSelector = idSelector + ` ` + overlaySelector
 export const selectedSelector = '.selected-text'
 export const currentSelector = '.current-line'
 export const languages = ['typescriptreact', 'javascriptreact']
+export const splitViewContainerSelector = '.split-view-container'

@@ -3,8 +3,9 @@ import {
   editorSelector,
   overlaySelector,
   selectedSelector,
+  splitViewContainerSelector,
 } from './keys'
-import { stylesContainer } from './shared'
+import { stylesContainer, toastConsole } from './shared'
 
 export function queryOverlays(node: Node) {
   if (!(node instanceof HTMLElement)) return []
@@ -105,7 +106,10 @@ export function guardStack(
   cleanup: Function
 ) {
   if (stack.has(key)) {
-    console.warn('stack has key', stack, key)
+    toastConsole.warn('Highlight lifecycle stack already has this key', {
+      stack,
+      key,
+    })
     stack.get(key)?.()
     stack.delete(key)
   }
@@ -114,4 +118,52 @@ export function guardStack(
 
 export function parseTopStyle(node: HTMLElement) {
   return Number(node.style?.top.match(/\d+/)?.[0])
+}
+
+export function validateAddedView(node: Node, rebootCleanup?: Function) {
+  if (rebootCleanup) {
+    toastConsole.error('Reboot cleanup already exists', {
+      rebootCleanup,
+    })
+    return
+  }
+
+  type H = HTMLElement | undefined
+  if (!e(node)) {
+    toastConsole.warn('Reboot added node is not HTMLElement', { node })
+    return
+  }
+  const rootContainer = node.querySelector(splitViewContainerSelector) as H
+  if (!rootContainer) {
+    toastConsole.warn('Reboot rootContainer not found with selector', {
+      node,
+      splitViewContainerSelector,
+    })
+    return
+  }
+
+  // root.plug() special case, the first view never gets removed * sigh *
+  const [firstView, ...restViews] = rootContainer.childNodes
+  if (!e(firstView)) {
+    toastConsole.warn('Reboot first view element is not HTMLElement', {
+      rootContainer,
+      firstView,
+    })
+    return
+  }
+  const container = findScopeElements(firstView).container
+
+  if (container) {
+    return {
+      rootContainer,
+      firstView,
+      container,
+      restViews,
+    }
+  } else {
+    toastConsole.error('Reboot first view container not found', {
+      rootContainer,
+      firstView,
+    })
+  }
 }

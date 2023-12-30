@@ -4,6 +4,7 @@ import {
   idSelector,
   linesSelector,
   selectedSelector,
+  splitViewContainerSelector,
 } from './keys'
 import { lifecycle } from './lifecycle'
 import {
@@ -11,7 +12,6 @@ import {
   specialChildrenMutation,
   createMutation,
   styleIt,
-  toastConsole,
 } from './shared'
 import {
   Selected,
@@ -20,8 +20,9 @@ import {
   guardStack,
   parseTopStyle,
   styles,
+  validateAddedView,
 } from './utils'
-const splitViewContainerSelector = '.split-view-container'
+
 /**
  * @description Change color of highlighted or selected lines
  *
@@ -155,7 +156,7 @@ export function createHighlightLifeCycle() {
 
     return function dispose() {
       clearTimeout(layoutShift)
-      lineTracker.stop
+      lineTracker.stop()
       if (editorLabel) styles.clear(editorLabel)
       EditorLanguageTracker.disconnect()
       OverlayLineTracker.disconnect()
@@ -192,19 +193,21 @@ export function createHighlightLifeCycle() {
        * 							- selected-text
        * 							- current-line
        */
+
+      //#region Stack Structure
       let recStack = new Map<HTMLElement, Function>()
       let editorStack = new Map<HTMLElement, Function>()
       let treeStack = new Map<HTMLElement, Function>()
-
       const REC_EditorOverlayTracker = (target: HTMLElement) =>
         specialChildrenMutation({
           target: () => target,
           options: {
             childList: true,
           },
-          added,
+          added: REC_added,
           removed: bruteForceRemove,
         })
+
       function clearStacks(condition?: (keyNode: HTMLElement) => boolean) {
         for (const stack of [recStack, editorStack, treeStack]) {
           for (const [keyNode] of stack) {
@@ -221,7 +224,7 @@ export function createHighlightLifeCycle() {
           return true
         }
       }
-      function added(splitViewView: HTMLElement) {
+      function REC_added(splitViewView: HTMLElement) {
         const elements = findScopeElements(splitViewView)
 
         if (elements.nested) {
@@ -238,12 +241,15 @@ export function createHighlightLifeCycle() {
               childList: true,
               subtree: true,
             },
+            // FIXME: this should handle the mutation callback instead of each added node
             added() {
               const elements = findScopeElements(splitViewView)
               if (awkwardStack(elements)) {
                 treeTracker.stop()
+                // TODO: maybe both recStack and treeStack could be cleared here without instead of brute force
               }
             },
+            // TODO: this is not needed
             removed() {},
           })
 
@@ -251,95 +257,57 @@ export function createHighlightLifeCycle() {
           guardStack(treeStack, splitViewView, treeTracker.stop) // don't "unplug" because the unwinding will cause a stack overflow plus the "removed" method is currently brute force
         }
       }
-
       function bruteForceRemove(splitViewView: HTMLElement) {
         // FIXME: this should be handled by each cycle, there is an unhandled cleanup
         clearStacks((keyNode) => !DOM.watchForRemoval.contains(keyNode))
       }
+      //#endregion
 
+      //#region Lifecycle
       let rebootCleanup: Function | undefined
       const reboot = specialChildrenMutation({
         target: () => DOM.watchForRemoval,
-        options: {
-          childList: true,
-        },
+        options: { childList: true },
         added(node) {
-          if (rebootCleanup) {
-            toastConsole.error('Reboot cleanup already exists', {
-              rebootCleanup,
-            })
-            return
-          }
+          const res = validateAddedView(node, rebootCleanup)
+          if (!res) return
 
-          type H = HTMLElement | undefined
-          if (!e(node)) {
-            toastConsole.warn('Reboot added node is not HTMLElement', { node })
-            return
-          }
-          const rootContainer = node.querySelector(
-            splitViewContainerSelector
-          ) as H
-          if (!rootContainer) {
-            toastConsole.warn('Reboot rootContainer not found with selector', {
-              node,
-              splitViewContainerSelector,
-            })
-            return
-          }
+          const recursiveViewTracker = REC_EditorOverlayTracker(
+            res.rootContainer
+          )
+          // This is a special case, the first view never gets removed
+          const firsContainerTracker = specialChildrenMutation({
+            target: () => res.container,
+            options: { childList: true },
+            added() {
+              REC_added(res.firstView)
+            },
+            removed() {
+              bruteForceRemove(res.firstView)
+            },
+          })
 
-          const root = REC_EditorOverlayTracker(rootContainer)
-
-          // root.plug() special case, the first view never gets removed * sigh *
-          const [firstView, ...restViews] = rootContainer.childNodes
-          if (!e(firstView)) {
-            toastConsole.warn('Reboot first view element is not HTMLElement', {
-              rootContainer,
-              firstView,
-            })
-            return
-          }
-          const container = findScopeElements(firstView).container
-          let stopFirstContainer = () => {}
-          if (container) {
-            const firsContainerTracker = specialChildrenMutation({
-              target: () => container,
-              options: {
-                childList: true,
-              },
-              added() {
-                added(firstView)
-              },
-              removed() {
-                bruteForceRemove(firstView)
-              },
-            })
-            firsContainerTracker.plug()
-            stopFirstContainer = firsContainerTracker.stop
-          } else {
-            toastConsole.error('Reboot first view container not found', {
-              rootContainer,
-              firstView,
-            })
-          }
-          root.plug(() => restViews)
+          recursiveViewTracker.plug(() => res.restViews)
+          firsContainerTracker.plug()
 
           rebootCleanup = () => {
-            root.stop()
-            stopFirstContainer()
-            // rebootCleanup = undefined
+            recursiveViewTracker.stop()
+            firsContainerTracker.stop()
           }
         },
-        removed(node) {
-          rebootCleanup?.()
-          rebootCleanup = undefined
-        },
+        removed: consumeRebootCleanup,
       })
+      function consumeRebootCleanup() {
+        rebootCleanup?.()
+        rebootCleanup = undefined
+      }
+      //#endregion
+
       reboot.plug()
 
       return () => {
         reboot.stop()
-        rebootCleanup?.()
-        rebootCleanup = undefined
+        consumeRebootCleanup()
         clearStacks()
       }
     },

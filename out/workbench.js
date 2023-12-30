@@ -17,6 +17,7 @@ var __publicField = (obj, key, value) => {
   const highlightSelector = idSelector + ` ` + overlaySelector;
   const selectedSelector = ".selected-text";
   const currentSelector = ".current-line";
+  const splitViewContainerSelector = ".split-view-container";
   /*!
   * Toastify js 1.12.0
   * https://github.com/apvarun/toastify-js
@@ -682,7 +683,10 @@ var __publicField = (obj, key, value) => {
   function guardStack(stack, key, cleanup) {
     var _a;
     if (stack.has(key)) {
-      console.warn("stack has key", stack, key);
+      toastConsole.warn("Highlight lifecycle stack already has this key", {
+        stack,
+        key
+      });
       (_a = stack.get(key)) == null ? void 0 : _a();
       stack.delete(key);
     }
@@ -692,7 +696,48 @@ var __publicField = (obj, key, value) => {
     var _a, _b;
     return Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
   }
-  const splitViewContainerSelector = ".split-view-container";
+  function validateAddedView(node, rebootCleanup) {
+    if (rebootCleanup) {
+      toastConsole.error("Reboot cleanup already exists", {
+        rebootCleanup
+      });
+      return;
+    }
+    if (!e(node)) {
+      toastConsole.warn("Reboot added node is not HTMLElement", { node });
+      return;
+    }
+    const rootContainer = node.querySelector(splitViewContainerSelector);
+    if (!rootContainer) {
+      toastConsole.warn("Reboot rootContainer not found with selector", {
+        node,
+        splitViewContainerSelector
+      });
+      return;
+    }
+    const [firstView, ...restViews] = rootContainer.childNodes;
+    if (!e(firstView)) {
+      toastConsole.warn("Reboot first view element is not HTMLElement", {
+        rootContainer,
+        firstView
+      });
+      return;
+    }
+    const container = findScopeElements(firstView).container;
+    if (container) {
+      return {
+        rootContainer,
+        firstView,
+        container,
+        restViews
+      };
+    } else {
+      toastConsole.error("Reboot first view container not found", {
+        rootContainer,
+        firstView
+      });
+    }
+  }
   function createHighlightLifeCycle() {
     function createHighlight({ node, selector, add, set, label, color }) {
       if (!e(node) || !node.querySelector(selector))
@@ -794,6 +839,7 @@ var __publicField = (obj, key, value) => {
       const layoutShift = setTimeout(lineTracker.stop, 500);
       return function dispose() {
         clearTimeout(layoutShift);
+        lineTracker.stop();
         if (editorLabel)
           styles.clear(editorLabel);
         EditorLanguageTracker.disconnect();
@@ -827,7 +873,7 @@ var __publicField = (obj, key, value) => {
           options: {
             childList: true
           },
-          added,
+          added: REC_added,
           removed: bruteForceRemove
         });
         function clearStacks(condition) {
@@ -848,7 +894,7 @@ var __publicField = (obj, key, value) => {
             return true;
           }
         }
-        function added(splitViewView) {
+        function REC_added(splitViewView) {
           const elements = findScopeElements(splitViewView);
           if (elements.nested) {
             const rec = REC_EditorOverlayTracker(elements.nested);
@@ -863,12 +909,14 @@ var __publicField = (obj, key, value) => {
                 childList: true,
                 subtree: true
               },
+              // FIXME: this should handle the mutation callback instead of each added node
               added() {
                 const elements2 = findScopeElements(splitViewView);
                 if (awkwardStack(elements2)) {
                   treeTracker.stop();
                 }
               },
+              // TODO: this is not needed
               removed() {
               }
             });
@@ -882,79 +930,41 @@ var __publicField = (obj, key, value) => {
         let rebootCleanup;
         const reboot = specialChildrenMutation({
           target: () => DOM.watchForRemoval,
-          options: {
-            childList: true
-          },
+          options: { childList: true },
           added(node) {
-            if (rebootCleanup) {
-              toastConsole.error("Reboot cleanup already exists", {
-                rebootCleanup
-              });
+            const res = validateAddedView(node, rebootCleanup);
+            if (!res)
               return;
-            }
-            if (!e(node)) {
-              toastConsole.warn("Reboot added node is not HTMLElement", { node });
-              return;
-            }
-            const rootContainer = node.querySelector(
-              splitViewContainerSelector
+            const recursiveViewTracker = REC_EditorOverlayTracker(
+              res.rootContainer
             );
-            if (!rootContainer) {
-              toastConsole.warn("Reboot rootContainer not found with selector", {
-                node,
-                splitViewContainerSelector
-              });
-              return;
-            }
-            const root = REC_EditorOverlayTracker(rootContainer);
-            const [firstView, ...restViews] = rootContainer.childNodes;
-            if (!e(firstView)) {
-              toastConsole.warn("Reboot first view element is not HTMLElement", {
-                rootContainer,
-                firstView
-              });
-              return;
-            }
-            const container = findScopeElements(firstView).container;
-            let stopFirstContainer = () => {
-            };
-            if (container) {
-              const firsContainerTracker = specialChildrenMutation({
-                target: () => container,
-                options: {
-                  childList: true
-                },
-                added() {
-                  added(firstView);
-                },
-                removed() {
-                  bruteForceRemove();
-                }
-              });
-              firsContainerTracker.plug();
-              stopFirstContainer = firsContainerTracker.stop;
-            } else {
-              toastConsole.error("Reboot first view container not found", {
-                rootContainer,
-                firstView
-              });
-            }
-            root.plug(() => restViews);
+            const firsContainerTracker = specialChildrenMutation({
+              target: () => res.container,
+              options: { childList: true },
+              added() {
+                REC_added(res.firstView);
+              },
+              removed() {
+                bruteForceRemove(res.firstView);
+              }
+            });
+            recursiveViewTracker.plug(() => res.restViews);
+            firsContainerTracker.plug();
             rebootCleanup = () => {
-              root.stop();
-              stopFirstContainer();
+              recursiveViewTracker.stop();
+              firsContainerTracker.stop();
             };
           },
-          removed(node) {
-            rebootCleanup == null ? void 0 : rebootCleanup();
-            rebootCleanup = void 0;
-          }
+          removed: consumeRebootCleanup
         });
+        function consumeRebootCleanup() {
+          rebootCleanup == null ? void 0 : rebootCleanup();
+          rebootCleanup = void 0;
+        }
         reboot.plug();
         return () => {
           reboot.stop();
-          rebootCleanup == null ? void 0 : rebootCleanup();
-          rebootCleanup = void 0;
+          consumeRebootCleanup();
           clearStacks();
         };
       },
