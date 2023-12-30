@@ -79,7 +79,8 @@ const devDependencies = {
   "@types/node": "^20.10.5",
   "ts-node": "^10.9.2",
   vite: "4.5.1",
-  vscode: "^1.1.37"
+  vscode: "^1.1.37",
+  xstate: "^5.4.1"
 };
 const packageJson = {
   name,
@@ -125,6 +126,71 @@ async function preRead(base) {
     }
   };
 }
+function _catch(e) {
+}
+let _item;
+async function statusBarItem(context, wasActive) {
+  const active = stateManager(
+    context,
+    extensionId + ".active"
+  );
+  if (wasActive !== void 0) {
+    await active.write(wasActive ? "true" : "false");
+  }
+  const tooltip = (previous) => _item.tooltip = `Concise Syntax: ` + (previous ? "active" : "inactive");
+  if (_item) {
+    if (wasActive !== void 0) {
+      tooltip(wasActive);
+    }
+    return;
+  }
+  async function toggle(next) {
+    tooltip(next);
+    await active.write(next ? "true" : "false");
+  }
+  const getActive = () => !!JSON.parse(active.read() ?? "false");
+  const myCommandId = packageJson.contributes.commands[2].command;
+  context.subscriptions.push(
+    vscode__namespace.commands.registerCommand(myCommandId, async () => {
+      await toggle(!getActive());
+    })
+  );
+  const item = vscode__namespace.window.createStatusBarItem(
+    vscode__namespace.StatusBarAlignment.Right,
+    100
+  );
+  _item = item;
+  item.command = myCommandId;
+  item.text = `$(symbol-keyword) Concise`;
+  tooltip(getActive());
+  item.show();
+  context.subscriptions.push(item);
+}
+function getStateStore(context) {
+  return stateManager(
+    context,
+    extensionId + ".state"
+  );
+}
+function getErrorStore(context) {
+  return stateManager(
+    context,
+    extensionId + ".error"
+  );
+}
+function stateManager(context, key2) {
+  return {
+    value: "",
+    read() {
+      return this.value = context.globalState.get(key2);
+    },
+    async write(newState) {
+      this.value = newState;
+      await context.globalState.update(key2, newState);
+      return newState;
+    }
+  };
+}
 async function installCycle(context) {
   const state = getStateStore(context);
   const res = await read();
@@ -137,9 +203,9 @@ async function installCycle(context) {
   let remoteWorkbenchPath;
   let ext = vscode__namespace.extensions.getExtension(extensionId);
   if (ext && ext.extensionPath) {
-    remoteWorkbenchPath = path__namespace.resolve(ext.extensionPath, "out/workbench.js");
+    remoteWorkbenchPath = path.resolve(ext.extensionPath, "out/workbench.js");
   } else {
-    remoteWorkbenchPath = path__namespace.resolve(__dirname, "index.js");
+    remoteWorkbenchPath = path.resolve(__dirname, "index.js");
   }
   await patchWorkbench(res, remoteWorkbenchPath);
   await state.write("restart");
@@ -155,8 +221,170 @@ async function uninstallCycle(context) {
   await state.write("restart");
   return wasActive;
 }
-function deactivate() {
+function deactivateCycle() {
   console.log("vscode-concise-syntax is deactivated!");
+}
+async function read() {
+  if (!require.main?.filename) {
+    vscode__namespace.window.showErrorMessage(msg.internalError + "no main filename");
+    throw new Error("no main filename");
+  }
+  const appDir = path.dirname(require.main.filename);
+  const base = path.join(appDir, "vs", "code", "electron-sandbox", "workbench");
+  return await preRead(base);
+}
+const key = "editor.tokenColorCustomizations";
+const textMateRules = [
+  {
+    name: "kauderk.concise-syntax.text",
+    scope: ["meta.jsx.children.tsx"],
+    settings: {
+      foreground: "#B59E7A"
+    }
+  },
+  {
+    name: "kauderk.concise-syntax.redundant",
+    scope: [
+      "punctuation.definition.tag.begin.tsx",
+      "punctuation.definition.tag.end.tsx",
+      "punctuation.section.embedded.begin.tsx",
+      "punctuation.section.embedded.end.tsx",
+      "punctuation.terminator.statement.tsx",
+      "concise.redundant-syntax"
+    ],
+    settings: {
+      foreground: "#00b51b00"
+    }
+  },
+  {
+    name: "kauderk.concise-syntax.quote.begin",
+    scope: ["punctuation.definition.string.begin.tsx"],
+    settings: {
+      foreground: "#b5a90000"
+    }
+  },
+  {
+    name: "kauderk.concise-syntax.quote.end",
+    scope: ["punctuation.definition.string.end.tsx"],
+    settings: {
+      foreground: "#b5030000"
+    }
+  }
+];
+async function createSettingsCycle() {
+  const workspace = vscode__namespace.workspace.workspaceFolders?.[0].uri;
+  if (!workspace) {
+    vscode__namespace.window.showErrorMessage(
+      "No workspace found: cannot update textMateRules"
+    );
+    return;
+  }
+  const settingsJsonPath = ".vscode/settings.json";
+  const userSettingsPath = workspace.fsPath + "/" + settingsJsonPath;
+  const read2 = await fs__namespace.promises.readFile(userSettingsPath, "utf-8").then((raw_json2) => [new Function("return " + raw_json2)(), raw_json2]).catch(_catch);
+  const [config, raw_json] = read2 ?? [];
+  if (!config) {
+    vscode__namespace.window.showErrorMessage(
+      `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
+    );
+    return;
+  }
+  let userRules = config?.[key]?.textMateRules;
+  if (userRules && !Array.isArray(userRules)) {
+    vscode__namespace.window.showErrorMessage(
+      `${settingsJsonPath}: ${key}.textMateRules is not an array`
+    );
+    return;
+  }
+  const isEmpty = !userRules || userRules?.length == 0;
+  {
+    if (isEmpty) {
+      userRules = textMateRules;
+    } else {
+      userRules ??= [];
+      let conflictScopes = [];
+      conflicts:
+        for (let i = 0; i < userRules.length; i++) {
+          const userRule = userRules[i];
+          if (!userRule || textMateRules.some((r) => r.name == userRule.name))
+            continue;
+          const userScope = userRule.scope ?? [];
+          const potentialConflictScopes = userScope.reduce((acc, scope) => {
+            if (scope && textMateRules.some(
+              (r) => r.scope.some((_scope) => _scope === scope)
+            )) {
+              acc.push(scope);
+            }
+            return acc;
+          }, []);
+          if (!potentialConflictScopes.length)
+            continue conflicts;
+          conflictScopes.push([
+            `${i}: ${userRule.name || ""}`,
+            potentialConflictScopes.join(", ")
+          ]);
+          userRule.scope = userScope.filter(
+            (scope) => scope && !potentialConflictScopes.includes(scope)
+          );
+        }
+      userRules = userRules.filter((r) => r?.scope?.length);
+      for (const rule of textMateRules) {
+        const exist = userRules.some((r, i) => {
+          const match = r?.name === rule.name;
+          if (match) {
+            userRules[i] = rule;
+            return true;
+          }
+          return match;
+        });
+        if (!exist) {
+          userRules.push(rule);
+        }
+      }
+      config[key].textMateRules = userRules;
+      if (conflictScopes.length) {
+        const diff = "Show Conflicts";
+        const addAnyway = "Write Settings";
+        const result = await vscode__namespace.window.showWarningMessage(
+          `${settingsJsonPath}: ${key}.textMateRules: Conflict scopes detected`,
+          diff,
+          addAnyway
+        );
+        if (result == diff) {
+          const remoteSettingsPath = path__namespace.join(
+            __dirname,
+            "remote.settings.json"
+          );
+          const userIndentSpaceInt = 2;
+          const remoteJson = JSON.stringify(config, null, userIndentSpaceInt);
+          await fs__namespace.promises.writeFile(remoteSettingsPath, remoteJson, "utf-8");
+          vscode__namespace.commands.executeCommand(
+            "vscode.diff",
+            vscode__namespace.Uri.file(userSettingsPath),
+            vscode__namespace.Uri.file(remoteSettingsPath),
+            `${packageJson.displayName} settings.json (diff)`
+          );
+          const result2 = await vscode__namespace.window.showWarningMessage(
+            `Accept settings?`,
+            "Show",
+            // TODO:
+            "More",
+            // TODO:
+            "Yes",
+            "No"
+          );
+          if (result2 == "Yes") {
+            await writeUserSettings(config);
+          }
+        } else if (result == addAnyway) {
+          await writeUserSettings(config);
+        }
+      }
+    }
+  }
+}
+async function writeUserSettings(config) {
+  await vscode__namespace.workspace.getConfiguration().update(key, config[key], vscode__namespace.ConfigurationTarget.Workspace);
 }
 async function activate(context) {
   const state = getStateStore(context);
@@ -205,166 +433,13 @@ async function activate(context) {
       }
     })
   );
-  const key = "editor.tokenColorCustomizations";
-  const textMateRules = [
-    {
-      name: "kauderk.concise-syntax.text",
-      scope: ["meta.jsx.children.tsx"],
-      settings: {
-        foreground: "#B59E7A"
-      }
-    },
-    {
-      name: "kauderk.concise-syntax.redundant",
-      scope: [
-        "punctuation.definition.tag.begin.tsx",
-        "punctuation.definition.tag.end.tsx",
-        "punctuation.section.embedded.begin.tsx",
-        "punctuation.section.embedded.end.tsx",
-        "punctuation.terminator.statement.tsx",
-        "concise.redundant-syntax"
-      ],
-      settings: {
-        foreground: "#00b51b00"
-      }
-    },
-    {
-      name: "kauderk.concise-syntax.quote.begin",
-      scope: ["punctuation.definition.string.begin.tsx"],
-      settings: {
-        foreground: "#b5a90000"
-      }
-    },
-    {
-      name: "kauderk.concise-syntax.quote.end",
-      scope: ["punctuation.definition.string.end.tsx"],
-      settings: {
-        foreground: "#b5030000"
-      }
-    }
-  ];
-  const operation = "add";
-  updateSettings:
-    try {
-      const workspace = vscode__namespace.workspace.workspaceFolders?.[0].uri;
-      if (!workspace) {
-        vscode__namespace.window.showErrorMessage(
-          "No workspace found: cannot update textMateRules"
-        );
-        break updateSettings;
-      }
-      const settingsJsonPath = ".vscode/settings.json";
-      const userSettingsPath = workspace.fsPath + "/" + settingsJsonPath;
-      const read2 = await fs__namespace.promises.readFile(userSettingsPath, "utf-8").then((raw_json2) => [new Function("return " + raw_json2)(), raw_json2]).catch(_catch);
-      const [config, raw_json] = read2 ?? [];
-      if (!config) {
-        vscode__namespace.window.showErrorMessage(
-          `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
-        );
-        break updateSettings;
-      }
-      let userRules = config?.[key]?.textMateRules;
-      if (userRules && !Array.isArray(userRules)) {
-        vscode__namespace.window.showErrorMessage(
-          `${settingsJsonPath}: ${key}.textMateRules is not an array`
-        );
-        break updateSettings;
-      }
-      const isEmpty = !userRules || userRules?.length == 0;
-      if (operation == "remove")
-        ;
-      else if (operation == "add") {
-        if (isEmpty) {
-          userRules = textMateRules;
-        } else {
-          userRules ??= [];
-          let conflictScopes = [];
-          conflicts:
-            for (let i = 0; i < userRules.length; i++) {
-              const userRule = userRules[i];
-              if (!userRule || textMateRules.some((r) => r.name == userRule.name))
-                continue;
-              const userScope = userRule.scope ?? [];
-              const potentialConflictScopes = userScope.reduce((acc, scope) => {
-                if (scope && textMateRules.some(
-                  (r) => r.scope.some((_scope) => _scope === scope)
-                )) {
-                  acc.push(scope);
-                }
-                return acc;
-              }, []);
-              if (!potentialConflictScopes.length)
-                continue conflicts;
-              conflictScopes.push([
-                `${i}: ${userRule.name || ""}`,
-                potentialConflictScopes.join(", ")
-              ]);
-              userRule.scope = userScope.filter(
-                (scope) => scope && !potentialConflictScopes.includes(scope)
-              );
-            }
-          userRules = userRules.filter((r) => r?.scope?.length);
-          addition:
-            for (const rule of textMateRules) {
-              const exist = userRules.some((r, i) => {
-                const match = r?.name === rule.name;
-                if (match) {
-                  userRules[i] = rule;
-                  return true;
-                }
-                return match;
-              });
-              if (!exist) {
-                userRules.push(rule);
-              }
-            }
-          config[key].textMateRules = userRules;
-          if (conflictScopes.length) {
-            const diff = "Show Conflicts";
-            const addAnyway = "Write Settings";
-            const result = await vscode__namespace.window.showWarningMessage(
-              `${settingsJsonPath}: ${key}.textMateRules: Conflict scopes detected`,
-              diff,
-              addAnyway
-            );
-            if (result == diff) {
-              const remoteSettingsPath = path__namespace.join(
-                __dirname,
-                "remote.settings.json"
-              );
-              const userIndentSpaceInt = 2;
-              const remoteJson = JSON.stringify(config, null, userIndentSpaceInt);
-              await fs__namespace.promises.writeFile(remoteSettingsPath, remoteJson, "utf-8");
-              vscode__namespace.commands.executeCommand(
-                "vscode.diff",
-                vscode__namespace.Uri.file(userSettingsPath),
-                vscode__namespace.Uri.file(remoteSettingsPath),
-                `${packageJson.displayName} settings.json (diff)`
-              );
-              const result2 = await vscode__namespace.window.showWarningMessage(
-                `Accept settings?`,
-                "Show",
-                // TODO:
-                "More",
-                // TODO:
-                "Yes",
-                "No"
-              );
-              if (result2 == "Yes") {
-                await writeUserSettings(config);
-              }
-            } else if (result == addAnyway) {
-              await writeUserSettings(config);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      if (error?.message) {
-        vscode__namespace.window.showErrorMessage(error.message);
-      }
-      debugger;
-    }
+  try {
+    createSettingsCycle();
+  } catch (error) {
+    vscode__namespace.window.showErrorMessage(
+      msg.internalError + "failed to validate user settings"
+    );
+  }
   if (state.read() != "disposed") {
     installCycle(context).then(() => {
       if (!wasActive) {
@@ -375,25 +450,11 @@ async function activate(context) {
     await statusBarItem(context);
   }
   console.log("vscode-concise-syntax is active");
-  async function writeUserSettings(config) {
-    await vscode__namespace.workspace.getConfiguration().update(key, config[key], vscode__namespace.ConfigurationTarget.Workspace);
-  }
   function __catch(e) {
     console.error(e);
     const error = getErrorStore(context);
     error.write("unhandled").catch(_catch);
   }
-}
-function _catch(e) {
-}
-async function read() {
-  if (!require.main?.filename) {
-    vscode__namespace.window.showErrorMessage(msg.internalError + "no main filename");
-    throw new Error("no main filename");
-  }
-  const appDir = path__namespace.dirname(require.main.filename);
-  const base = path__namespace.join(appDir, "vs", "code", "electron-sandbox", "workbench");
-  return await preRead(base);
 }
 function reloadWindowMessage(message) {
   vscode__namespace.window.showInformationMessage(message, { title: msg.restartIde }).then((selection) => {
@@ -402,69 +463,6 @@ function reloadWindowMessage(message) {
     }
   });
 }
-function getStateStore(context) {
-  return stateManager(
-    context,
-    extensionId + ".state"
-  );
-}
-function getErrorStore(context) {
-  return stateManager(
-    context,
-    extensionId + ".error"
-  );
-}
-function stateManager(context, key) {
-  return {
-    value: "",
-    read() {
-      return this.value = context.globalState.get(key);
-    },
-    async write(newState) {
-      this.value = newState;
-      await context.globalState.update(key, newState);
-      return newState;
-    }
-  };
-}
-let _item;
-async function statusBarItem(context, wasActive) {
-  const active = stateManager(
-    context,
-    extensionId + ".active"
-  );
-  if (activate !== void 0) {
-    await active.write(wasActive ? "true" : "false");
-  }
-  const tooltip = (previous) => _item.tooltip = `Concise Syntax: ` + (previous ? "active" : "inactive");
-  if (_item) {
-    if (wasActive !== void 0) {
-      tooltip(wasActive);
-    }
-    return;
-  }
-  async function toggle(next) {
-    tooltip(next);
-    await active.write(next ? "true" : "false");
-  }
-  const getActive = () => !!JSON.parse(active.read() ?? "false");
-  const myCommandId = packageJson.contributes.commands[2].command;
-  context.subscriptions.push(
-    vscode__namespace.commands.registerCommand(myCommandId, async () => {
-      await toggle(!getActive());
-    })
-  );
-  const item = vscode__namespace.window.createStatusBarItem(
-    vscode__namespace.StatusBarAlignment.Right,
-    100
-  );
-  _item = item;
-  item.command = myCommandId;
-  item.text = `$(symbol-keyword) Concise`;
-  tooltip(getActive());
-  item.show();
-  context.subscriptions.push(item);
-}
 exports.activate = activate;
-exports.deactivate = deactivate;
+exports.deactivate = deactivateCycle;
 //# sourceMappingURL=extension.js.map
