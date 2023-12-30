@@ -139,7 +139,7 @@ async function installCycle(context) {
   if (ext && ext.extensionPath) {
     remoteWorkbenchPath = path__namespace.resolve(ext.extensionPath, "out/workbench.js");
   } else {
-    remoteWorkbenchPath = path__namespace.resolve(__dirname, "index.js");
+    remoteWorkbenchPath = path__namespace.resolve(__dirname, "workbench.js");
   }
   await patchWorkbench(res, remoteWorkbenchPath);
   await state.write("restart");
@@ -205,6 +205,129 @@ async function activate(context) {
       }
     })
   );
+  const key = "editor.tokenColorCustomizations";
+  const textMateRules = [
+    {
+      name: "kauderk.concise-syntax.text",
+      scope: ["meta.jsx.children.tsx"],
+      settings: {
+        foreground: "#B59E7A"
+      }
+    },
+    {
+      name: "kauderk.concise-syntax.redundant",
+      scope: [
+        "punctuation.definition.tag.begin.tsx",
+        "punctuation.definition.tag.end.tsx",
+        "punctuation.section.embedded.begin.tsx",
+        "punctuation.section.embedded.end.tsx",
+        "punctuation.terminator.statement.tsx",
+        "concise.redundant-syntax"
+      ],
+      settings: {
+        foreground: "#00b51b00"
+      }
+    },
+    {
+      name: "kauderk.concise-syntax.quote.begin",
+      scope: ["punctuation.definition.string.begin.tsx"],
+      settings: {
+        foreground: "#b5a90000"
+      }
+    },
+    {
+      name: "kauderk.concise-syntax.quote.end",
+      scope: ["punctuation.definition.string.end.tsx"],
+      settings: {
+        foreground: "#b5030000"
+      }
+    }
+  ];
+  debugger;
+  const operation = "add";
+  updateSettings:
+    try {
+      const workspace = vscode__namespace.workspace.workspaceFolders?.[0].uri;
+      if (!workspace) {
+        vscode__namespace.window.showErrorMessage(
+          "No workspace found: cannot update textMateRules"
+        );
+        break updateSettings;
+      }
+      const path2 = ".vscode/settings.json";
+      const config = await fs__namespace.promises.readFile(workspace.fsPath + "/" + path2, "utf-8").then((invalid_json) => new Function("return " + invalid_json)()).catch(_catch);
+      if (!config) {
+        vscode__namespace.window.showErrorMessage(
+          `Cannot read ${path2}: does not exist or is not valid JSON`
+        );
+        break updateSettings;
+      }
+      let userRules = config?.[key]?.textMateRules;
+      if (userRules && !Array.isArray(userRules)) {
+        vscode__namespace.window.showErrorMessage(
+          `${path2}: ${key}.textMateRules is not an array`
+        );
+        break updateSettings;
+      }
+      const isEmpty = !userRules || userRules?.length == 0;
+      if (operation == "remove")
+        ;
+      else if (operation == "add") {
+        if (isEmpty) {
+          userRules = textMateRules;
+        } else {
+          userRules ??= [];
+          let conflictScopes = [];
+          conflicts:
+            for (let i = 0; i < userRules.length; i++) {
+              const userRule = userRules[i];
+              if (!userRule || textMateRules.some((r) => r.name == userRule.name))
+                continue;
+              const userScope = userRule.scope ?? [];
+              const potentialConflictScopes = userScope.reduce((acc, scope) => {
+                if (scope && textMateRules.some(
+                  (r) => r.scope.some((_scope) => _scope === scope)
+                )) {
+                  acc.push(scope);
+                }
+                return acc;
+              }, []);
+              if (!potentialConflictScopes.length)
+                continue conflicts;
+              conflictScopes.push([
+                `${i}: ${userRule.name || ""}`,
+                potentialConflictScopes.join(", ")
+              ]);
+            }
+          if (conflictScopes.length) {
+            vscode__namespace.window.showWarningMessage(
+              `${path2}: ${key}.textMateRules: Conflict scopes detected       🛠️ Remove them when using Concise-Syntax 🛠️        ${conflictScopes.map(([name2, scopes]) => `[${name2} -> ${scopes}]`).join(", ")}`
+            );
+          }
+          addition:
+            for (const rule of textMateRules) {
+              const exist = userRules.some((r, i) => {
+                const match = r?.name === rule.name;
+                if (match) {
+                  userRules[i] = rule;
+                  return true;
+                }
+                return match;
+              });
+              if (!exist) {
+                userRules.push(rule);
+              }
+            }
+        }
+      }
+      config[key].textMateRules = userRules;
+      await vscode__namespace.workspace.getConfiguration().update(key, config[key], vscode__namespace.ConfigurationTarget.Workspace);
+    } catch (error) {
+      if (error?.message) {
+        vscode__namespace.window.showErrorMessage(error.message);
+      }
+      debugger;
+    }
   if (state.read() != "disposed") {
     installCycle(context).then(() => {
       if (!wasActive) {
@@ -212,7 +335,7 @@ async function activate(context) {
       }
     }).catch(__catch);
   } else if (wasActive) {
-    await statusBarItem(context, true);
+    await statusBarItem(context);
   }
   console.log("vscode-concise-syntax is active");
   function __catch(e) {
