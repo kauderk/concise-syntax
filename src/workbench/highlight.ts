@@ -12,9 +12,11 @@ import {
   specialChildrenMutation,
   createMutation,
   styleIt,
+  toastConsole,
 } from './shared'
 import {
   Selected,
+  consumeStack,
   e,
   findScopeElements,
   guardStack,
@@ -212,8 +214,7 @@ export function createHighlightLifeCycle() {
         for (const stack of [recStack, editorStack, treeStack]) {
           for (const [keyNode] of stack) {
             if (condition && !condition(keyNode)) continue
-            stack.get(keyNode)?.()
-            stack.delete(keyNode)
+            consumeStack(stack, keyNode)
           }
         }
       }

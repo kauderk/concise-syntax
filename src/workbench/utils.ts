@@ -100,18 +100,28 @@ export function e(el: unknown): el is HTMLElement {
   return el instanceof HTMLElement
 }
 
+export function consumeStack(
+  stack: Map<HTMLElement, Function>,
+  key: HTMLElement
+) {
+  // if (stack.has(key)) { // it's better if it fails so we can fix it
+  stack.get(key)?.()
+  stack.delete(key)
+  // }
+}
+
 export function guardStack(
   stack: Map<HTMLElement, Function>,
   key: HTMLElement,
   cleanup: Function
 ) {
   if (stack.has(key)) {
-    toastConsole.warn('Highlight lifecycle stack already has this key', {
-      stack,
-      key,
-    })
-    stack.get(key)?.()
-    stack.delete(key)
+    // TODO: figure out why this is happening
+    // toastConsole.warn('Highlight lifecycle stack already has this key', {
+    //   stack,
+    //   key,
+    // })
+    consumeStack(stack, key)
   }
   stack.set(key, cleanup)
 }

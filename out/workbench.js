@@ -680,15 +680,14 @@ var __publicField = (obj, key, value) => {
   function e(el) {
     return el instanceof HTMLElement;
   }
-  function guardStack(stack, key, cleanup) {
+  function consumeStack(stack, key) {
     var _a;
+    (_a = stack.get(key)) == null ? void 0 : _a();
+    stack.delete(key);
+  }
+  function guardStack(stack, key, cleanup) {
     if (stack.has(key)) {
-      toastConsole.warn("Highlight lifecycle stack already has this key", {
-        stack,
-        key
-      });
-      (_a = stack.get(key)) == null ? void 0 : _a();
-      stack.delete(key);
+      consumeStack(stack, key);
     }
     stack.set(key, cleanup);
   }
@@ -877,13 +876,11 @@ var __publicField = (obj, key, value) => {
           removed: bruteForceRemove
         });
         function clearStacks(condition) {
-          var _a;
           for (const stack of [recStack, editorStack, treeStack]) {
             for (const [keyNode] of stack) {
               if (condition && !condition(keyNode))
                 continue;
-              (_a = stack.get(keyNode)) == null ? void 0 : _a();
-              stack.delete(keyNode);
+              consumeStack(stack, keyNode);
             }
           }
         }
