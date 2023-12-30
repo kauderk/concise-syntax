@@ -1,0 +1,47 @@
+{
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "name": "kauderk.concise-syntax.text",
+        "scope": [
+          "meta.jsx.children.tsx"
+        ],
+        "settings": {
+          "foreground": "#B59E7A"
+        }
+      },
+      {
+        "name": "kauderk.concise-syntax.redundant",
+        "scope": [
+          "punctuation.definition.tag.begin.tsx",
+          "punctuation.definition.tag.end.tsx",
+          "punctuation.section.embedded.begin.tsx",
+          "punctuation.section.embedded.end.tsx",
+          "punctuation.terminator.statement.tsx",
+          "concise.redundant-syntax"
+        ],
+        "settings": {
+          "foreground": "#00b51b00"
+        }
+      },
+      {
+        "name": "kauderk.concise-syntax.quote.begin",
+        "scope": [
+          "punctuation.definition.string.begin.tsx"
+        ],
+        "settings": {
+          "foreground": "#b5a90000"
+        }
+      },
+      {
+        "name": "kauderk.concise-syntax.quote.end",
+        "scope": [
+          "punctuation.definition.string.end.tsx"
+        ],
+        "settings": {
+          "foreground": "#b5030000"
+        }
+      }
+    ]
+  }
+}

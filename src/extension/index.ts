@@ -71,7 +71,7 @@ export async function activate(context: vscode.ExtensionContext) {
             reloadWindowMessage(msg.enabled)
           } else {
             await statusBarItem(context, true)
-            vscode.window.showInformationMessage('Mount: using cache', 'Reload')
+            vscode.window.showInformationMessage('Mount: using cache')
           }
         }
       } catch (error) {
@@ -157,7 +157,6 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   ]
 
-  debugger
   const operation = 'add' as 'remove' | 'add'
   // TODO: avoid writing defensive code, someone else surely knows a better way to do this
   updateSettings: try {
@@ -169,15 +168,18 @@ export async function activate(context: vscode.ExtensionContext) {
       break updateSettings
     }
 
-    const path = '.vscode/settings.json'
-    const config = await fs.promises
-      .readFile(workspace.fsPath + '/' + path, 'utf-8')
+    const settingsJsonPath = '.vscode/settings.json'
+    const userSettingsPath = workspace.fsPath + '/' + settingsJsonPath
+
+    const read = await fs.promises
+      .readFile(userSettingsPath, 'utf-8')
       // https://stackoverflow.com/a/73298406 parse JSON with comments
-      .then((invalid_json) => new Function('return ' + invalid_json)())
+      .then((raw_json) => [new Function('return ' + raw_json)(), raw_json])
       .catch(_catch)
+    const [config, raw_json] = read ?? []
     if (!config) {
       vscode.window.showErrorMessage(
-        `Cannot read ${path}: does not exist or is not valid JSON`
+        `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
       )
       break updateSettings
     }
@@ -188,7 +190,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     if (userRules && !Array.isArray(userRules)) {
       vscode.window.showErrorMessage(
-        `${path}: ${key}.textMateRules is not an array`
+        `${settingsJsonPath}: ${key}.textMateRules is not an array`
       )
       break updateSettings
     }
@@ -232,14 +234,14 @@ export async function activate(context: vscode.ExtensionContext) {
             `${i}: ${userRule.name || ''}`,
             potentialConflictScopes.join(', '),
           ])
-        }
-        if (conflictScopes.length) {
-          vscode.window.showWarningMessage(
-            `${path}: ${key}.textMateRules: Conflict scopes detected       🛠️ Remove them when using Concise-Syntax 🛠️        ${conflictScopes
-              .map(([name, scopes]) => `[${name} -> ${scopes}]`)
-              .join(', ')}`
+
+          // TODO: this should be an option...
+          userRule.scope = userScope.filter(
+            (scope) => scope && !potentialConflictScopes.includes(scope)
           )
         }
+        // TODO: this should be an option...
+        userRules = userRules.filter((r) => r?.scope?.length)
 
         // add what is missing
         addition: for (const rule of textMateRules) {
@@ -255,15 +257,53 @@ export async function activate(context: vscode.ExtensionContext) {
             userRules.push(rule)
           }
         }
+        // FIXME: make this explicit, don't change by value
+        config[key].textMateRules = userRules
+
+        if (conflictScopes.length) {
+          const diff = 'Show Conflicts'
+          const addAnyway = 'Write Settings'
+          const result = await vscode.window.showWarningMessage(
+            `${settingsJsonPath}: ${key}.textMateRules: Conflict scopes detected`,
+            diff,
+            addAnyway
+          )
+
+          if (result == diff) {
+            const remoteSettingsPath = path.join(
+              __dirname,
+              'remote.settings.json'
+            )
+            // create a remote file with the new changes
+            const userIndentSpaceInt = 2 // TODO: parse from user settings
+            // TODO: maintain last empty line?
+            const remoteJson = JSON.stringify(config, null, userIndentSpaceInt)
+            // TODO: write the remote file to directory without git tracking to avoid annoying Toast notifications
+            await fs.promises.writeFile(remoteSettingsPath, remoteJson, 'utf-8')
+
+            vscode.commands.executeCommand(
+              'vscode.diff',
+              vscode.Uri.file(userSettingsPath),
+              vscode.Uri.file(remoteSettingsPath),
+              `${packageJson.displayName} settings.json (diff)`
+            )
+            // TODO: IF the user closes the Toast add a command to continue/check settings updates
+            const result = await vscode.window.showWarningMessage(
+              `Accept settings?`,
+              'Show', // TODO:
+              'More', // TODO:
+              'Yes',
+              'No'
+            )
+            if (result == 'Yes') {
+              await writeUserSettings(config)
+            }
+          } else if (result == addAnyway) {
+            await writeUserSettings(config)
+          }
+        }
       }
     }
-
-    config[key].textMateRules = userRules
-
-    // Overwrite entire parent setting
-    await vscode.workspace
-      .getConfiguration()
-      .update(key, config[key], vscode.ConfigurationTarget.Workspace)
   } catch (error: any) {
     if (error?.message) {
       vscode.window.showErrorMessage(error.message)
@@ -284,6 +324,13 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   console.log('vscode-concise-syntax is active')
+
+  // Overwrite entire parent setting
+  async function writeUserSettings(config: any) {
+    await vscode.workspace
+      .getConfiguration()
+      .update(key, config[key], vscode.ConfigurationTarget.Workspace)
+  }
 
   function __catch(e: unknown) {
     console.error(e)
