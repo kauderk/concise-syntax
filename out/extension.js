@@ -353,11 +353,21 @@ async function createSettingsCycle() {
         if (result == diff) {
           const remoteSettingsPath = path__namespace.join(
             __dirname,
-            "remote.settings.json"
+            "remote.settings.jsonc"
           );
           const userIndentSpaceInt = 2;
-          const remoteJson = JSON.stringify(config, null, userIndentSpaceInt);
-          await fs__namespace.promises.writeFile(remoteSettingsPath, remoteJson, "utf-8");
+          const indentationOffset = " ".repeat(userIndentSpaceInt);
+          const remoteJson = JSON.stringify(userRules, null, userIndentSpaceInt).replace(
+            /^(?!\s*$)/gm,
+            indentationOffset.repeat(2)
+            // add indentation to each line
+          ).replace(indentationOffset, "");
+          const replaceRegex = /"textMateRules"\s*:\s*\[\s*((?:(?:(?!}\s*])[^\[\]]*)|\[[^\[\]]*\])*\s*)\]/gm;
+          const virtualJson = raw_json.replace(
+            replaceRegex,
+            `"textMateRules": ${remoteJson}`
+          );
+          await fs__namespace.promises.writeFile(remoteSettingsPath, virtualJson, "utf-8");
           vscode__namespace.commands.executeCommand(
             "vscode.diff",
             vscode__namespace.Uri.file(userSettingsPath),

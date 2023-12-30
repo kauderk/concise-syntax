@@ -63,7 +63,7 @@ export async function createSettingsCycle() {
     // https://stackoverflow.com/a/73298406 parse JSON with comments
     .then((raw_json) => [new Function('return ' + raw_json)(), raw_json])
     .catch(_catch)
-  const [config, raw_json] = read ?? []
+  const [config, raw_json]: [any, string] = (read as any) ?? []
   if (!config) {
     vscode.window.showErrorMessage(
       `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
@@ -159,14 +159,32 @@ export async function createSettingsCycle() {
         if (result == diff) {
           const remoteSettingsPath = path.join(
             __dirname,
-            'remote.settings.json'
+            'remote.settings.jsonc'
           )
+          // debugger
           // create a remote file with the new changes
           const userIndentSpaceInt = 2 // TODO: parse from user settings
           // TODO: maintain last empty line?
-          const remoteJson = JSON.stringify(config, null, userIndentSpaceInt)
+          const indentationOffset = ' '.repeat(userIndentSpaceInt)
+          const remoteJson = JSON.stringify(userRules, null, userIndentSpaceInt)
+            // add space indentation to remoteJson
+            .replace(
+              /^(?!\s*$)/gm,
+              indentationOffset.repeat(2) // add indentation to each line
+            )
+            // remove first indentation
+            .replace(indentationOffset, '')
+
+          const replaceRegex =
+            /"textMateRules"\s*:\s*\[\s*((?:(?:(?!}\s*])[^\[\]]*)|\[[^\[\]]*\])*\s*)\]/gm
+          // replace the array group match in raw_json with the remoteJson
+          const virtualJson = raw_json.replace(
+            replaceRegex,
+            `"textMateRules": ${remoteJson}`
+          )
+          // debugger
           // TODO: write the remote file to directory without git tracking to avoid annoying Toast notifications
-          await fs.promises.writeFile(remoteSettingsPath, remoteJson, 'utf-8')
+          await fs.promises.writeFile(remoteSettingsPath, virtualJson, 'utf-8')
 
           vscode.commands.executeCommand(
             'vscode.diff',

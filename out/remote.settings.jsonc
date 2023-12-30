@@ -1,6 +1,39 @@
 {
+  "Yooo": "world",
+  // YOOO
+  "fake.deep": {
+    "fake.value": "hello",
+    // YOOO
+    "fake": "fake"
+  },
+  // TOOOO
   "editor.tokenColorCustomizations": {
-    "textMateRules": [
+    // FAIL
+    "textMateRules":   [
+      {
+        "scope": [
+          "punctuation.separator.parameter.tsx"
+        ],
+        "settings": {
+          "foreground": "#BFC7D5"
+        }
+      },
+      {
+        "scope": [
+          "text.svelte"
+        ],
+        "settings": {
+          "foreground": "#B59E7A"
+        }
+      },
+      {
+        "scope": [
+          "text.marko"
+        ],
+        "settings": {
+          "foreground": "#B59E7A"
+        }
+      },
       {
         "name": "kauderk.concise-syntax.text",
         "scope": [
@@ -43,5 +76,12 @@
         }
       }
     ]
+  },
+  "hello": "world",
+  // YOOO
+  "fake.deep": {
+    "fake.value": "hello",
+    // YOOO
+    "fake": "fake"
   }
 }
