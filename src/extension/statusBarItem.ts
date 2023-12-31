@@ -13,6 +13,7 @@ type State = (typeof state)[keyof typeof state]
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
+let busy: boolean | undefined
 export async function ExtensionState_statusBarItem(
   context: vscode.ExtensionContext,
   setState: State
@@ -46,11 +47,16 @@ export async function ExtensionState_statusBarItem(
   context.subscriptions.push(
     vscode.commands.registerCommand(myCommandId, async () => {
       const extensionState = getStateStore(context)
-      if (extensionState.read() == 'disposed') return
-
-      const next = flip(windowState.read())
-      await emitExtensionState(next)
-      await windowState.write(next)
+      if (extensionState.read() == 'disposed') {
+        return vscode.window.showInformationMessage(
+          'The extension is disposed. Mount it to use this command.'
+        )
+      }
+      if (busy) {
+        return vscode.window.showInformationMessage(
+          'The extension is busy. Try again in a few seconds.'
+        )
+      }
     })
   )
   const item = vscode.window.createStatusBarItem(
