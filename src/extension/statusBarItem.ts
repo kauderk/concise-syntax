@@ -2,18 +2,17 @@ import { extensionId } from 'src/shared/write'
 import * as vscode from 'vscode'
 import packageJson from '../../package.json'
 import { updateSettingsCycle } from './settings'
+import { IState, State, state } from 'src/shared/state'
 
 let _item: vscode.StatusBarItem
-export const state = {
-  active: 'active',
-  inactive: 'inactive',
-  disposed: 'disposed',
-} as const
-type State = (typeof state)[keyof typeof state]
+
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
+let statusIcon = 'symbol-keyword'
+let statusIconLoading = 'loading~spin'
 let busy: boolean | undefined
+
 export async function ExtensionState_statusBarItem(
   context: vscode.ExtensionContext,
   setState: State
@@ -28,7 +27,7 @@ export async function ExtensionState_statusBarItem(
   const emitExtensionState = async (next: State) => {
     // TODO: add a subscriber or something to update the settings before the tooltip
     await updateSettingsCycle(binary(next))
-    _item.tooltip = `Concise Syntax: ` + next
+    _item.tooltip = IState.encode(next)
   }
 
   if (_item) {
@@ -57,6 +56,24 @@ export async function ExtensionState_statusBarItem(
           'The extension is busy. Try again in a few seconds.'
         )
       }
+
+      try {
+        busy = true
+        _item.text = `$(${statusIconLoading}) Concise`
+        const next = flip(windowState.read())
+        await updateSettingsCycle(next)
+        await windowState.write(next)
+        if (next == 'active') {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+        _item.text = `$(${statusIcon}) Concise`
+        _item.tooltip = IState.encode(next)
+        busy = false
+      } catch (error) {
+        _item.text = `$(error) Concise`
+        _item.tooltip = IState.encode(state.error)
+        busy = undefined
+      }
     })
   )
   const item = vscode.window.createStatusBarItem(
@@ -65,7 +82,7 @@ export async function ExtensionState_statusBarItem(
   )
   _item = item
   item.command = myCommandId
-  item.text = `$(symbol-keyword) Concise`
+  item.text = `$(${statusIcon}) Concise`
   await emitExtensionState(windowState.read() ?? 'active')
   item.show()
   context.subscriptions.push(item)

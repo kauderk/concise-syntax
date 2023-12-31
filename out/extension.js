@@ -255,12 +255,34 @@ async function tryParseSettings() {
     }
   };
 }
-let _item;
 const state = {
   active: "active",
   inactive: "inactive",
-  disposed: "disposed"
+  disposed: "disposed",
+  error: "error"
 };
+const IState = {
+  /**
+   *
+   * @param state
+   * @returns
+   */
+  encode(state2) {
+    return `Concise Syntax: ` + state2;
+  },
+  /**
+   * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
+   * @param string
+   * @returns
+   */
+  decode(string) {
+    return Object.values(state).reverse().find((state2) => string?.includes(state2));
+  }
+};
+let _item;
+let statusIcon = "symbol-keyword";
+let statusIconLoading = "loading~spin";
+let busy;
 async function ExtensionState_statusBarItem(context, setState) {
   const windowState = getWindowState(context);
   if (setState !== void 0) {
@@ -268,7 +290,7 @@ async function ExtensionState_statusBarItem(context, setState) {
   }
   const emitExtensionState = async (next) => {
     await updateSettingsCycle(binary(next));
-    _item.tooltip = `Concise Syntax: ` + next;
+    _item.tooltip = IState.encode(next);
   };
   if (_item) {
     if (setState !== void 0) {
@@ -285,11 +307,33 @@ async function ExtensionState_statusBarItem(context, setState) {
   context.subscriptions.push(
     vscode__namespace.commands.registerCommand(myCommandId, async () => {
       const extensionState = getStateStore(context);
-      if (extensionState.read() == "disposed")
-        return;
-      const next = flip(windowState.read());
-      await emitExtensionState(next);
-      await windowState.write(next);
+      if (extensionState.read() == "disposed") {
+        return vscode__namespace.window.showInformationMessage(
+          "The extension is disposed. Mount it to use this command."
+        );
+      }
+      if (busy) {
+        return vscode__namespace.window.showInformationMessage(
+          "The extension is busy. Try again in a few seconds."
+        );
+      }
+      try {
+        busy = true;
+        _item.text = `$(${statusIconLoading}) Concise`;
+        const next = flip(windowState.read());
+        await updateSettingsCycle(next);
+        await windowState.write(next);
+        if (next == "active") {
+          await new Promise((resolve) => setTimeout(resolve, 3e3));
+        }
+        _item.text = `$(${statusIcon}) Concise`;
+        _item.tooltip = IState.encode(next);
+        busy = false;
+      } catch (error) {
+        _item.text = `$(error) Concise`;
+        _item.tooltip = IState.encode(state.error);
+        busy = void 0;
+      }
     })
   );
   const item = vscode__namespace.window.createStatusBarItem(
@@ -298,7 +342,7 @@ async function ExtensionState_statusBarItem(context, setState) {
   );
   _item = item;
   item.command = myCommandId;
-  item.text = `$(symbol-keyword) Concise`;
+  item.text = `$(${statusIcon}) Concise`;
   await emitExtensionState(windowState.read() ?? "active");
   item.show();
   context.subscriptions.push(item);

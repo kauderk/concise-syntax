@@ -6,6 +6,7 @@ import {
   createStyles,
   innerChildrenMutation,
 } from './shared'
+import { IState } from '../shared/state'
 
 const statusBarSelector = `[id="${extensionId}"]`
 const bridgeAttribute = (target: H): boolean =>
@@ -47,6 +48,8 @@ export function createSyntaxLifecycle() {
       }
     },
     activate(DOM) {
+      let deltaState: string | undefined
+
       return innerChildrenMutation({
         parent: DOM.watchForRemoval,
         validate(node, busy) {
@@ -59,7 +62,16 @@ export function createSyntaxLifecycle() {
             target: () => dom.item,
             watchAttribute: [bridgeBetweenVscodeExtension],
             change([bridge]) {
-              if (bridge) {
+              const stringState = IState.decode(bridge)
+
+              if (stringState) {
+                if (deltaState === stringState) {
+                  // console.log('attempting to change', { stringState })
+                  return
+                }
+                deltaState = stringState
+
+                // console.log(`syntax.ts: change() | stringState: ${stringState}`)
                 change(dom)
               } else {
                 clear()

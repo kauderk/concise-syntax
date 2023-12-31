@@ -7,11 +7,11 @@ import {
   getErrorStore,
   getStateStore,
   ExtensionState_statusBarItem,
-  state,
   getWindowState,
   binary,
 } from './statusBarItem'
 import { installCycle, read, uninstallCycle } from './extensionCycle'
+import { state } from '../shared/state'
 export { deactivateCycle as deactivate } from './extensionCycle'
 
 export async function activate(context: vscode.ExtensionContext) {

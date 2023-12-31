@@ -362,7 +362,13 @@ var __publicField = (obj, key, value) => {
         }
         return (message, objects, options = {}) => {
           const print = "Concise Syntax " + level + ": " + message;
-          console[level](print, objects ?? {});
+          if (level == "log") {
+            console.groupCollapsed(print, objects ?? {});
+            console.trace();
+            console.groupEnd();
+          } else {
+            console[level](print, objects ?? {});
+          }
           const toastStyle = createStyles("toast");
           toastStyle.styleIt(minifiedCss);
           const toast = new Toastify({
@@ -810,6 +816,30 @@ var __publicField = (obj, key, value) => {
     const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
     return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
   }
+  const state = {
+    active: "active",
+    inactive: "inactive",
+    disposed: "disposed",
+    error: "error"
+  };
+  const IState = {
+    /**
+     *
+     * @param state
+     * @returns
+     */
+    encode(state2) {
+      return `Concise Syntax: ` + state2;
+    },
+    /**
+     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
+     * @param string
+     * @returns
+     */
+    decode(string) {
+      return Object.values(state).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
+    }
+  };
   const statusBarSelector = `[id="${extensionId}"]`;
   const bridgeAttribute = (target) => {
     var _a, _b;
@@ -846,6 +876,7 @@ var __publicField = (obj, key, value) => {
         };
       },
       activate(DOM) {
+        let deltaState;
         return innerChildrenMutation({
           parent: DOM.watchForRemoval,
           validate(node, busy) {
@@ -858,7 +889,12 @@ var __publicField = (obj, key, value) => {
               target: () => dom.item,
               watchAttribute: [bridgeBetweenVscodeExtension],
               change([bridge]) {
-                if (bridge) {
+                const stringState = IState.decode(bridge);
+                if (stringState) {
+                  if (deltaState === stringState) {
+                    return;
+                  }
+                  deltaState = stringState;
                   change(dom);
                 } else {
                   clear2();
