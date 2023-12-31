@@ -4,46 +4,53 @@ import packageJson from '../../package.json'
 import { updateSettingsCycle } from './settings'
 
 let _item: vscode.StatusBarItem
+export const state = {
+  active: 'active',
+  inactive: 'inactive',
+  disposed: 'disposed',
+} as const
+type State = (typeof state)[keyof typeof state]
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
 export async function ExtensionState_statusBarItem(
   context: vscode.ExtensionContext,
-  wasActive?: boolean
+  setState: State
 ) {
   // TODO: decouple the update from the status bar item
 
-  const active = stateManager<'true' | 'false'>(
-    context,
-    extensionId + '.active'
-  )
-  if (wasActive !== undefined) {
-    await active.write(wasActive ? 'true' : 'false')
+  const windowState = getWindowState(context)
+  if (setState !== undefined) {
+    await windowState.write(setState)
   }
 
-  const emitExtensionState = async (previous: boolean) => {
+  const emitExtensionState = async (next: State) => {
     // TODO: add a subscriber or something to update the settings before the tooltip
-    await updateSettingsCycle(previous ? 'active' : 'inactive')
-    _item.tooltip = `Concise Syntax: ` + (previous ? 'active' : 'inactive')
+    await updateSettingsCycle(binary(next))
+    _item.tooltip = `Concise Syntax: ` + next
   }
 
   if (_item) {
-    if (wasActive !== undefined) {
-      await emitExtensionState(wasActive)
+    if (setState !== undefined) {
+      await emitExtensionState(setState)
+      if (setState != 'disposed') {
+        _item.show()
+      } else {
+        _item.hide()
+      }
     }
     return
   }
 
-  async function toggle(next: boolean) {
-    await emitExtensionState(next)
-    await active.write(next ? 'true' : 'false')
-  }
-  const getActive = () => !!JSON.parse(active.read() ?? 'false')
-
   const myCommandId = packageJson.contributes.commands[2].command
   context.subscriptions.push(
     vscode.commands.registerCommand(myCommandId, async () => {
-      await toggle(!getActive())
+      const extensionState = getStateStore(context)
+      if (extensionState.read() == 'disposed') return
+
+      const next = flip(windowState.read())
+      await emitExtensionState(next)
+      await windowState.write(next)
     })
   )
   const item = vscode.window.createStatusBarItem(
@@ -53,15 +60,25 @@ export async function ExtensionState_statusBarItem(
   _item = item
   item.command = myCommandId
   item.text = `$(symbol-keyword) Concise`
-  await emitExtensionState(getActive())
+  await emitExtensionState(windowState.read() ?? 'active')
   item.show()
   context.subscriptions.push(item)
 }
 
+export function binary(state?: State) {
+  return state == 'active' ? 'active' : 'inactive'
+}
+function flip(next?: State) {
+  return next == 'active' ? 'inactive' : 'active'
+}
+
+export function getWindowState(context: vscode.ExtensionContext) {
+  return stateManager<State>(context, extensionId + '.window')
+}
 export function getStateStore(context: vscode.ExtensionContext) {
-  return stateManager<'active' | 'restart' | 'disposed'>(
+  return stateManager<'active' | 'disposed'>(
     context,
-    extensionId + '.state'
+    extensionId + '.extension'
   )
 }
 export function getErrorStore(context: vscode.ExtensionContext) {

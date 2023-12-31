@@ -5,21 +5,16 @@ import {
   extensionScriptTag,
   preRead,
 } from 'src/shared/write'
-import { getStateStore, ExtensionState_statusBarItem } from './statusBarItem'
 import { _catch } from './utils'
 import * as vscode from 'vscode'
 import * as fs from 'fs'
 import msg from '../shared/messages'
 
 export async function installCycle(context: vscode.ExtensionContext) {
-  const state = getStateStore(context)
-
   const res = await read()
   if (res.wasActive) {
     console.log('vscode-concise-syntax is active!')
-    await ExtensionState_statusBarItem(context, true)
-    await state.write('active')
-    return true
+    return res.wasActive
   }
 
   let remoteWorkbenchPath
@@ -30,20 +25,15 @@ export async function installCycle(context: vscode.ExtensionContext) {
     remoteWorkbenchPath = path.resolve(__dirname, 'index.js')
   }
   await patchWorkbench(res, remoteWorkbenchPath)
-
-  await state.write('restart')
 }
 
 export async function uninstallCycle(context: vscode.ExtensionContext) {
-  const state = getStateStore(context)
-
   const { html, wasActive, workbench } = await read()
   if (wasActive) {
     const newHtml = html.replaceAll(extensionScriptTag(), '')
     await fs.promises.writeFile(workbench.path, newHtml, 'utf-8')
   }
   await fs.promises.unlink(workbench.customPath).catch(_catch)
-  await state.write('restart')
 
   return wasActive
 }

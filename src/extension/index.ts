@@ -7,12 +7,15 @@ import {
   getErrorStore,
   getStateStore,
   ExtensionState_statusBarItem,
+  state,
+  getWindowState,
+  binary,
 } from './statusBarItem'
 import { installCycle, read, uninstallCycle } from './extensionCycle'
 export { deactivateCycle as deactivate } from './extensionCycle'
 
 export async function activate(context: vscode.ExtensionContext) {
-  const state = getStateStore(context)
+  const extensionState = getStateStore(context) // why do I need two active states?
 
   // FIXME: use a better state manager or state machine
   const { wasActive } = await read()
@@ -21,15 +24,17 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(reloadCommand, async () => {
       try {
-        if (state.read() == 'active') {
+        if (extensionState.read() == state.active) {
           vscode.window.showInformationMessage('Already Mounted')
         } else {
           await uninstallCycle(context)
           await installCycle(context)
+          await extensionState.write(state.active)
+
           if (!wasActive) {
             reloadWindowMessage(msg.enabled)
           } else {
-            await ExtensionState_statusBarItem(context, true)
+            await ExtensionState_statusBarItem(context, state.active)
             vscode.window.showInformationMessage('Mount: using cache')
           }
         }
@@ -43,7 +48,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(disposeCommand, async () => {
       try {
         const wasActive = await uninstallCycle(context)
-        await ExtensionState_statusBarItem(context, false)
+        await ExtensionState_statusBarItem(context, state.disposed)
 
         const [message, ...options] = wasActive
           ? ['Disposed', 'Reload', 'Uninstall']
@@ -62,21 +67,27 @@ export async function activate(context: vscode.ExtensionContext) {
       } catch (error) {
         __catch(error)
       } finally {
-        await state.write('disposed')
+        await extensionState.write(state.disposed)
       }
     })
   )
 
-  if (state.read() != 'disposed') {
-    installCycle(context)
-      .then(() => {
-        if (!wasActive) {
-          reloadWindowMessage(msg.enabled)
-        }
-      })
-      .catch(__catch)
-  } else if (wasActive) {
-    await ExtensionState_statusBarItem(context) // FIXME: this is not persistent
+  try {
+    if (extensionState.read() != state.disposed) {
+      await installCycle(context)
+      await extensionState.write(state.active)
+
+      if (!wasActive) {
+        reloadWindowMessage(msg.enabled)
+      } else {
+        const windowState = binary(
+          getWindowState(context).read() ?? state.active
+        )
+        await ExtensionState_statusBarItem(context, windowState)
+      }
+    }
+  } catch (error) {
+    __catch(error)
   }
 
   console.log('vscode-concise-syntax is active')
