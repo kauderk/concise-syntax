@@ -1,15 +1,18 @@
 import { extensionId } from 'src/shared/write'
 import * as vscode from 'vscode'
 import packageJson from '../../package.json'
+import { updateSettingsCycle } from './settings'
 
 let _item: vscode.StatusBarItem
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
-export async function statusBarItem(
+export async function ExtensionState_statusBarItem(
   context: vscode.ExtensionContext,
   wasActive?: boolean
 ) {
+  // TODO: decouple the update from the status bar item
+
   const active = stateManager<'true' | 'false'>(
     context,
     extensionId + '.active'
@@ -18,18 +21,21 @@ export async function statusBarItem(
     await active.write(wasActive ? 'true' : 'false')
   }
 
-  const tooltip = (previous: boolean) =>
-    (_item.tooltip = `Concise Syntax: ` + (previous ? 'active' : 'inactive'))
+  const emitExtensionState = async (previous: boolean) => {
+    // TODO: add a subscriber or something to update the settings before the tooltip
+    await updateSettingsCycle(previous ? 'active' : 'inactive')
+    _item.tooltip = `Concise Syntax: ` + (previous ? 'active' : 'inactive')
+  }
 
   if (_item) {
     if (wasActive !== undefined) {
-      tooltip(wasActive)
+      await emitExtensionState(wasActive)
     }
     return
   }
 
   async function toggle(next: boolean) {
-    tooltip(next)
+    await emitExtensionState(next)
     await active.write(next ? 'true' : 'false')
   }
   const getActive = () => !!JSON.parse(active.read() ?? 'false')
@@ -47,7 +53,7 @@ export async function statusBarItem(
   _item = item
   item.command = myCommandId
   item.text = `$(symbol-keyword) Concise`
-  tooltip(getActive())
+  await emitExtensionState(getActive())
   item.show()
   context.subscriptions.push(item)
 }

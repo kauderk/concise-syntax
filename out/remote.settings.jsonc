@@ -1,41 +1,6 @@
 {
-  "Yooo": "world",
-  // YOOO
-  "fake.deep": {
-    "fake.value": "hello",
-    // YOOO
-    "fake": "fake"
-  },
-  // TOOOO
   "editor.tokenColorCustomizations": {
     "textMateRules": [
-      // reset what the above is overwriting
-      {
-        "scope": [
-          "punctuation.separator.parameter.tsx"
-        ],
-        "settings": {
-          "foreground": "#BFC7D5"
-        }
-      },
-      // ----------- SVELTE -----------
-      {
-        "scope": [
-          "text.svelte"
-        ],
-        "settings": {
-          "foreground": "#B59E7A"
-        }
-      },
-      // ----------- MARKO -----------
-      {
-        "scope": [
-          "text.marko"
-        ],
-        "settings": {
-          "foreground": "#B59E7A"
-        }
-      },
       {
         "name": "kauderk.concise-syntax.text",
         "scope": [
@@ -78,6 +43,5 @@
         }
       }
     ]
-  },
-  "hello": "world"
+  }
 }

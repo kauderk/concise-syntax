@@ -3,9 +3,12 @@ import msg from '../shared/messages'
 import packageJson from '../../package.json'
 import { extensionId } from '../shared/write'
 import { _catch } from './utils'
-import { getErrorStore, getStateStore, statusBarItem } from './statusBarItem'
+import {
+  getErrorStore,
+  getStateStore,
+  ExtensionState_statusBarItem,
+} from './statusBarItem'
 import { installCycle, read, uninstallCycle } from './extensionCycle'
-import { createSettingsCycle } from './settings'
 export { deactivateCycle as deactivate } from './extensionCycle'
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -26,7 +29,7 @@ export async function activate(context: vscode.ExtensionContext) {
           if (!wasActive) {
             reloadWindowMessage(msg.enabled)
           } else {
-            await statusBarItem(context, true)
+            await ExtensionState_statusBarItem(context, true)
             vscode.window.showInformationMessage('Mount: using cache')
           }
         }
@@ -40,7 +43,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(disposeCommand, async () => {
       try {
         const wasActive = await uninstallCycle(context)
-        await statusBarItem(context, false)
+        await ExtensionState_statusBarItem(context, false)
 
         const [message, ...options] = wasActive
           ? ['Disposed', 'Reload', 'Uninstall']
@@ -64,15 +67,6 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   )
 
-  try {
-    createSettingsCycle()
-  } catch (error) {
-    debugger
-    vscode.window.showErrorMessage(
-      msg.internalError + 'failed to validate user settings'
-    )
-  }
-
   if (state.read() != 'disposed') {
     installCycle(context)
       .then(() => {
@@ -82,7 +76,7 @@ export async function activate(context: vscode.ExtensionContext) {
       })
       .catch(__catch)
   } else if (wasActive) {
-    await statusBarItem(context) // FIXME: this is not persistent
+    await ExtensionState_statusBarItem(context) // FIXME: this is not persistent
   }
 
   console.log('vscode-concise-syntax is active')

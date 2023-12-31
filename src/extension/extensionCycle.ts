@@ -5,7 +5,7 @@ import {
   extensionScriptTag,
   preRead,
 } from 'src/shared/write'
-import { getStateStore, statusBarItem } from './statusBarItem'
+import { getStateStore, ExtensionState_statusBarItem } from './statusBarItem'
 import { _catch } from './utils'
 import * as vscode from 'vscode'
 import * as fs from 'fs'
@@ -17,7 +17,7 @@ export async function installCycle(context: vscode.ExtensionContext) {
   const res = await read()
   if (res.wasActive) {
     console.log('vscode-concise-syntax is active!')
-    await statusBarItem(context, true)
+    await ExtensionState_statusBarItem(context, true)
     await state.write('active')
     return true
   }
