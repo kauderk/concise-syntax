@@ -5,6 +5,7 @@ import {
   createAttributeArrayMutation,
   createStyles,
   innerChildrenMutation,
+  toastConsole,
 } from './shared'
 import { IState } from '../shared/state'
 
@@ -71,7 +72,14 @@ export function createSyntaxLifecycle() {
                 }
                 deltaState = stringState
 
-                // console.log(`syntax.ts: change() | stringState: ${stringState}`)
+                toastConsole.log(
+                  `syntax.ts: change() | stringState: ${stringState}`
+                )
+                if (stringState == 'disposed') {
+                  syntaxStyle.dispose()
+                  clear()
+                  return
+                }
                 change(dom)
               } else {
                 clear()

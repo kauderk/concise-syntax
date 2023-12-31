@@ -60,7 +60,7 @@ const contributes = {
   commands: [
     {
       command: "extension.reload",
-      title: "Mount Extension (calibrate styles)",
+      title: "Mount Extension",
       category: "Concise Syntax"
     },
     {
@@ -71,7 +71,8 @@ const contributes = {
     {
       command: "extension.toggle",
       title: "Toggle",
-      category: "Concise Syntax"
+      category: "Concise Syntax",
+      enablement: "!extension.disposed"
     }
   ]
 };
@@ -285,22 +286,43 @@ let statusIconLoading = "loading~spin";
 let busy;
 async function ExtensionState_statusBarItem(context, setState) {
   const windowState = getWindowState(context);
-  if (setState !== void 0) {
-    await windowState.write(setState);
-  }
-  const emitExtensionState = async (next) => {
-    await updateSettingsCycle(binary(next));
-    _item.tooltip = IState.encode(next);
-  };
-  if (_item) {
-    if (setState !== void 0) {
-      await emitExtensionState(setState);
-      if (setState != "disposed") {
+  await windowState.write(setState);
+  vscode__namespace.commands.executeCommand(
+    "setContext",
+    "extension.disposed",
+    setState == state.disposed
+  );
+  async function nextStateCycle(next2, settings) {
+    if (!_item) {
+      vscode__namespace.window.showErrorMessage("No status bar item found");
+      return;
+    }
+    try {
+      busy = true;
+      _item.text = `$(${statusIconLoading}) Concise`;
+      await updateSettingsCycle(settings);
+      await windowState.write(next2);
+      if (next2 == state.active) {
+        await new Promise((resolve) => setTimeout(resolve, 3e3));
+      }
+      _item.text = `$(${statusIcon}) Concise`;
+      _item.tooltip = IState.encode(next2);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (next2 != state.disposed) {
         _item.show();
       } else {
         _item.hide();
       }
+      busy = false;
+    } catch (error) {
+      _item.text = `$(error) Concise`;
+      _item.tooltip = IState.encode(state.error);
+      _item.show();
+      busy = void 0;
     }
+  }
+  if (_item) {
+    await nextStateCycle(setState, binary(setState));
     return;
   }
   const myCommandId = packageJson.contributes.commands[2].command;
@@ -317,35 +339,27 @@ async function ExtensionState_statusBarItem(context, setState) {
           "The extension is busy. Try again in a few seconds."
         );
       }
-      try {
-        busy = true;
-        _item.text = `$(${statusIconLoading}) Concise`;
-        const next = flip(windowState.read());
-        await updateSettingsCycle(next);
-        await windowState.write(next);
-        if (next == "active") {
-          await new Promise((resolve) => setTimeout(resolve, 3e3));
-        }
-        _item.text = `$(${statusIcon}) Concise`;
-        _item.tooltip = IState.encode(next);
-        busy = false;
-      } catch (error) {
-        _item.text = `$(error) Concise`;
-        _item.tooltip = IState.encode(state.error);
-        busy = void 0;
-      }
+      const next2 = flip(windowState.read());
+      await nextStateCycle(next2, next2);
     })
   );
-  const item = vscode__namespace.window.createStatusBarItem(
+  _item = vscode__namespace.window.createStatusBarItem(
     vscode__namespace.StatusBarAlignment.Right,
     100
   );
-  _item = item;
-  item.command = myCommandId;
-  item.text = `$(${statusIcon}) Concise`;
-  await emitExtensionState(windowState.read() ?? "active");
-  item.show();
-  context.subscriptions.push(item);
+  _item.command = myCommandId;
+  const next = windowState.read() ?? "active";
+  await updateSettingsCycle(binary(next));
+  if (next == state.active) {
+    await new Promise((resolve) => setTimeout(resolve, 3e3));
+  }
+  _item.text = `$(${statusIcon}) Concise`;
+  _item.tooltip = IState.encode(next);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  if (next != state.disposed) {
+    _item.show();
+  }
+  context.subscriptions.push(_item);
 }
 function binary(state2) {
   return state2 == "active" ? "active" : "inactive";
@@ -429,10 +443,11 @@ async function activate(context) {
         } else {
           await uninstallCycle(context);
           await installCycle(context);
-          await extensionState.write(state.active);
           if (!wasActive) {
+            await extensionState.write(state.inactive);
             reloadWindowMessage(msg.enabled);
           } else {
+            await extensionState.write(state.active);
             await ExtensionState_statusBarItem(context, state.active);
             vscode__namespace.window.showInformationMessage("Mount: using cache");
           }
@@ -447,6 +462,7 @@ async function activate(context) {
     vscode__namespace.commands.registerCommand(disposeCommand, async () => {
       try {
         const wasActive2 = await uninstallCycle(context);
+        await extensionState.write(state.disposed);
         await ExtensionState_statusBarItem(context, state.disposed);
         const [message, ...options] = wasActive2 ? ["Disposed", "Reload", "Uninstall"] : ["Already Disposed", "Uninstall"];
         const selection = await vscode__namespace.window.showInformationMessage(message, ...options);
@@ -460,21 +476,23 @@ async function activate(context) {
         }
       } catch (error) {
         __catch(error);
-      } finally {
-        await extensionState.write(state.disposed);
       }
     })
   );
   try {
-    if (extensionState.read() != state.disposed) {
-      await installCycle(context);
+    const previousExtensionState = extensionState.read();
+    vscode__namespace.commands.executeCommand(
+      "setContext",
+      "extension.disposed",
+      previousExtensionState == state.disposed
+    );
+    if (previousExtensionState != state.disposed) {
+      const isActive = await installCycle(context);
       await extensionState.write(state.active);
       if (!wasActive) {
         reloadWindowMessage(msg.enabled);
       } else {
-        const windowState = binary(
-          getWindowState(context).read() ?? state.active
-        );
+        const windowState = previousExtensionState == state.inactive && isActive ? state.active : binary(getWindowState(context).read() ?? state.active);
         await ExtensionState_statusBarItem(context, windowState);
       }
     }

@@ -895,6 +895,14 @@ var __publicField = (obj, key, value) => {
                     return;
                   }
                   deltaState = stringState;
+                  toastConsole.log(
+                    `syntax.ts: change() | stringState: ${stringState}`
+                  );
+                  if (stringState == "disposed") {
+                    syntaxStyle.dispose();
+                    clear2();
+                    return;
+                  }
                   change(dom);
                 } else {
                   clear2();

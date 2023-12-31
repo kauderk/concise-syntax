@@ -29,11 +29,12 @@ export async function activate(context: vscode.ExtensionContext) {
         } else {
           await uninstallCycle(context)
           await installCycle(context)
-          await extensionState.write(state.active)
 
           if (!wasActive) {
+            await extensionState.write(state.inactive)
             reloadWindowMessage(msg.enabled)
           } else {
+            await extensionState.write(state.active)
             await ExtensionState_statusBarItem(context, state.active)
             vscode.window.showInformationMessage('Mount: using cache')
           }
@@ -48,6 +49,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(disposeCommand, async () => {
       try {
         const wasActive = await uninstallCycle(context)
+        await extensionState.write(state.disposed)
         await ExtensionState_statusBarItem(context, state.disposed)
 
         const [message, ...options] = wasActive
@@ -66,23 +68,29 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       } catch (error) {
         __catch(error)
-      } finally {
-        await extensionState.write(state.disposed)
       }
     })
   )
 
   try {
-    if (extensionState.read() != state.disposed) {
-      await installCycle(context)
+    const previousExtensionState = extensionState.read()
+    // FIXME: get me out of here
+    vscode.commands.executeCommand(
+      'setContext',
+      'extension.disposed',
+      previousExtensionState == state.disposed
+    )
+    if (previousExtensionState != state.disposed) {
+      const isActive = await installCycle(context)
       await extensionState.write(state.active)
 
       if (!wasActive) {
         reloadWindowMessage(msg.enabled)
       } else {
-        const windowState = binary(
-          getWindowState(context).read() ?? state.active
-        )
+        const windowState =
+          previousExtensionState == state.inactive && isActive
+            ? state.active
+            : binary(getWindowState(context).read() ?? state.active)
         await ExtensionState_statusBarItem(context, windowState)
       }
     }

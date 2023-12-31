@@ -4,7 +4,7 @@ import packageJson from '../../package.json'
 import { updateSettingsCycle } from './settings'
 import { IState, State, state } from 'src/shared/state'
 
-let _item: vscode.StatusBarItem
+let _item: vscode.StatusBarItem | undefined
 
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
@@ -20,25 +20,49 @@ export async function ExtensionState_statusBarItem(
   // TODO: decouple the update from the status bar item
 
   const windowState = getWindowState(context)
-  if (setState !== undefined) {
-    await windowState.write(setState)
-  }
+  await windowState.write(setState)
 
-  const emitExtensionState = async (next: State) => {
-    // TODO: add a subscriber or something to update the settings before the tooltip
-    await updateSettingsCycle(binary(next))
-    _item.tooltip = IState.encode(next)
-  }
+  vscode.commands.executeCommand(
+    'setContext',
+    'extension.disposed',
+    setState == state.disposed
+  )
 
-  if (_item) {
-    if (setState !== undefined) {
-      await emitExtensionState(setState)
-      if (setState != 'disposed') {
+  async function nextStateCycle(next: State, settings: 'active' | 'inactive') {
+    if (!_item) {
+      vscode.window.showErrorMessage('No status bar item found')
+      return
+    }
+
+    try {
+      busy = true
+      _item.text = `$(${statusIconLoading}) Concise`
+      await updateSettingsCycle(settings)
+      await windowState.write(next)
+      if (next == state.active) {
+        // TODO: figure out when exactly the settings update the dom
+        await new Promise((resolve) => setTimeout(resolve, 3000))
+      }
+      _item.text = `$(${statusIcon}) Concise`
+      _item.tooltip = IState.encode(next)
+      // hold this thread and allow the dom to render the IState
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      if (next != state.disposed) {
         _item.show()
       } else {
         _item.hide()
       }
+      busy = false
+    } catch (error) {
+      _item.text = `$(error) Concise`
+      _item.tooltip = IState.encode(state.error)
+      _item.show()
+      busy = undefined
     }
+  }
+  if (_item) {
+    await nextStateCycle(setState, binary(setState))
     return
   }
 
@@ -57,35 +81,32 @@ export async function ExtensionState_statusBarItem(
         )
       }
 
-      try {
-        busy = true
-        _item.text = `$(${statusIconLoading}) Concise`
-        const next = flip(windowState.read())
-        await updateSettingsCycle(next)
-        await windowState.write(next)
-        if (next == 'active') {
-          await new Promise((resolve) => setTimeout(resolve, 3000))
-        }
-        _item.text = `$(${statusIcon}) Concise`
-        _item.tooltip = IState.encode(next)
-        busy = false
-      } catch (error) {
-        _item.text = `$(error) Concise`
-        _item.tooltip = IState.encode(state.error)
-        busy = undefined
-      }
+      const next = flip(windowState.read())
+      await nextStateCycle(next, next)
     })
   )
-  const item = vscode.window.createStatusBarItem(
+
+  _item = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
     100
   )
-  _item = item
-  item.command = myCommandId
-  item.text = `$(${statusIcon}) Concise`
-  await emitExtensionState(windowState.read() ?? 'active')
-  item.show()
-  context.subscriptions.push(item)
+  _item.command = myCommandId
+
+  const next = windowState.read() ?? 'active'
+  await updateSettingsCycle(binary(next))
+  if (next == state.active) {
+    // TODO: figure out when exactly the settings update the dom
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+  }
+  _item.text = `$(${statusIcon}) Concise`
+  _item.tooltip = IState.encode(next)
+  // hold this thread and allow the dom to render the IState
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  if (next != state.disposed) {
+    _item.show()
+  }
+
+  context.subscriptions.push(_item)
 }
 
 export function binary(state?: State) {
@@ -99,7 +120,7 @@ export function getWindowState(context: vscode.ExtensionContext) {
   return stateManager<State>(context, extensionId + '.window')
 }
 export function getStateStore(context: vscode.ExtensionContext) {
-  return stateManager<'active' | 'disposed'>(
+  return stateManager<'active' | 'inactive' | 'disposed'>(
     context,
     extensionId + '.extension'
   )
