@@ -1,54 +1,72 @@
 import { linesSelector, customCSS } from './keys'
+import { toastConsole } from './shared'
+
+const editorFlags = {
+  jsx: {
+    flags: {
+      jsxTag: null as FlagOr,
+      jsxTernaryBrace: null as FlagOr,
+      jsxTernaryOtherwise: null as FlagOr,
+      vsCodeHiddenTokens: null as FlagOr,
+      beginQuote: null as FlagOr,
+      endQuote: null as FlagOr,
+    },
+    customFlags: {
+      singleQuotes: null as string | null,
+    },
+  },
+}
 
 export function regexToDomToCss() {
-  const lineEditor = document.querySelector(linesSelector)
+  const lineEditor = document.querySelector(linesSelector) as HTMLElement
   if (!lineEditor) {
-    console.warn('Fail to find Editor with selector:', linesSelector)
-    return ''
+    let css = assembleCss(editorFlags.jsx)
+    if (!css) {
+      toastConsole.warn('Failed to load concise cached syntax styles')
+      return ''
+    }
+    console.warn('Fail to find Editor with selector: ', linesSelector)
+    return css
   }
-  type Flag = {
-    hide: string
-    hover: string
+
+  const jsxEditor = jsx_parseStyles(lineEditor)
+
+  let css = assembleCss(jsxEditor)
+  if (!css) {
+    css = assembleCss(editorFlags.jsx)
+    if (!css) {
+      toastConsole.warn('Fail to load concise syntax styles even with cache')
+      return ''
+    }
   }
-  type Flags = null | Flag
+  Object.assign(editorFlags.jsx.flags, jsxEditor.flags)
+  Object.assign(editorFlags.jsx.customFlags, jsxEditor.customFlags)
+  return css
+}
+
+function jsx_parseStyles(lineEditor: HTMLElement) {
   const flags = {
-    jsxTag: null as Flags,
-    jsxTernaryBrace: null as Flags,
-    jsxTernaryOtherwise: null as Flags,
-    vsCodeHiddenTokens: null as Flags,
-    beginQuote: null as Flags,
-    endQuote: null as Flags,
+    jsxTag: null as any,
+    jsxTernaryBrace: null as any,
+    jsxTernaryOtherwise: null as any,
+    vsCodeHiddenTokens: null as any,
+    beginQuote: null as any,
+    endQuote: null as any,
   }
   const customFlags = {
     singleQuotes: null as string | null,
   }
-
-  const root = `${linesSelector}>div>span`
   const lines = Array.from(lineEditor.querySelectorAll('div>span'))
-
-  function toFlatClassList<T extends { join: (to?: string) => string }>(
-    Array: T[]
-  ) {
-    return Array.reduce(
-      (acc, val) => acc.concat(val.join('.')),
-      <string[]>[]
-    ) as string[] // FIXME: avoid casting
-  }
-  function SliceClassList(line: Element, slice: number) {
-    const sliced = Array.from(line.children)
-      .slice(slice)
-      .map((c) => Array.from(c.classList))
-    return Object.assign(sliced, { okLength: sliced.length == slice * -1 })
-  }
 
   parser: for (const line of lines) {
     const text = line.textContent
     if (!text) continue
     let anyFlag = false
 
-    if (text.match('.+(</(?<jsxTag>.*)?>)$')?.groups?.jsxTag) {
-      if (flags.jsxTag || flags.vsCodeHiddenTokens) continue
-
+    if (
+      !flags.jsxTag &&
+      text.match(/.+(<\/(?<jsxTag>.*)?>)$/)?.groups?.jsxTag
+    ) {
       const closing = SliceClassList(line, -3)
       if (!closing.okLength) continue
       const [angleBracket, tag, right] = closing.flat()
@@ -67,10 +85,9 @@ export function regexToDomToCss() {
 
       anyFlag = true
     } else if (
-      text.match(/(\{).+\?.+?(?<ternaryBrace>\()$/)?.groups?.ternaryBrace
+      !flags.jsxTernaryBrace &&
+      text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)?.groups?.jsxTernaryBrace
     ) {
-      if (flags.jsxTernaryBrace) continue
-
       const closing = SliceClassList(line, -4)
       if (!closing.okLength) continue
       // prettier-ignore
@@ -85,10 +102,10 @@ export function regexToDomToCss() {
 
       anyFlag = true
     } else if (
-      text.match(/(?<ternaryOtherwise>\).+?:.+\})/)?.groups?.ternaryOtherwise
+      !flags.jsxTernaryOtherwise &&
+      text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)?.groups
+        ?.jsxTernaryOtherwise
     ) {
-      if (flags.jsxTernaryOtherwise) continue
-
       const closing = SliceClassList(line, -7)
       if (!closing.okLength) continue
       // prettier-ignore
@@ -102,12 +119,13 @@ export function regexToDomToCss() {
       }
 
       anyFlag = true
-    } else if (text.match(/(?<singleQuotes>""|''|``)/)?.groups?.singleQuotes) {
-      // FIXME: what if there are no empty quotes/strings?
-      if (customFlags.singleQuotes) continue
-
+    } else if (
+      !customFlags.singleQuotes &&
+      text.match(/(?<singleQuotes>""|''|``)/)?.groups?.singleQuotes
+    ) {
       const array = Array.from(line.children)
       const quote = /"|'|`/
+
       singleQuotes: for (let i = 0; i < array.length; i++) {
         const child = array[i]
 
@@ -140,40 +158,72 @@ export function regexToDomToCss() {
 
     if (
       anyFlag &&
+      // TODO: figure out how to pass empty flags
       Object.values(flags).every((f) => !!f) &&
       Object.values(customFlags).every((f) => !!f)
     ) {
       break parser
     }
   }
+
+  return { flags, customFlags }
+}
+
+type EditorFlags = (typeof editorFlags)[keyof typeof editorFlags]
+function assembleCss(editorFlags: EditorFlags) {
+  const root = `${linesSelector}>div>span`
+  const { flags, customFlags } = editorFlags
+
   // you know the concise syntax hover feature will work because you found the common case
   const validFlags = Object.values(flags).filter(
-    (f) => f?.hide && f.hover
-  ) as Flag[] // FIXME: avoid casting
-  if (validFlags.length && flags.vsCodeHiddenTokens?.hover) {
-    const toHover = validFlags.map((f) => f.hover).join(',')
-    const toHidden = validFlags.map((f) => root + f.hide).join(',')
-    const toCustom = Object.values(customFlags)
-      .filter((f) => !!f)
-      .join('\n')
-    return `
-			.view-lines {
-				--r: transparent;
-			}
-			.view-lines > div:hover {
-				--r: yellow;
-			}
-			.view-lines:has(:is(${toHover}):hover) {
-				--r: red;
-			}
-			${toHidden} {
-				color: var(--r);
-			}
-			${toCustom}
-			`
-      .replace(/\r|\n/g, '')
-      .replaceAll(/\t+/g, '\n')
+    (f): f is Flag => !!(f?.hide && f.hover)
+  )
+  if (!validFlags.length || !flags.vsCodeHiddenTokens?.hover) {
+    console.warn('Fail to find common case')
+    return
   }
-  // FIXME: honestly, the user should get a warning: the extension can't find the common case
-  return ''
+
+  const toHover = validFlags.map((f) => f.hover).join(',')
+  const toHidden = validFlags.map((f) => root + f.hide).join(',')
+  const toCustom = Object.values(customFlags)
+    .filter((f) => !!f)
+    .join('\n')
+
+  return `
+		.view-lines {
+			--r: transparent;
+		}
+		.view-lines > div:hover {
+			--r: yellow;
+		}
+		.view-lines:has(:is(${toHover}):hover) {
+			--r: red;
+		}
+		${toHidden} {
+			color: var(--r);
+		}
+		${toCustom}
+		`
+}
+
+type Flag = {
+  hide: string
+  hover: string
+}
+type FlagOr = null | Flag
+
+function toFlatClassList<T extends { join: (to?: string) => string }>(
+  Array: T[]
+) {
+  return Array.reduce(
+    (acc, val) => acc.concat(val.join('.')),
+    <string[]>[]
+  ) as string[] // FIXME: avoid casting
+}
+
+function SliceClassList(line: Element, slice: number) {
+  const sliced = Array.from(line.children)
+    .slice(slice)
+    .map((c) => Array.from(c.classList))
+  return Object.assign(sliced, { okLength: sliced.length == slice * -1 })
 }
