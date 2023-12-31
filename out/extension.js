@@ -60,7 +60,7 @@ const contributes = {
   commands: [
     {
       command: "extension.reload",
-      title: "Mount Extension",
+      title: "Mount Extension (calibrate styles)",
       category: "Concise Syntax"
     },
     {
@@ -256,33 +256,40 @@ async function tryParseSettings() {
   };
 }
 let _item;
-async function ExtensionState_statusBarItem(context, wasActive) {
-  const active = stateManager(
-    context,
-    extensionId + ".active"
-  );
-  if (wasActive !== void 0) {
-    await active.write(wasActive ? "true" : "false");
+const state = {
+  active: "active",
+  inactive: "inactive",
+  disposed: "disposed"
+};
+async function ExtensionState_statusBarItem(context, setState) {
+  const windowState = getWindowState(context);
+  if (setState !== void 0) {
+    await windowState.write(setState);
   }
-  const emitExtensionState = async (previous) => {
-    await updateSettingsCycle(previous ? "active" : "inactive");
-    _item.tooltip = `Concise Syntax: ` + (previous ? "active" : "inactive");
+  const emitExtensionState = async (next) => {
+    await updateSettingsCycle(binary(next));
+    _item.tooltip = `Concise Syntax: ` + next;
   };
   if (_item) {
-    if (wasActive !== void 0) {
-      await emitExtensionState(wasActive);
+    if (setState !== void 0) {
+      await emitExtensionState(setState);
+      if (setState != "disposed") {
+        _item.show();
+      } else {
+        _item.hide();
+      }
     }
     return;
   }
-  async function toggle(next) {
-    await emitExtensionState(next);
-    await active.write(next ? "true" : "false");
-  }
-  const getActive = () => !!JSON.parse(active.read() ?? "false");
   const myCommandId = packageJson.contributes.commands[2].command;
   context.subscriptions.push(
     vscode__namespace.commands.registerCommand(myCommandId, async () => {
-      await toggle(!getActive());
+      const extensionState = getStateStore(context);
+      if (extensionState.read() == "disposed")
+        return;
+      const next = flip(windowState.read());
+      await emitExtensionState(next);
+      await windowState.write(next);
     })
   );
   const item = vscode__namespace.window.createStatusBarItem(
@@ -292,14 +299,23 @@ async function ExtensionState_statusBarItem(context, wasActive) {
   _item = item;
   item.command = myCommandId;
   item.text = `$(symbol-keyword) Concise`;
-  await emitExtensionState(getActive());
+  await emitExtensionState(windowState.read() ?? "active");
   item.show();
   context.subscriptions.push(item);
+}
+function binary(state2) {
+  return state2 == "active" ? "active" : "inactive";
+}
+function flip(next) {
+  return next == "active" ? "inactive" : "active";
+}
+function getWindowState(context) {
+  return stateManager(context, extensionId + ".window");
 }
 function getStateStore(context) {
   return stateManager(
     context,
-    extensionId + ".state"
+    extensionId + ".extension"
   );
 }
 function getErrorStore(context) {
@@ -322,13 +338,10 @@ function stateManager(context, key2) {
   };
 }
 async function installCycle(context) {
-  const state = getStateStore(context);
   const res = await read();
   if (res.wasActive) {
     console.log("vscode-concise-syntax is active!");
-    await ExtensionState_statusBarItem(context, true);
-    await state.write("active");
-    return true;
+    return res.wasActive;
   }
   let remoteWorkbenchPath;
   let ext = vscode__namespace.extensions.getExtension(extensionId);
@@ -338,17 +351,14 @@ async function installCycle(context) {
     remoteWorkbenchPath = path.resolve(__dirname, "index.js");
   }
   await patchWorkbench(res, remoteWorkbenchPath);
-  await state.write("restart");
 }
 async function uninstallCycle(context) {
-  const state = getStateStore(context);
   const { html, wasActive, workbench } = await read();
   if (wasActive) {
     const newHtml = html.replaceAll(extensionScriptTag(), "");
     await fs__namespace.promises.writeFile(workbench.path, newHtml, "utf-8");
   }
   await fs__namespace.promises.unlink(workbench.customPath).catch(_catch);
-  await state.write("restart");
   return wasActive;
 }
 function deactivateCycle() {
@@ -364,21 +374,22 @@ async function read() {
   return await preRead(base);
 }
 async function activate(context) {
-  const state = getStateStore(context);
+  const extensionState = getStateStore(context);
   const { wasActive } = await read();
   const reloadCommand = packageJson.contributes.commands[0].command;
   context.subscriptions.push(
     vscode__namespace.commands.registerCommand(reloadCommand, async () => {
       try {
-        if (state.read() == "active") {
+        if (extensionState.read() == state.active) {
           vscode__namespace.window.showInformationMessage("Already Mounted");
         } else {
           await uninstallCycle(context);
           await installCycle(context);
+          await extensionState.write(state.active);
           if (!wasActive) {
             reloadWindowMessage(msg.enabled);
           } else {
-            await ExtensionState_statusBarItem(context, true);
+            await ExtensionState_statusBarItem(context, state.active);
             vscode__namespace.window.showInformationMessage("Mount: using cache");
           }
         }
@@ -392,7 +403,7 @@ async function activate(context) {
     vscode__namespace.commands.registerCommand(disposeCommand, async () => {
       try {
         const wasActive2 = await uninstallCycle(context);
-        await ExtensionState_statusBarItem(context, false);
+        await ExtensionState_statusBarItem(context, state.disposed);
         const [message, ...options] = wasActive2 ? ["Disposed", "Reload", "Uninstall"] : ["Already Disposed", "Uninstall"];
         const selection = await vscode__namespace.window.showInformationMessage(message, ...options);
         if (selection == "Reload") {
@@ -406,18 +417,25 @@ async function activate(context) {
       } catch (error) {
         __catch(error);
       } finally {
-        await state.write("disposed");
+        await extensionState.write(state.disposed);
       }
     })
   );
-  if (state.read() != "disposed") {
-    installCycle(context).then(() => {
+  try {
+    if (extensionState.read() != state.disposed) {
+      await installCycle(context);
+      await extensionState.write(state.active);
       if (!wasActive) {
         reloadWindowMessage(msg.enabled);
+      } else {
+        const windowState = binary(
+          getWindowState(context).read() ?? state.active
+        );
+        await ExtensionState_statusBarItem(context, windowState);
       }
-    }).catch(__catch);
-  } else if (wasActive) {
-    await ExtensionState_statusBarItem(context);
+    }
+  } catch (error) {
+    __catch(error);
   }
   console.log("vscode-concise-syntax is active");
   function __catch(e) {

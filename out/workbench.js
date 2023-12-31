@@ -633,13 +633,47 @@ var __publicField = (obj, key, value) => {
     };
     return tryFunction;
   }
+  const editorFlags = {
+    jsx: {
+      flags: {
+        jsxTag: null,
+        jsxTernaryBrace: null,
+        jsxTernaryOtherwise: null,
+        vsCodeHiddenTokens: null,
+        beginQuote: null,
+        endQuote: null
+      },
+      customFlags: {
+        singleQuotes: null
+      }
+    }
+  };
   function regexToDomToCss() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
     const lineEditor = document.querySelector(linesSelector);
     if (!lineEditor) {
-      console.warn("Fail to find Editor with selector:", linesSelector);
-      return "";
+      let css2 = assembleCss(editorFlags.jsx);
+      if (!css2) {
+        toastConsole.warn("Failed to load concise cached syntax styles");
+        return "";
+      }
+      console.warn("Fail to find Editor with selector: ", linesSelector);
+      return css2;
     }
+    const jsxEditor = jsx_parseStyles(lineEditor);
+    let css = assembleCss(jsxEditor);
+    if (!css) {
+      css = assembleCss(editorFlags.jsx);
+      if (!css) {
+        toastConsole.warn("Fail to load concise syntax styles even with cache");
+        return "";
+      }
+    }
+    Object.assign(editorFlags.jsx.flags, jsxEditor.flags);
+    Object.assign(editorFlags.jsx.customFlags, jsxEditor.customFlags);
+    return css;
+  }
+  function jsx_parseStyles(lineEditor) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     const flags = {
       jsxTag: null,
       jsxTernaryBrace: null,
@@ -651,27 +685,14 @@ var __publicField = (obj, key, value) => {
     const customFlags = {
       singleQuotes: null
     };
-    const root = `${linesSelector}>div>span`;
     const lines = Array.from(lineEditor.querySelectorAll("div>span"));
-    function toFlatClassList(Array2) {
-      return Array2.reduce(
-        (acc, val) => acc.concat(val.join(".")),
-        []
-      );
-    }
-    function SliceClassList(line, slice) {
-      const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
-      return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
-    }
     parser:
       for (const line of lines) {
         const text = line.textContent;
         if (!text)
           continue;
         let anyFlag = false;
-        if ((_b = (_a = text.match(".+(</(?<jsxTag>.*)?>)$")) == null ? void 0 : _a.groups) == null ? void 0 : _b.jsxTag) {
-          if (flags.jsxTag || flags.vsCodeHiddenTokens)
-            continue;
+        if (!flags.jsxTag && ((_b = (_a = text.match(/.+(<\/(?<jsxTag>.*)?>)$/)) == null ? void 0 : _a.groups) == null ? void 0 : _b.jsxTag)) {
           const closing = SliceClassList(line, -3);
           if (!closing.okLength)
             continue;
@@ -689,9 +710,7 @@ var __publicField = (obj, key, value) => {
             hover: `.${angleBracket}`
           };
           anyFlag = true;
-        } else if ((_d = (_c = text.match(/(\{).+\?.+?(?<ternaryBrace>\()$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.ternaryBrace) {
-          if (flags.jsxTernaryBrace)
-            continue;
+        } else if (!flags.jsxTernaryBrace && ((_d = (_c = text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.jsxTernaryBrace)) {
           const closing = SliceClassList(line, -4);
           if (!closing.okLength)
             continue;
@@ -703,9 +722,7 @@ var __publicField = (obj, key, value) => {
             hover: selector
           };
           anyFlag = true;
-        } else if ((_f = (_e = text.match(/(?<ternaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.ternaryOtherwise) {
-          if (flags.jsxTernaryOtherwise)
-            continue;
+        } else if (!flags.jsxTernaryOtherwise && ((_f = (_e = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.jsxTernaryOtherwise)) {
           const closing = SliceClassList(line, -7);
           if (!closing.okLength)
             continue;
@@ -717,9 +734,7 @@ var __publicField = (obj, key, value) => {
             hover: selector
           };
           anyFlag = true;
-        } else if ((_h = (_g = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.singleQuotes) {
-          if (customFlags.singleQuotes)
-            continue;
+        } else if (!customFlags.singleQuotes && ((_h = (_g = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.singleQuotes)) {
           const array = Array.from(line.children);
           const quote = /"|'|`/;
           singleQuotes:
@@ -748,34 +763,52 @@ var __publicField = (obj, key, value) => {
               }
             }
         }
-        if (anyFlag && Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f)) {
+        if (anyFlag && // TODO: figure out how to pass empty flags
+        Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f)) {
           break parser;
         }
       }
+    return { flags, customFlags };
+  }
+  function assembleCss(editorFlags2) {
+    var _a;
+    const root = `${linesSelector}>div>span`;
+    const { flags, customFlags } = editorFlags2;
     const validFlags = Object.values(flags).filter(
-      (f) => (f == null ? void 0 : f.hide) && f.hover
+      (f) => !!((f == null ? void 0 : f.hide) && f.hover)
     );
-    if (validFlags.length && ((_l = flags.vsCodeHiddenTokens) == null ? void 0 : _l.hover)) {
-      const toHover = validFlags.map((f) => f.hover).join(",");
-      const toHidden = validFlags.map((f) => root + f.hide).join(",");
-      const toCustom = Object.values(customFlags).filter((f) => !!f).join("\n");
-      return `
-			.view-lines {
-				--r: transparent;
-			}
-			.view-lines > div:hover {
-				--r: yellow;
-			}
-			.view-lines:has(:is(${toHover}):hover) {
-				--r: red;
-			}
-			${toHidden} {
-				color: var(--r);
-			}
-			${toCustom}
-			`.replace(/\r|\n/g, "").replaceAll(/\t+/g, "\n");
+    if (!validFlags.length || !((_a = flags.vsCodeHiddenTokens) == null ? void 0 : _a.hover)) {
+      console.warn("Fail to find common case");
+      return;
     }
-    return "";
+    const toHover = validFlags.map((f) => f.hover).join(",");
+    const toHidden = validFlags.map((f) => root + f.hide).join(",");
+    const toCustom = Object.values(customFlags).filter((f) => !!f).join("\n");
+    return `
+		.view-lines {
+			--r: transparent;
+		}
+		.view-lines > div:hover {
+			--r: yellow;
+		}
+		.view-lines:has(:is(${toHover}):hover) {
+			--r: red;
+		}
+		${toHidden} {
+			color: var(--r);
+		}
+		${toCustom}
+		`;
+  }
+  function toFlatClassList(Array2) {
+    return Array2.reduce(
+      (acc, val) => acc.concat(val.join(".")),
+      []
+    );
+  }
+  function SliceClassList(line, slice) {
+    const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
+    return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
   }
   const statusBarSelector = `[id="${extensionId}"]`;
   const bridgeAttribute = (target) => {
