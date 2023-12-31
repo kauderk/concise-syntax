@@ -1,5 +1,6 @@
 import { windowId } from './keys'
 import { Toastify, minifiedCss } from '../shared/toast.js'
+
 export const stylesContainer =
   document.getElementById(windowId) ?? document.createElement('div')
 stylesContainer.id = windowId
@@ -244,6 +245,7 @@ export function createAttributeArrayMutation(props: {
   }
 }
 
+// TODO: merge common ancestors with each invocation
 // TODO: test if this is more "performant" or just mental gymnastics
 export function watchForRemoval(targetElement: Element, callback: Function) {
   let done = false
@@ -294,51 +296,46 @@ export function watchForRemoval(targetElement: Element, callback: Function) {
   }
   return dispose
 }
-// export function watchForAddition(targetElement: Element, callback: Function, thresholdScopedSelector:string) {
-// 	let done = false
-// 	let stack: Node[] = []
-// 	const rootObserver = new MutationObserver((mutationsList) => {
-// 		mutationsList.forEach((mutation) => {
-// 			if (
-// 				done ||
-// 				!stack.includes(mutation.target) ||
-// 				!mutation.addedNodes.length
-// 			)
-// 				return
 
-// 			const nodes = Array.from(mutation.addedNodes)
-// 			// console.log(mutation.target)
+/**
+ * Die because of abstractions...
+ */
+export function innerChildrenMutation<T>(options: {
+  parent: HTMLElement
+  dispose?(): void
+  validate: (node: HTMLElement, cleanUp?: Function) => T
+  added(validPayload: NonNullable<T>): () => void
+  removed(node: HTMLElement, consume: Function): (() => void) | void
+}) {
+  let cleanUp: Function | undefined
+  const observer = specialChildrenMutation({
+    target: () => options.parent,
+    options: { childList: true },
+    added(node) {
+      const data = options.validate(node, cleanUp)
+      if (!data) return
+      const res = options.added(data)
+      if (res) {
+        cleanUp = res
+      }
+    },
+    removed(node) {
+      options.removed(node, consume)
+    },
+  })
+  function consume() {
+    cleanUp?.()
+    cleanUp = undefined
+  }
 
-// 			// direct match
-// 			if (
-// 				nodes.indexOf(targetElement) > -1 ||
-// 				// parent match
-// 				nodes.some((parent) => parent.contains(targetElement))
-// 			) {
-// 				console.log('added', targetElement, stack)
-// 				dispose()
-// 				callback()
-// 				return
-// 			}
-// 		})
-// 	})
-
-// 	function REC_ObserverDescendants(element: Element) {
-// 		if (!element.firstChild || element.firstChild === document.body) {
-// 			return
-// 		}
-// 		stack.push(element.parentElement)
-// 		rootObserver.observe(element.parentElement, { childList: true })
-// 		REC_ObserverDescendants(element.parentElement)
-// 	}
-// 	// Start observing ancestor hierarchy
-// 	REC_ObserverDescendants(targetElement)
-
-// 	function dispose() {
-// 		done = true
-// 		stack = []
-// 		rootObserver.takeRecords()
-// 		rootObserver.disconnect()
-// 	}
-// 	return dispose
-// }
+  observer.plug()
+  return () => {
+    options.dispose?.()
+    consume()
+    observer.stop()
+  }
+}
+// avoid circular dependency
+function e(unknown: any): unknown is HTMLElement {
+  return unknown instanceof HTMLElement
+}

@@ -10,6 +10,7 @@ var __publicField = (obj, key, value) => {
 
   const extensionId = "kauderk.concise-syntax";
   const windowId = "window." + extensionId;
+  const bridgeBetweenVscodeExtension = "aria-label";
   const editorSelector = ".editor-instance";
   const idSelector = '[data-mode-id="typescriptreact"]';
   const linesSelector = idSelector + ` .view-lines.monaco-mouse-cursor-text`;
@@ -443,12 +444,12 @@ var __publicField = (obj, key, value) => {
   }
   function createAttributeArrayMutation(props) {
     let previousData = [];
-    const bridgeAttribute = (target) => props.watchAttribute.map((a) => {
+    const bridgeAttribute2 = (target) => props.watchAttribute.map((a) => {
       var _a;
       return (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, a);
     });
     function change(target) {
-      const newData = bridgeAttribute(target);
+      const newData = bridgeAttribute2(target);
       if (newData.every((d, i) => d === previousData[i]))
         return;
       const oldAttributes = [...previousData];
@@ -514,6 +515,36 @@ var __publicField = (obj, key, value) => {
       rootObserver.disconnect();
     }
     return dispose;
+  }
+  function innerChildrenMutation(options) {
+    let cleanUp;
+    const observer = specialChildrenMutation({
+      target: () => options.parent,
+      options: { childList: true },
+      added(node) {
+        const data = options.validate(node, cleanUp);
+        if (!data)
+          return;
+        const res = options.added(data);
+        if (res) {
+          cleanUp = res;
+        }
+      },
+      removed(node) {
+        options.removed(node, consume);
+      }
+    });
+    function consume() {
+      cleanUp == null ? void 0 : cleanUp();
+      cleanUp = void 0;
+    }
+    observer.plug();
+    return () => {
+      var _a;
+      (_a = options.dispose) == null ? void 0 : _a.call(options);
+      consume();
+      observer.stop();
+    };
   }
   function lifecycle(props) {
     let running = false;
@@ -602,35 +633,225 @@ var __publicField = (obj, key, value) => {
     };
     return tryFunction;
   }
-  function domExtension() {
-    const statusBar = document.querySelector(".right-items");
-    const item = statusBar == null ? void 0 : statusBar.querySelector(`[id="${extensionId}"]`);
-    const icon = item == null ? void 0 : item.querySelector(".codicon");
-    return { icon, item, statusBar };
-  }
-  function createSyntaxLifecycle() {
-    const syntaxStyle = createStyles("hide");
-    syntaxStyle.styleIt(
-      `.view-lines {--r: transparent;}.view-lines > div:hover {--r: yellow;}.view-lines:has(:is(.mtk35+.mtk14,.mtk35,.mtk36,.mtk37):hover) {--r: red;}[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span:has(:nth-last-child(3).mtk35+.mtk14+.mtk35) :nth-last-child(2),[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk35,[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk36,[data-mode-id="typescriptreact"] .view-lines.monaco-mouse-cursor-text>div>span>.mtk37 {color: var(--r);}.mtk36:has(+.mtk37), .mtk36+.mtk37 {color: gray;}`
+  function regexToDomToCss() {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+    const lineEditor = document.querySelector(linesSelector);
+    if (!lineEditor) {
+      console.warn("Fail to find Editor with selector:", linesSelector);
+      return "";
+    }
+    const flags = {
+      jsxTag: null,
+      jsxTernaryBrace: null,
+      jsxTernaryOtherwise: null,
+      vsCodeHiddenTokens: null,
+      beginQuote: null,
+      endQuote: null
+    };
+    const customFlags = {
+      singleQuotes: null
+    };
+    const root = `${linesSelector}>div>span`;
+    const lines = Array.from(lineEditor.querySelectorAll("div>span"));
+    function toFlatClassList(Array2) {
+      return Array2.reduce(
+        (acc, val) => acc.concat(val.join(".")),
+        []
+      );
+    }
+    function SliceClassList(line, slice) {
+      const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
+      return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
+    }
+    parser:
+      for (const line of lines) {
+        const text = line.textContent;
+        if (!text)
+          continue;
+        let anyFlag = false;
+        if ((_b = (_a = text.match(".+(</(?<jsxTag>.*)?>)$")) == null ? void 0 : _a.groups) == null ? void 0 : _b.jsxTag) {
+          if (flags.jsxTag || flags.vsCodeHiddenTokens)
+            continue;
+          const closing = SliceClassList(line, -3);
+          if (!closing.okLength)
+            continue;
+          const [angleBracket, tag, right] = closing.flat();
+          if (angleBracket !== right)
+            continue;
+          flags.jsxTag = {
+            // find the last </tag> and hide it "tag" which is the second to last child
+            hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
+            hover: `.${angleBracket}+.${tag}`
+          };
+          flags.vsCodeHiddenTokens = {
+            // this is the most common case, you could derive it from other flags
+            hide: `>.${angleBracket}`,
+            hover: `.${angleBracket}`
+          };
+          anyFlag = true;
+        } else if ((_d = (_c = text.match(/(\{).+\?.+?(?<ternaryBrace>\()$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.ternaryBrace) {
+          if (flags.jsxTernaryBrace)
+            continue;
+          const closing = SliceClassList(line, -4);
+          if (!closing.okLength)
+            continue;
+          const [blank, questionMark, blank2, openBrace] = toFlatClassList(closing);
+          const selector = `.${blank}+.${questionMark}+.${blank}+.${openBrace}:last-child`;
+          flags.jsxTernaryBrace = {
+            // find the last open brace in " ? ("
+            hide: `:has(${selector}) :last-child`,
+            hover: selector
+          };
+          anyFlag = true;
+        } else if ((_f = (_e = text.match(/(?<ternaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.ternaryOtherwise) {
+          if (flags.jsxTernaryOtherwise)
+            continue;
+          const closing = SliceClassList(line, -7);
+          if (!closing.okLength)
+            continue;
+          const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing);
+          const selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
+          flags.jsxTernaryOtherwise = {
+            // find ") : null}" then hide it all
+            hide: `:has(${selector}) *`,
+            hover: selector
+          };
+          anyFlag = true;
+        } else if ((_h = (_g = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.singleQuotes) {
+          if (customFlags.singleQuotes)
+            continue;
+          const array = Array.from(line.children);
+          const quote = /"|'|`/;
+          singleQuotes:
+            for (let i = 0; i < array.length; i++) {
+              const child = array[i];
+              const current = (_i = child.textContent) == null ? void 0 : _i.match(quote);
+              const next = (_k = (_j = array[i + 1]) == null ? void 0 : _j.textContent) == null ? void 0 : _k.match(quote);
+              if ((current == null ? void 0 : current[0].length) == 1 && current[0] === (next == null ? void 0 : next[0])) {
+                const beginQuote = Array.from(child.classList).join(".");
+                const endQuote = Array.from(array[i + 1].classList).join(".");
+                customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {
+							color: gray;
+						}`;
+                flags.beginQuote = {
+                  // this is the most common case, you could derive it from other flags
+                  hide: `>.${beginQuote}`,
+                  hover: `.${beginQuote}`
+                };
+                flags.endQuote = {
+                  // this is the most common case, you could derive it from other flags
+                  hide: `>.${endQuote}`,
+                  hover: `.${endQuote}`
+                };
+                anyFlag = true;
+                break singleQuotes;
+              }
+            }
+        }
+        if (anyFlag && Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f)) {
+          break parser;
+        }
+      }
+    const validFlags = Object.values(flags).filter(
+      (f) => (f == null ? void 0 : f.hide) && f.hover
     );
-    const cycle = lifecycle({
+    if (validFlags.length && ((_l = flags.vsCodeHiddenTokens) == null ? void 0 : _l.hover)) {
+      const toHover = validFlags.map((f) => f.hover).join(",");
+      const toHidden = validFlags.map((f) => root + f.hide).join(",");
+      const toCustom = Object.values(customFlags).filter((f) => !!f).join("\n");
+      return `
+			.view-lines {
+				--r: transparent;
+			}
+			.view-lines > div:hover {
+				--r: yellow;
+			}
+			.view-lines:has(:is(${toHover}):hover) {
+				--r: red;
+			}
+			${toHidden} {
+				color: var(--r);
+			}
+			${toCustom}
+			`.replace(/\r|\n/g, "").replaceAll(/\t+/g, "\n");
+    }
+    return "";
+  }
+  const statusBarSelector = `[id="${extensionId}"]`;
+  const bridgeAttribute = (target) => {
+    var _a, _b;
+    return (
+      // You could pass stringified json, at the moment this extension is either active or inactive
+      !((_b = (_a = target.getAttribute) == null ? void 0 : _a.call(target, bridgeBetweenVscodeExtension)) == null ? void 0 : _b.includes("inactive"))
+    );
+  };
+  function createSyntaxLifecycle() {
+    let Extension;
+    const syntaxStyle = createStyles("hide");
+    function change(extension) {
+      Extension = extension;
+      const on = bridgeAttribute(extension.item);
+      extension.icon.style.fontWeight = on ? "bold" : "normal";
+      const title = "Concise Syntax";
+      extension.item.title = on ? `${title}: active` : `${title}: inactive`;
+      syntaxStyle.styleIt(on ? regexToDomToCss() : "");
+    }
+    function clear2() {
+      if (!Extension)
+        return;
+      Extension.item.removeAttribute("title");
+      Extension.icon.style.removeProperty("font-weight");
+    }
+    return lifecycle({
       dom() {
-        const dom = domExtension();
+        const statusBar = document.querySelector("footer .right-items");
         return {
-          ...dom,
-          watchForRemoval: dom.item,
+          watchForRemoval: statusBar,
           check() {
-            var _a;
-            return !!(document.contains((_a = dom.statusBar) == null ? void 0 : _a.parentNode) && dom.icon);
+            return !!document.contains(statusBar == null ? void 0 : statusBar.parentNode);
           }
         };
       },
-      activate(dom) {
+      activate(DOM) {
+        return innerChildrenMutation({
+          parent: DOM.watchForRemoval,
+          validate(node, busy) {
+            if (!busy) {
+              return domExtension(DOM.watchForRemoval);
+            }
+          },
+          added(dom) {
+            const attributeObserver = createAttributeArrayMutation({
+              target: () => dom.item,
+              watchAttribute: [bridgeBetweenVscodeExtension],
+              change([bridge]) {
+                if (bridge) {
+                  change(dom);
+                } else {
+                  clear2();
+                }
+              }
+            });
+            attributeObserver.plug();
+            return attributeObserver.stop;
+          },
+          removed(node, consume) {
+            if (node.matches(statusBarSelector)) {
+              consume();
+            }
+          }
+        });
       },
       dispose() {
       }
     });
-    return cycle;
+  }
+  function domExtension(statusBar) {
+    const item = statusBar == null ? void 0 : statusBar.querySelector(statusBarSelector);
+    if (!item)
+      return;
+    const icon = item == null ? void 0 : item.querySelector(".codicon");
+    return { icon, item };
   }
   function clear(label) {
     stylesContainer.querySelectorAll(label ? `[aria-label="${label}"]` : "[aria-label]").forEach((style) => style.remove());
@@ -738,238 +959,230 @@ var __publicField = (obj, key, value) => {
     }
   }
   function createHighlightLifeCycle() {
-    function createHighlight({ node, selector, add, set, label, color }) {
-      if (!e(node) || !node.querySelector(selector))
-        return;
-      const top = parseTopStyle(node);
-      if (isNaN(top) || set.has(top) === add || !add && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
-      document.querySelector(
-        `[aria-label="${label}"]` + highlightSelector + `>[style*="${top}"]>` + selector
-      )) {
-        return;
-      }
-      set[add ? "add" : "delete"](top);
-      const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
-      styleIt(
-        styles.getOrCreateLabeledStyle(label, selector),
-        `[aria-label="${label}"]${linesSelector} :is(${lines}) {
-					--r: ${color};
-			}`
-      );
-      return true;
-    }
-    function editorOverlayLifecycle(editor, overlay) {
-      let editorLabel = editor.getAttribute("aria-label");
-      const EditorLanguageTracker = createAttributeArrayMutation({
-        target: () => editor,
-        watchAttribute: ["data-mode-id", "aria-label"],
-        change([language, label], [, oldLabel]) {
-          editorLabel = label;
-          if (!language || !label)
-            return;
-          OverlayLineTracker.disconnect();
-          if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
-            if (language === "typescriptreact") {
-              OverlayLineTracker.observe();
-            }
-            if (oldLabel && label != oldLabel) {
-              styles.clear(oldLabel);
-              mount();
-            }
-          } else {
-            styles.clear(label);
-          }
-        }
-      });
-      function mount() {
-        selectedLines.clear();
-        currentLines.clear();
-        overlay.childNodes.forEach((node) => highlightStyles(node, true));
-      }
-      let selectedLines = /* @__PURE__ */ new Set();
-      let currentLines = /* @__PURE__ */ new Set();
-      const OverlayLineTracker = createMutation({
-        target: () => overlay,
-        options: {
-          childList: true
-        },
-        added(node) {
-          highlightStyles(node, true);
-        },
-        removed(node) {
-          highlightStyles(node, false);
-        }
-      });
-      function highlightStyles(node, add) {
-        if (!editorLabel)
-          return;
-        const pre = { node, add, label: editorLabel };
-        createHighlight({
-          selector: selectedSelector,
-          color: "orange",
-          set: selectedLines,
-          ...pre
-        }) || createHighlight({
-          selector: currentSelector,
-          color: "brown",
-          set: currentLines,
-          ...pre
-        });
-      }
-      let done = false;
-      const lineTracker = createAttributeArrayMutation({
-        target: () => overlay,
-        children: true,
-        watchAttribute: ["style"],
-        change([style], [oldStyle], node) {
-          if (done)
-            return;
-          const top = parseTopStyle(node);
-          if (!isNaN(top) && style && oldStyle != style) {
-            done = true;
-            mount();
-            lineTracker.stop();
-          }
-        }
-      });
-      mount();
-      EditorLanguageTracker.plug();
-      lineTracker.plug();
-      const layoutShift = setTimeout(lineTracker.stop, 500);
-      return function dispose() {
-        clearTimeout(layoutShift);
-        lineTracker.stop();
-        if (editorLabel)
-          styles.clear(editorLabel);
-        EditorLanguageTracker.disconnect();
-        OverlayLineTracker.disconnect();
-      };
-    }
-    const cycle = lifecycle({
+    return lifecycle({
+      // prettier-ignore
       dom() {
         var _a;
-        const gridRoot = document.querySelector(
-          "#workbench\\.parts\\.editor > div.content > div > div"
-        );
-        const root = gridRoot.querySelector(
-          ":scope > div > div > div.monaco-scrollable-element > " + splitViewContainerSelector
-        );
+        const gridRoot = document.querySelector("#workbench\\.parts\\.editor > div.content > div > div");
+        const root = gridRoot.querySelector(":scope > div > div > div.monaco-scrollable-element > " + splitViewContainerSelector);
         const editor = root == null ? void 0 : root.querySelector(idSelector);
         const overlays = (_a = editor == null ? void 0 : editor.querySelector(highlightSelector)) == null ? void 0 : _a.parentElement;
         return {
-          check() {
-            return !!overlays;
-          },
+          check: () => !!overlays,
           watchForRemoval: gridRoot
         };
       },
       activate(DOM) {
-        let recStack = /* @__PURE__ */ new Map();
-        let editorStack = /* @__PURE__ */ new Map();
-        let treeStack = /* @__PURE__ */ new Map();
-        const REC_EditorOverlayTracker = (target) => specialChildrenMutation({
-          target: () => target,
-          options: {
-            childList: true
-          },
-          added: REC_added,
-          removed: bruteForceRemove
-        });
-        function clearStacks(condition) {
-          for (const stack of [recStack, editorStack, treeStack]) {
-            for (const [keyNode] of stack) {
-              if (condition && !condition(keyNode))
-                continue;
-              consumeStack(stack, keyNode);
-            }
-          }
-        }
-        function awkwardStack(elements) {
-          const { overlay, editor } = elements;
-          if (overlay && editor && !editorStack.has(editor)) {
-            editorStack.set(editor, editorOverlayLifecycle(editor, overlay));
-            return true;
-          }
-        }
-        function REC_added(splitViewView) {
-          const elements = findScopeElements(splitViewView);
-          if (elements.nested) {
-            const rec = REC_EditorOverlayTracker(elements.nested);
-            rec.plug();
-            guardStack(recStack, splitViewView, rec.stop);
-          } else if (awkwardStack(elements))
-            ;
-          else if (!elements.overlay) {
-            const treeTracker = specialChildrenMutation({
-              target: () => splitViewView,
-              options: {
-                childList: true,
-                subtree: true
-              },
-              // FIXME: this should handle the mutation callback instead of each added node
-              added() {
-                const elements2 = findScopeElements(splitViewView);
-                if (awkwardStack(elements2)) {
-                  treeTracker.stop();
-                }
-              },
-              // TODO: this is not needed
-              removed() {
-              }
-            });
-            treeTracker.plug();
-            guardStack(treeStack, splitViewView, treeTracker.stop);
-          }
-        }
-        function bruteForceRemove(splitViewView) {
-          clearStacks((keyNode) => !DOM.watchForRemoval.contains(keyNode));
-        }
-        let rebootCleanup;
-        const reboot = specialChildrenMutation({
-          target: () => DOM.watchForRemoval,
-          options: { childList: true },
-          added(node) {
-            const res = validateAddedView(node, rebootCleanup);
-            if (!res)
-              return;
-            const recursiveViewTracker = REC_EditorOverlayTracker(
+        const structure = createStackStructure(DOM.watchForRemoval);
+        return innerChildrenMutation({
+          parent: DOM.watchForRemoval,
+          dispose: structure.clearStacks,
+          validate: validateAddedView,
+          added(res) {
+            const recursiveViewTracker = structure.REC_EditorOverlayTracker(
               res.rootContainer
             );
             const firsContainerTracker = specialChildrenMutation({
               target: () => res.container,
               options: { childList: true },
               added() {
-                REC_added(res.firstView);
+                structure.REC_added(res.firstView);
               },
               removed() {
-                bruteForceRemove(res.firstView);
+                structure.bruteForceRemove(res.firstView);
               }
             });
             recursiveViewTracker.plug(() => res.restViews);
             firsContainerTracker.plug();
-            rebootCleanup = () => {
+            return () => {
               recursiveViewTracker.stop();
               firsContainerTracker.stop();
             };
           },
-          removed: consumeRebootCleanup
+          removed(node, consume) {
+            consume();
+          }
         });
-        function consumeRebootCleanup() {
-          rebootCleanup == null ? void 0 : rebootCleanup();
-          rebootCleanup = void 0;
-        }
-        reboot.plug();
-        return () => {
-          reboot.stop();
-          consumeRebootCleanup();
-          clearStacks();
-        };
       },
       dispose() {
         styles.clearAll();
       }
     });
-    return cycle;
+  }
+  function createHighlight({ node, selector, add, set, label, color }) {
+    if (!e(node) || !node.querySelector(selector))
+      return;
+    const top = parseTopStyle(node);
+    if (isNaN(top) || set.has(top) === add || !add && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+    document.querySelector(
+      `[aria-label="${label}"]` + highlightSelector + `>[style*="${top}"]>` + selector
+    )) {
+      return;
+    }
+    set[add ? "add" : "delete"](top);
+    const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
+    styleIt(
+      styles.getOrCreateLabeledStyle(label, selector),
+      `[aria-label="${label}"]${linesSelector} :is(${lines}) {
+				--r: ${color};
+		}`
+    );
+    return true;
+  }
+  function editorOverlayLifecycle(editor, overlay) {
+    let editorLabel = editor.getAttribute("aria-label");
+    const EditorLanguageTracker = createAttributeArrayMutation({
+      target: () => editor,
+      watchAttribute: ["data-mode-id", "aria-label"],
+      change([language, label], [, oldLabel]) {
+        editorLabel = label;
+        if (!language || !label)
+          return;
+        OverlayLineTracker.disconnect();
+        if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
+          if (language === "typescriptreact") {
+            OverlayLineTracker.observe();
+          }
+          if (oldLabel && label != oldLabel) {
+            styles.clear(oldLabel);
+            mount();
+          }
+        } else {
+          styles.clear(label);
+        }
+      }
+    });
+    function mount() {
+      selectedLines.clear();
+      currentLines.clear();
+      overlay.childNodes.forEach((node) => highlightStyles(node, true));
+    }
+    let selectedLines = /* @__PURE__ */ new Set();
+    let currentLines = /* @__PURE__ */ new Set();
+    const OverlayLineTracker = createMutation({
+      target: () => overlay,
+      options: {
+        childList: true
+      },
+      added(node) {
+        highlightStyles(node, true);
+      },
+      removed(node) {
+        highlightStyles(node, false);
+      }
+    });
+    function highlightStyles(node, add) {
+      if (!editorLabel)
+        return;
+      const pre = { node, add, label: editorLabel };
+      createHighlight({
+        selector: selectedSelector,
+        color: "orange",
+        set: selectedLines,
+        ...pre
+      }) || createHighlight({
+        selector: currentSelector,
+        color: "brown",
+        set: currentLines,
+        ...pre
+      });
+    }
+    let done = false;
+    const lineTracker = createAttributeArrayMutation({
+      target: () => overlay,
+      children: true,
+      watchAttribute: ["style"],
+      change([style], [oldStyle], node) {
+        if (done)
+          return;
+        const top = parseTopStyle(node);
+        if (!isNaN(top) && style && oldStyle != style) {
+          done = true;
+          mount();
+          lineTracker.stop();
+        }
+      }
+    });
+    mount();
+    EditorLanguageTracker.plug();
+    lineTracker.plug();
+    const layoutShift = setTimeout(lineTracker.stop, 500);
+    return function dispose() {
+      clearTimeout(layoutShift);
+      lineTracker.stop();
+      if (editorLabel)
+        styles.clear(editorLabel);
+      EditorLanguageTracker.disconnect();
+      OverlayLineTracker.disconnect();
+    };
+  }
+  function createStackStructure(watchForRemoval2) {
+    let recStack = /* @__PURE__ */ new Map();
+    let editorStack = /* @__PURE__ */ new Map();
+    let treeStack = /* @__PURE__ */ new Map();
+    const REC_EditorOverlayTracker = (target) => specialChildrenMutation({
+      target: () => target,
+      options: {
+        childList: true
+      },
+      added: REC_added,
+      removed: bruteForceRemove
+    });
+    function clearStacks(condition) {
+      for (const stack of [recStack, editorStack, treeStack]) {
+        for (const [keyNode] of stack) {
+          if (condition && !condition(keyNode))
+            continue;
+          consumeStack(stack, keyNode);
+        }
+      }
+    }
+    function awkwardStack(elements) {
+      const { overlay, editor } = elements;
+      if (overlay && editor && !editorStack.has(editor)) {
+        editorStack.set(editor, editorOverlayLifecycle(editor, overlay));
+        return true;
+      }
+    }
+    function REC_added(splitViewView) {
+      const elements = findScopeElements(splitViewView);
+      if (elements.nested) {
+        const rec = REC_EditorOverlayTracker(elements.nested);
+        rec.plug();
+        guardStack(recStack, splitViewView, rec.stop);
+      } else if (awkwardStack(elements))
+        ;
+      else if (!elements.overlay) {
+        const treeTracker = specialChildrenMutation({
+          target: () => splitViewView,
+          options: {
+            childList: true,
+            subtree: true
+          },
+          // FIXME: this should handle the mutation callback instead of each added node
+          added() {
+            const elements2 = findScopeElements(splitViewView);
+            if (awkwardStack(elements2)) {
+              treeTracker.stop();
+            }
+          },
+          // TODO: this is not needed
+          removed() {
+          }
+        });
+        treeTracker.plug();
+        guardStack(treeStack, splitViewView, treeTracker.stop);
+      }
+    }
+    function bruteForceRemove(splitViewView) {
+      clearStacks((keyNode) => !watchForRemoval2.contains(keyNode));
+    }
+    return {
+      REC_EditorOverlayTracker,
+      clearStacks,
+      REC_added,
+      bruteForceRemove
+    };
   }
   const syntax = createSyntaxLifecycle();
   const highlight = createHighlightLifeCycle();
