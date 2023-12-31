@@ -1,7 +1,6 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
 import * as path from 'path'
-import packageJson from '../../package.json'
 import { _catch } from './utils'
 import JSONC from 'comment-json'
 
@@ -43,38 +42,74 @@ const textMateRules = [
     },
   },
 ]
+const settingsJsonPath = '.vscode/settings.json'
+const remoteSettingsJsonPath = 'remote.settings.jsonc'
 
-export async function createSettingsCycle() {
-  const operation = 'add' as 'remove' | 'add'
-  // TODO: avoid writing defensive code, someone else surely knows a better way to do this
+// TODO: avoid writing defensive code, someone else surely knows a better way to do this
+export async function updateSettingsCycle(operation: 'inactive' | 'active') {
+  const res = await tryParseSettings()
+  if (!res) return
+  const { wasEmpty, userRules } = res
 
+  if (operation == 'active') {
+    if (wasEmpty) {
+      userRules.push(...textMateRules)
+    } else {
+      // add what is missing
+      for (const rule of textMateRules) {
+        const exist = userRules.some((r, i) =>
+          r?.name === rule.name ? (userRules![i] = rule) : false
+        )
+        if (!exist) {
+          userRules.push(rule)
+        }
+      }
+    }
+  } else {
+    if (wasEmpty) {
+      return
+    } else {
+      for (let i = userRules.length - 1; i >= 0; i--) {
+        const rule = userRules[i]
+        if (rule && textMateRules.find((r) => r.name == rule.name)) {
+          userRules.splice(i, 1)
+        }
+      }
+    }
+  }
+
+  await res.write()
+}
+
+async function tryParseSettings() {
   const workspace = vscode.workspace.workspaceFolders?.[0].uri
   if (!workspace) {
     vscode.window.showErrorMessage(
       'No workspace found: cannot update textMateRules'
     )
-    return //break updateSettings
+    return
   }
 
-  const settingsJsonPath = '.vscode/settings.json'
   const userSettingsPath = workspace.fsPath + '/' + settingsJsonPath
 
-  const read = await fs.promises
-    .readFile(userSettingsPath, 'utf-8')
-    .then((raw_json) => [JSONC.parse(raw_json), raw_json])
-    .catch(_catch)
-  const [config, raw_json]: [any, string] = (read as any) ?? []
+  let raw_json: string | undefined
+  let config: any
+  try {
+    raw_json = await fs.promises.readFile(userSettingsPath, 'utf-8')
+    config = JSONC.parse(raw_json)
+  } catch (error) {
+    config ??= {}
+    console.error(error)
+  }
 
-  if (!config) {
+  if (raw_json === undefined) {
     vscode.window.showErrorMessage(
       `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
     )
-    return //break updateSettings
+    return
   }
-  // FIXME: figure out why this method returns a Proxy with global values such as Light and Dark themes
-  // let tokens: typeof shape | undefined = await vscode.workspace.getConfiguration(undefined, workspace)?.get(key)
 
-  // This is a special object https://www.npmjs.com/package/comment-json#commentarray
+  // NOTE: This is a special object https://www.npmjs.com/package/comment-json#commentarray
   let userRules: DeepPartial<typeof textMateRules> | undefined =
     config?.[key]?.textMateRules
 
@@ -82,140 +117,33 @@ export async function createSettingsCycle() {
     vscode.window.showErrorMessage(
       `${settingsJsonPath}: ${key}.textMateRules is not an array`
     )
-    return //break updateSettings
+    return
   }
-  const isEmpty = !userRules || userRules?.length == 0
 
-  if (operation == 'remove') {
-    if (isEmpty) {
-      return //break updateSettings
-    } else if (userRules) {
-      // remove only the extension's textMateRules
-      // userRules = userRules?.filter(
-      //   (rule) => !textMateRules.find((r) => r.name == rule?.name)
-      // )
-      // filter using splice
-      for (let i = 0; i < userRules.length; i++) {
-        const rule = userRules[i]
-        if (rule && textMateRules.find((r) => r.name == rule?.name)) {
-          userRules.splice(i, 1)
-        }
-      }
-    }
-  } else if (operation == 'add') {
-    if (isEmpty) {
-      userRules = textMateRules
-    } else {
-      userRules ??= []
-      let conflictScopes: [description: string, string][] = []
-
-      conflicts: for (let i = 0; i < userRules.length; i++) {
-        const userRule = userRules[i]
-        if (!userRule || textMateRules.some((r) => r.name == userRule.name))
-          continue
-        const userScope = userRule.scope ?? []
-        const potentialConflictScopes = userScope.reduce((acc, scope) => {
-          if (
-            scope &&
-            textMateRules.some((r) =>
-              r.scope.some((_scope) => _scope === scope)
-            )
-          ) {
-            acc.push(scope)
-          }
-          return acc
-        }, <string[]>[])
-
-        if (!potentialConflictScopes.length) continue conflicts
-        conflictScopes.push([
-          `${i}: ${userRule.name || ''}`,
-          potentialConflictScopes.join(', '),
-        ])
-
-        // TODO: this should be an option...
-        userRule.scope = userScope.filter(
-          (scope) => scope && !potentialConflictScopes.includes(scope)
-        )
-      }
-      // TODO: this should be an option...
-      //userRules = userRules.filter((r) => r?.scope?.length)
-      // filter using splice
-      for (let i = 0; i < userRules.length; i++) {
-        const rule = userRules[i]
-        if (!rule?.scope?.length) {
-          userRules.splice(i, 1)
-        }
-      }
-
-      // userRules.splice(0,1)
-
-      // add what is missing
-      addition: for (const rule of textMateRules) {
-        const exist = userRules.some((r, i) => {
-          const match = r?.name === rule.name
-          if (match) {
-            userRules![i] = rule // ! userRules is ok
-            return true
-          }
-          return match
-        })
-        if (!exist) {
-          userRules.push(rule)
-        }
-      }
-      // FIXME: make this explicit, don't change by value
-      // config[key].textMateRules = userRules
-
-      const remoteSettingsPath = path.join(__dirname, 'remote.settings.jsonc')
+  const wasEmpty = !userRules || userRules?.length == 0
+  if (!userRules) {
+    userRules = []
+    config[key] = { textMateRules: userRules }
+  }
+  return {
+    userRules,
+    wasEmpty,
+    async write() {
       try {
-        const virtualJson = JSONC.stringify(config, null, 2)
-        // TODO: write the remote file to directory without git tracking to avoid annoying Toast notifications
-        await fs.promises.writeFile(remoteSettingsPath, virtualJson, 'utf-8')
-      } catch (error) {
-        debugger
-      }
-
-      vscode.commands.executeCommand(
-        'vscode.diff',
-        vscode.Uri.file(userSettingsPath),
-        vscode.Uri.file(remoteSettingsPath),
-        `${packageJson.displayName} settings.json (diff)`
-      )
-
-      if (conflictScopes.length) {
-        const diff = 'Show Conflicts'
-        const addAnyway = 'Write Settings'
-        const result = await vscode.window.showWarningMessage(
-          `${settingsJsonPath}: ${key}.textMateRules: Conflict scopes detected`,
-          diff,
-          addAnyway
+        if (raw_json === undefined) throw new Error('raw_json is undefined')
+        const indent = raw_json.match(/^\s+/)?.[0] ?? '  '
+        const virtualJson = JSONC.stringify(config, null, indent)
+        if (virtualJson === raw_json) return
+        await fs.promises.writeFile(userSettingsPath, virtualJson, 'utf-8')
+      } catch (error: any) {
+        vscode.window.showErrorMessage(
+          'Failed to write textMateRules. Error: ' + error.message
         )
-
-        if (result == diff) {
-          // TODO: IF the user closes the Toast add a command to continue/check settings updates
-          const result = await vscode.window.showWarningMessage(
-            `Accept settings?`,
-            'Show', // TODO:
-            'More', // TODO:
-            'Yes',
-            'No'
-          )
-          if (result == 'Yes') {
-            await writeUserSettings(config)
-          }
-        } else if (result == addAnyway) {
-          await writeUserSettings(config)
-        }
       }
-    }
+    },
   }
 }
-// Overwrite entire parent setting
-async function writeUserSettings(config: any) {
-  await vscode.workspace
-    .getConfiguration()
-    .update(key, config[key], vscode.ConfigurationTarget.Workspace)
-}
+
 type DeepPartial<T> = T extends object
   ? {
       [P in keyof T]?: DeepPartial<T[P]>
