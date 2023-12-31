@@ -67,6 +67,7 @@ export async function activate(context: vscode.ExtensionContext) {
   try {
     createSettingsCycle()
   } catch (error) {
+    debugger
     vscode.window.showErrorMessage(
       msg.internalError + 'failed to validate user settings'
     )

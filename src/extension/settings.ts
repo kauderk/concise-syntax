@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import packageJson from '../../package.json'
 import { _catch } from './utils'
+import JSONC from 'comment-json'
 
 const key = 'editor.tokenColorCustomizations'
 const textMateRules = [
@@ -60,10 +61,10 @@ export async function createSettingsCycle() {
 
   const read = await fs.promises
     .readFile(userSettingsPath, 'utf-8')
-    // https://stackoverflow.com/a/73298406 parse JSON with comments
-    .then((raw_json) => [new Function('return ' + raw_json)(), raw_json])
+    .then((raw_json) => [JSONC.parse(raw_json), raw_json])
     .catch(_catch)
   const [config, raw_json]: [any, string] = (read as any) ?? []
+
   if (!config) {
     vscode.window.showErrorMessage(
       `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
@@ -72,6 +73,8 @@ export async function createSettingsCycle() {
   }
   // FIXME: figure out why this method returns a Proxy with global values such as Light and Dark themes
   // let tokens: typeof shape | undefined = await vscode.workspace.getConfiguration(undefined, workspace)?.get(key)
+
+  // This is a special object https://www.npmjs.com/package/comment-json#commentarray
   let userRules: DeepPartial<typeof textMateRules> | undefined =
     config?.[key]?.textMateRules
 
@@ -86,11 +89,18 @@ export async function createSettingsCycle() {
   if (operation == 'remove') {
     if (isEmpty) {
       return //break updateSettings
-    } else {
+    } else if (userRules) {
       // remove only the extension's textMateRules
-      userRules = userRules?.filter(
-        (rule) => !textMateRules.find((r) => r.name == rule?.name)
-      )
+      // userRules = userRules?.filter(
+      //   (rule) => !textMateRules.find((r) => r.name == rule?.name)
+      // )
+      // filter using splice
+      for (let i = 0; i < userRules.length; i++) {
+        const rule = userRules[i]
+        if (rule && textMateRules.find((r) => r.name == rule?.name)) {
+          userRules.splice(i, 1)
+        }
+      }
     }
   } else if (operation == 'add') {
     if (isEmpty) {
@@ -128,7 +138,16 @@ export async function createSettingsCycle() {
         )
       }
       // TODO: this should be an option...
-      userRules = userRules.filter((r) => r?.scope?.length)
+      //userRules = userRules.filter((r) => r?.scope?.length)
+      // filter using splice
+      for (let i = 0; i < userRules.length; i++) {
+        const rule = userRules[i]
+        if (!rule?.scope?.length) {
+          userRules.splice(i, 1)
+        }
+      }
+
+      // userRules.splice(0,1)
 
       // add what is missing
       addition: for (const rule of textMateRules) {
@@ -145,7 +164,23 @@ export async function createSettingsCycle() {
         }
       }
       // FIXME: make this explicit, don't change by value
-      config[key].textMateRules = userRules
+      // config[key].textMateRules = userRules
+
+      const remoteSettingsPath = path.join(__dirname, 'remote.settings.jsonc')
+      try {
+        const virtualJson = JSONC.stringify(config, null, 2)
+        // TODO: write the remote file to directory without git tracking to avoid annoying Toast notifications
+        await fs.promises.writeFile(remoteSettingsPath, virtualJson, 'utf-8')
+      } catch (error) {
+        debugger
+      }
+
+      vscode.commands.executeCommand(
+        'vscode.diff',
+        vscode.Uri.file(userSettingsPath),
+        vscode.Uri.file(remoteSettingsPath),
+        `${packageJson.displayName} settings.json (diff)`
+      )
 
       if (conflictScopes.length) {
         const diff = 'Show Conflicts'
@@ -157,41 +192,6 @@ export async function createSettingsCycle() {
         )
 
         if (result == diff) {
-          const remoteSettingsPath = path.join(
-            __dirname,
-            'remote.settings.jsonc'
-          )
-          // debugger
-          // create a remote file with the new changes
-          const userIndentSpaceInt = 2 // TODO: parse from user settings
-          // TODO: maintain last empty line?
-          const indentationOffset = ' '.repeat(userIndentSpaceInt)
-          const remoteJson = JSON.stringify(userRules, null, userIndentSpaceInt)
-            // add space indentation to remoteJson
-            .replace(
-              /^(?!\s*$)/gm,
-              indentationOffset.repeat(2) // add indentation to each line
-            )
-            // remove first indentation
-            .replace(indentationOffset, '')
-
-          const replaceRegex =
-            /"textMateRules"\s*:\s*\[\s*((?:(?:(?!}\s*])[^\[\]]*)|\[[^\[\]]*\])*\s*)\]/gm
-          // replace the array group match in raw_json with the remoteJson
-          const virtualJson = raw_json.replace(
-            replaceRegex,
-            `"textMateRules": ${remoteJson}`
-          )
-          // debugger
-          // TODO: write the remote file to directory without git tracking to avoid annoying Toast notifications
-          await fs.promises.writeFile(remoteSettingsPath, virtualJson, 'utf-8')
-
-          vscode.commands.executeCommand(
-            'vscode.diff',
-            vscode.Uri.file(userSettingsPath),
-            vscode.Uri.file(remoteSettingsPath),
-            `${packageJson.displayName} settings.json (diff)`
-          )
           // TODO: IF the user closes the Toast add a command to continue/check settings updates
           const result = await vscode.window.showWarningMessage(
             `Accept settings?`,

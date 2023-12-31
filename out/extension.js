@@ -3,6 +3,7 @@ Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
+const JSONC = require("comment-json");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -77,10 +78,10 @@ const contributes = {
 };
 const devDependencies = {
   "@types/node": "^20.10.5",
+  "comment-json": "^4.2.3",
   "ts-node": "^10.9.2",
   vite: "4.5.1",
-  vscode: "^1.1.37",
-  xstate: "^5.4.1"
+  vscode: "^1.1.37"
 };
 const packageJson = {
   name,
@@ -281,7 +282,7 @@ async function createSettingsCycle() {
   }
   const settingsJsonPath = ".vscode/settings.json";
   const userSettingsPath = workspace.fsPath + "/" + settingsJsonPath;
-  const read2 = await fs__namespace.promises.readFile(userSettingsPath, "utf-8").then((raw_json2) => [new Function("return " + raw_json2)(), raw_json2]).catch(_catch);
+  const read2 = await fs__namespace.promises.readFile(userSettingsPath, "utf-8").then((raw_json2) => [JSONC.parse(raw_json2), raw_json2]).catch(_catch);
   const [config, raw_json] = read2 ?? [];
   if (!config) {
     vscode__namespace.window.showErrorMessage(
@@ -327,7 +328,12 @@ async function createSettingsCycle() {
             (scope) => scope && !potentialConflictScopes.includes(scope)
           );
         }
-      userRules = userRules.filter((r) => r?.scope?.length);
+      for (let i = 0; i < userRules.length; i++) {
+        const rule = userRules[i];
+        if (!rule?.scope?.length) {
+          userRules.splice(i, 1);
+        }
+      }
       for (const rule of textMateRules) {
         const exist = userRules.some((r, i) => {
           const match = r?.name === rule.name;
@@ -341,7 +347,19 @@ async function createSettingsCycle() {
           userRules.push(rule);
         }
       }
-      config[key].textMateRules = userRules;
+      const remoteSettingsPath = path__namespace.join(__dirname, "remote.settings.jsonc");
+      try {
+        const virtualJson = JSONC.stringify(config, null, 2);
+        await fs__namespace.promises.writeFile(remoteSettingsPath, virtualJson, "utf-8");
+      } catch (error) {
+        debugger;
+      }
+      vscode__namespace.commands.executeCommand(
+        "vscode.diff",
+        vscode__namespace.Uri.file(userSettingsPath),
+        vscode__namespace.Uri.file(remoteSettingsPath),
+        `${packageJson.displayName} settings.json (diff)`
+      );
       if (conflictScopes.length) {
         const diff = "Show Conflicts";
         const addAnyway = "Write Settings";
@@ -351,29 +369,6 @@ async function createSettingsCycle() {
           addAnyway
         );
         if (result == diff) {
-          const remoteSettingsPath = path__namespace.join(
-            __dirname,
-            "remote.settings.jsonc"
-          );
-          const userIndentSpaceInt = 2;
-          const indentationOffset = " ".repeat(userIndentSpaceInt);
-          const remoteJson = JSON.stringify(userRules, null, userIndentSpaceInt).replace(
-            /^(?!\s*$)/gm,
-            indentationOffset.repeat(2)
-            // add indentation to each line
-          ).replace(indentationOffset, "");
-          const replaceRegex = /"textMateRules"\s*:\s*\[\s*((?:(?:(?!}\s*])[^\[\]]*)|\[[^\[\]]*\])*\s*)\]/gm;
-          const virtualJson = raw_json.replace(
-            replaceRegex,
-            `"textMateRules": ${remoteJson}`
-          );
-          await fs__namespace.promises.writeFile(remoteSettingsPath, virtualJson, "utf-8");
-          vscode__namespace.commands.executeCommand(
-            "vscode.diff",
-            vscode__namespace.Uri.file(userSettingsPath),
-            vscode__namespace.Uri.file(remoteSettingsPath),
-            `${packageJson.displayName} settings.json (diff)`
-          );
           const result2 = await vscode__namespace.window.showWarningMessage(
             `Accept settings?`,
             "Show",
@@ -446,6 +441,7 @@ async function activate(context) {
   try {
     createSettingsCycle();
   } catch (error) {
+    debugger;
     vscode__namespace.window.showErrorMessage(
       msg.internalError + "failed to validate user settings"
     );
