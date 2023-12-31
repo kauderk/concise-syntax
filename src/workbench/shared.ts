@@ -39,7 +39,13 @@ export const toastConsole = new Proxy(
       }
       return (message, objects, options = {}) => {
         const print = 'Concise Syntax ' + level + ': ' + message
-        console[level](print, objects ?? {})
+        if (level == 'log') {
+          console.groupCollapsed(print, objects ?? {})
+          console.trace() // hidden in collapsed group
+          console.groupEnd()
+        } else {
+          console[level](print, objects ?? {})
+        }
         // FIXME: accommodate to the user's theme
         const toastStyle = createStyles('toast')
         toastStyle.styleIt(minifiedCss)
