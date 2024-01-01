@@ -129,6 +129,19 @@ async function preRead(base) {
 }
 function _catch(e) {
 }
+function useState(context, key2) {
+  return {
+    value: "",
+    read() {
+      return this.value = context.workspaceState.get(key2);
+    },
+    async write(newState) {
+      this.value = newState;
+      await context.workspaceState.update(key2, newState);
+      return newState;
+    }
+  };
+}
 const key = "editor.tokenColorCustomizations";
 const textMateRules = [
   {
@@ -168,21 +181,39 @@ const textMateRules = [
   }
 ];
 const settingsJsonPath = ".vscode/settings.json";
-async function updateSettingsCycle(operation) {
+async function updateSettingsCycle(context, operation) {
   const res = await tryParseSettings();
   if (!res)
     return;
   const { wasEmpty, specialObjectUserRules: userRules } = res;
+  const sessionStore = useState(context, "textMateRules");
+  const sessionRules = JSON.parse(
+    sessionStore.read() ?? "[]"
+  );
   let diff = false;
   if (operation == "active") {
     if (wasEmpty) {
       diff = true;
-      userRules.push(...textMateRules);
+      if (sessionRules.size == textMateRules.length) {
+        userRules.push(...sessionRules.values());
+      } else {
+        if (sessionRules.size == 0) {
+          textMateRules.forEach((r, i) => sessionRules.set(i, r));
+        } else {
+          for (let i = 0; i < textMateRules.length; i++) {
+            if (!sessionRules.get(i)) {
+              sessionRules.set(i, textMateRules[i]);
+            }
+          }
+        }
+        userRules.push(...sessionRules.values());
+        await sessionStore.write(JSON.stringify(sessionRules));
+      }
     } else {
-      const indexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]));
+      const userIndexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]));
       for (const presetRule of textMateRules) {
-        const i = indexToNameMap.get(presetRule.name) ?? -1;
-        if (i !== -1) {
+        const i = userIndexToNameMap.get(presetRule.name) ?? -1;
+        if (i >= 0) {
           const userRule = userRules[i];
           if (!userRule) {
             userRules[i] = JSONC.assign(userRule ?? {}, presetRule);
@@ -208,13 +239,16 @@ async function updateSettingsCycle(operation) {
       diff = false;
       return;
     } else {
+      const indexToNameMap = new Map(textMateRules.map((r, i) => [r.name, i]));
       for (let i = userRules.length - 1; i >= 0; i--) {
-        const rule = userRules[i];
-        if (rule && textMateRules.find((r) => r.name == rule.name)) {
+        const j = indexToNameMap.get(userRules[i]?.name);
+        if (j >= 0) {
           diff = true;
+          sessionRules.set(j, userRules[i]);
           userRules.splice(i, 1);
         }
       }
+      await sessionStore.write(JSON.stringify(sessionRules));
     }
   }
   if (!diff) {
@@ -335,7 +369,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       _item.text = `$(${statusIconLoading})` + iconText;
       const task = createTask();
       const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
-      const cash = await updateSettingsCycle(settings);
+      const cash = await updateSettingsCycle(context, settings);
       await windowState.write(next2);
       await Promise.race([
         task.promise,
@@ -407,32 +441,19 @@ function flip(next) {
   return next == "active" ? "inactive" : "active";
 }
 function getWindowState(context) {
-  return stateManager(context, extensionId + ".window");
+  return useState(context, extensionId + ".window");
 }
 function getStateStore(context) {
-  return stateManager(
+  return useState(
     context,
     extensionId + ".extension"
   );
 }
 function getErrorStore(context) {
-  return stateManager(
+  return useState(
     context,
     extensionId + ".error"
   );
-}
-function stateManager(context, key2) {
-  return {
-    value: "",
-    read() {
-      return this.value = context.globalState.get(key2);
-    },
-    async write(newState) {
-      this.value = newState;
-      await context.globalState.update(key2, newState);
-      return newState;
-    }
-  };
 }
 function createTask() {
   let resolve = (value) => {

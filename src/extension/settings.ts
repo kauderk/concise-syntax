@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
-import { _catch } from './utils'
+import { _catch, useState } from './utils'
 import JSONC from 'comment-json'
 
 export const key = 'editor.tokenColorCustomizations'
@@ -45,10 +45,18 @@ const settingsJsonPath = '.vscode/settings.json'
 const remoteSettingsJsonPath = 'remote.settings.jsonc'
 
 // TODO: avoid writing defensive code, someone else surely knows a better way to do this
-export async function updateSettingsCycle(operation: 'inactive' | 'active') {
+export async function updateSettingsCycle(
+  context: vscode.ExtensionContext,
+  operation: 'inactive' | 'active'
+) {
   const res = await tryParseSettings()
   if (!res) return
   const { wasEmpty, specialObjectUserRules: userRules } = res
+
+  const sessionStore = useState(context, 'textMateRules')
+  const sessionRules: Map<number, (typeof userRules)[number]> = JSON.parse(
+    sessionStore.read() ?? '[]'
+  )
 
   // could be more elegant...
   // this has to be faster than writing the file every time, otherwise it's not worth it
@@ -56,12 +64,26 @@ export async function updateSettingsCycle(operation: 'inactive' | 'active') {
   if (operation == 'active') {
     if (wasEmpty) {
       diff = true
-      userRules.push(...textMateRules)
+      if (sessionRules.size == textMateRules.length) {
+        userRules.push(...sessionRules.values())
+      } else {
+        if (sessionRules.size == 0) {
+          textMateRules.forEach((r, i) => sessionRules.set(i, r))
+        } else {
+          for (let i = 0; i < textMateRules.length; i++) {
+            if (!sessionRules.get(i)) {
+              sessionRules.set(i, textMateRules[i])
+            }
+          }
+        }
+        userRules.push(...sessionRules.values())
+        await sessionStore.write(JSON.stringify(sessionRules))
+      }
     } else {
-      const indexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]))
+      const userIndexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]))
       for (const presetRule of textMateRules) {
-        const i = indexToNameMap.get(presetRule.name) ?? -1
-        if (i !== -1) {
+        const i = userIndexToNameMap.get(presetRule.name) ?? -1
+        if (i >= 0) {
           const userRule = userRules[i]
           if (!userRule) {
             userRules[i] = JSONC.assign(userRule ?? {}, presetRule)
@@ -89,13 +111,16 @@ export async function updateSettingsCycle(operation: 'inactive' | 'active') {
       diff = false
       return
     } else {
+      const indexToNameMap = new Map(textMateRules.map((r, i) => [r.name, i]))
       for (let i = userRules.length - 1; i >= 0; i--) {
-        const rule = userRules[i]
-        if (rule && textMateRules.find((r) => r.name == rule.name)) {
+        const j = indexToNameMap.get(userRules[i]?.name!)!
+        if (j >= 0) {
           diff = true
+          sessionRules.set(j, userRules[i])
           userRules.splice(i, 1)
         }
       }
+      await sessionStore.write(JSON.stringify(sessionRules))
     }
   }
   if (!diff) {

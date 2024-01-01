@@ -3,6 +3,7 @@ import * as vscode from 'vscode'
 import packageJson from '../../package.json'
 import { key, updateSettingsCycle } from './settings'
 import { IState, State, state } from 'src/shared/state'
+import { useState } from './utils'
 
 let _item: vscode.StatusBarItem | undefined
 
@@ -53,7 +54,7 @@ export async function ExtensionState_statusBarItem(
       _item.text = `$(${statusIconLoading})` + iconText
       const task = createTask()
       const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
-      const cash = await updateSettingsCycle(settings)
+      const cash = await updateSettingsCycle(context, settings)
       await windowState.write(next)
       await Promise.race([
         task.promise, // either the configuration changes or the timeout
@@ -134,35 +135,19 @@ function flip(next?: State) {
 }
 
 export function getWindowState(context: vscode.ExtensionContext) {
-  return stateManager<State>(context, extensionId + '.window')
+  return useState<State>(context, extensionId + '.window')
 }
 export function getStateStore(context: vscode.ExtensionContext) {
-  return stateManager<'active' | 'inactive' | 'disposed'>(
+  return useState<'active' | 'inactive' | 'disposed'>(
     context,
     extensionId + '.extension'
   )
 }
 export function getErrorStore(context: vscode.ExtensionContext) {
-  return stateManager<'error' | 'throw' | 'unhandled'>(
+  return useState<'error' | 'throw' | 'unhandled'>(
     context,
     extensionId + '.error'
   )
-}
-function stateManager<T extends string>(
-  context: vscode.ExtensionContext,
-  key: string
-) {
-  return {
-    value: '' as any,
-    read() {
-      return (this.value = context.globalState.get(key) as T | undefined)
-    },
-    async write(newState: T) {
-      this.value = newState
-      await context.globalState.update(key, newState)
-      return newState
-    },
-  }
 }
 
 function createTask() {
