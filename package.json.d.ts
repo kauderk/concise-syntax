@@ -36,7 +36,8 @@ declare const data: {
       {
         "command": "extension.toggle",
         "title": "Toggle",
-        "category": "Concise Syntax"
+        "category": "Concise Syntax",
+        "enablement": "!extension.disposed"
       }
     ]
   },

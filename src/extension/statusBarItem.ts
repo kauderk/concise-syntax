@@ -52,14 +52,14 @@ export async function ExtensionState_statusBarItem(
 
       _item.text = `$(${statusIconLoading})` + iconText
       const task = createTask()
-      const change = vscode.workspace.onDidChangeConfiguration(task.resolve)
-      await updateSettingsCycle(settings)
+      const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
+      const cash = await updateSettingsCycle(settings)
       await windowState.write(next)
       await Promise.race([
         task.promise, // either the configuration changes or the timeout
-        new Promise((resolve) => setTimeout(resolve, 3000)),
+        new Promise((resolve) => setTimeout(resolve, !cash ? 3000 : 0)),
       ])
-      change.dispose()
+      watcher.dispose()
       _item.text = `$(${statusIcon})` + iconText
       _item.tooltip = IState.encode(next)
       // hold this thread and allow the dom to render the IState
@@ -116,16 +116,14 @@ export async function ExtensionState_statusBarItem(
   _item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0)
   _item.command = myCommandId
 
-  context.subscriptions.push({
+  const next = windowState.read() ?? 'active'
+  await REC_nextStateCycle(next, binary(next))
+
+  context.subscriptions.push(_item, {
     dispose() {
       disposeConfiguration()
     },
   })
-
-  const next = windowState.read() ?? 'active'
-  await REC_nextStateCycle(next, binary(next))
-
-  context.subscriptions.push(_item)
 }
 
 export function binary(state?: State) {

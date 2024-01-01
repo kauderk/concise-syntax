@@ -173,8 +173,10 @@ async function updateSettingsCycle(operation) {
   if (!res)
     return;
   const { wasEmpty, userRules } = res;
+  let diff = false;
   if (operation == "active") {
     if (wasEmpty) {
+      diff = true;
       userRules.push(...textMateRules);
     } else {
       for (const rule of textMateRules) {
@@ -182,22 +184,29 @@ async function updateSettingsCycle(operation) {
           (r, i) => r?.name === rule.name ? userRules[i] = rule : false
         );
         if (!exist) {
+          diff = true;
           userRules.push(rule);
         }
       }
     }
   } else {
     if (wasEmpty) {
+      diff = false;
       return;
     } else {
       for (let i = userRules.length - 1; i >= 0; i--) {
         const rule = userRules[i];
         if (rule && textMateRules.find((r) => r.name == rule.name)) {
+          diff = true;
           userRules.splice(i, 1);
         }
       }
     }
   }
+  if (!diff) {
+    return true;
+  }
+  debugger;
   await res.write();
 }
 async function tryParseSettings() {
@@ -311,15 +320,15 @@ async function ExtensionState_statusBarItem(context, setState) {
       disposeConfiguration();
       _item.text = `$(${statusIconLoading})` + iconText;
       const task = createTask();
-      const change = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
-      await updateSettingsCycle(settings);
+      const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
+      const cash = await updateSettingsCycle(settings);
       await windowState.write(next2);
       await Promise.race([
         task.promise,
         // either the configuration changes or the timeout
-        new Promise((resolve) => setTimeout(resolve, 3e3))
+        new Promise((resolve) => setTimeout(resolve, !cash ? 3e3 : 0))
       ]);
-      change.dispose();
+      watcher.dispose();
       _item.text = `$(${statusIcon})` + iconText;
       _item.tooltip = IState.encode(next2);
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -369,14 +378,13 @@ async function ExtensionState_statusBarItem(context, setState) {
   );
   _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _item.command = myCommandId;
-  context.subscriptions.push({
+  const next = windowState.read() ?? "active";
+  await REC_nextStateCycle(next, binary(next));
+  context.subscriptions.push(_item, {
     dispose() {
       disposeConfiguration();
     }
   });
-  const next = windowState.read() ?? "active";
-  await REC_nextStateCycle(next, binary(next));
-  context.subscriptions.push(_item);
 }
 function binary(state2) {
   return state2 == "active" ? "active" : "inactive";

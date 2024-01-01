@@ -50,8 +50,11 @@ export async function updateSettingsCycle(operation: 'inactive' | 'active') {
   if (!res) return
   const { wasEmpty, userRules } = res
 
+  // could be more elegant...
+  let diff = false
   if (operation == 'active') {
     if (wasEmpty) {
+      diff = true
       userRules.push(...textMateRules)
     } else {
       // add what is missing
@@ -60,23 +63,30 @@ export async function updateSettingsCycle(operation: 'inactive' | 'active') {
           r?.name === rule.name ? (userRules![i] = rule) : false
         )
         if (!exist) {
+          diff = true
           userRules.push(rule)
         }
       }
     }
   } else {
     if (wasEmpty) {
+      diff = false
       return
     } else {
       for (let i = userRules.length - 1; i >= 0; i--) {
         const rule = userRules[i]
         if (rule && textMateRules.find((r) => r.name == rule.name)) {
+          diff = true
           userRules.splice(i, 1)
         }
       }
     }
   }
+  if (!diff) {
+    return true
+  }
 
+  debugger
   await res.write()
 }
 
