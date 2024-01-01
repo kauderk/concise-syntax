@@ -142,6 +142,38 @@ function useState(context, key2) {
     }
   };
 }
+const JSON_MAP = {
+  stringify: (map) => JSON.stringify(map, stringifyMap),
+  parseOrNew: (str) => {
+    try {
+      const m = JSON.parse(str, parseMap);
+      if (m instanceof Map)
+        return m;
+      return /* @__PURE__ */ new Map();
+    } catch (error) {
+      return /* @__PURE__ */ new Map();
+    }
+  }
+};
+function stringifyMap(key2, value) {
+  if (value instanceof Map) {
+    return {
+      dataType: "Map",
+      value: Array.from(value.entries())
+      // or with spread: value: [...value]
+    };
+  } else {
+    return value;
+  }
+}
+function parseMap(key2, value) {
+  if (typeof value === "object" && value !== null) {
+    if (value.dataType === "Map") {
+      return new Map(value.value);
+    }
+  }
+  return value;
+}
 const key = "editor.tokenColorCustomizations";
 const textMateRules = [
   {
@@ -187,9 +219,7 @@ async function updateSettingsCycle(context, operation) {
     return;
   const { wasEmpty, specialObjectUserRules: userRules } = res;
   const sessionStore = useState(context, "textMateRules");
-  const sessionRules = JSON.parse(
-    sessionStore.read() ?? "[]"
-  );
+  const sessionRules = JSON_MAP.parseOrNew(sessionStore.read());
   let diff = false;
   if (operation == "active") {
     if (wasEmpty) {
@@ -207,7 +237,7 @@ async function updateSettingsCycle(context, operation) {
           }
         }
         userRules.push(...sessionRules.values());
-        await sessionStore.write(JSON.stringify(sessionRules));
+        await sessionStore.write(JSON_MAP.stringify(sessionRules));
       }
     } else {
       const userIndexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]));
@@ -248,7 +278,7 @@ async function updateSettingsCycle(context, operation) {
           userRules.splice(i, 1);
         }
       }
-      await sessionStore.write(JSON.stringify(sessionRules));
+      await sessionStore.write(JSON_MAP.stringify(sessionRules));
     }
   }
   if (!diff) {

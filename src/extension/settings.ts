@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import * as fs from 'fs'
 import { _catch, useState } from './utils'
 import JSONC from 'comment-json'
+import { JSON_MAP } from '../shared/serialize'
 
 export const key = 'editor.tokenColorCustomizations'
 const textMateRules = [
@@ -54,9 +55,8 @@ export async function updateSettingsCycle(
   const { wasEmpty, specialObjectUserRules: userRules } = res
 
   const sessionStore = useState(context, 'textMateRules')
-  const sessionRules: Map<number, (typeof userRules)[number]> = JSON.parse(
-    sessionStore.read() ?? '[]'
-  )
+  const sessionRules: Map<number, (typeof userRules)[number]> =
+    JSON_MAP.parseOrNew(sessionStore.read())
 
   // could be more elegant...
   // this has to be faster than writing the file every time, otherwise it's not worth it
@@ -77,7 +77,7 @@ export async function updateSettingsCycle(
           }
         }
         userRules.push(...sessionRules.values())
-        await sessionStore.write(JSON.stringify(sessionRules))
+        await sessionStore.write(JSON_MAP.stringify(sessionRules))
       }
     } else {
       const userIndexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]))
@@ -120,7 +120,7 @@ export async function updateSettingsCycle(
           userRules.splice(i, 1)
         }
       }
-      await sessionStore.write(JSON.stringify(sessionRules))
+      await sessionStore.write(JSON_MAP.stringify(sessionRules))
     }
   }
   if (!diff) {
