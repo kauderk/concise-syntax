@@ -1,10 +1,9 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
-import * as path from 'path'
 import { _catch } from './utils'
 import JSONC from 'comment-json'
 
-const key = 'editor.tokenColorCustomizations'
+export const key = 'editor.tokenColorCustomizations'
 const textMateRules = [
   {
     name: 'kauderk.concise-syntax.text',

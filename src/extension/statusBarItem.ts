@@ -1,7 +1,7 @@
 import { extensionId } from 'src/shared/write'
 import * as vscode from 'vscode'
 import packageJson from '../../package.json'
-import { updateSettingsCycle } from './settings'
+import { key, updateSettingsCycle } from './settings'
 import { IState, State, state } from 'src/shared/state'
 
 let _item: vscode.StatusBarItem | undefined
@@ -11,7 +11,10 @@ let _item: vscode.StatusBarItem | undefined
  */
 let statusIcon = 'symbol-keyword'
 let statusIconLoading = 'loading~spin'
+const iconText = '' //' Concise'
 let busy: boolean | undefined
+let disposeConfiguration = () => {}
+let crashedMessage = ''
 
 export async function ExtensionState_statusBarItem(
   context: vscode.ExtensionContext,
@@ -28,22 +31,36 @@ export async function ExtensionState_statusBarItem(
     setState == state.disposed
   )
 
-  async function nextStateCycle(next: State, settings: 'active' | 'inactive') {
+  async function REC_nextStateCycle(
+    next: State,
+    settings: 'active' | 'inactive'
+  ) {
     if (!_item) {
       vscode.window.showErrorMessage('No status bar item found')
+      return
+    } else if (crashedMessage) {
+      vscode.window.showErrorMessage(
+        `The extension crashed when updating .vscode/settings.json with property ${key}.textMateRules with error: ${crashedMessage}`
+      )
       return
     }
 
     try {
       busy = true
-      _item.text = `$(${statusIconLoading}) Concise`
+
+      disposeConfiguration()
+
+      _item.text = `$(${statusIconLoading})` + iconText
+      const task = createTask()
+      const change = vscode.workspace.onDidChangeConfiguration(task.resolve)
       await updateSettingsCycle(settings)
       await windowState.write(next)
-      if (next == state.active) {
-        // TODO: figure out when exactly the settings update the dom
-        await new Promise((resolve) => setTimeout(resolve, 3000))
-      }
-      _item.text = `$(${statusIcon}) Concise`
+      await Promise.race([
+        task.promise, // either the configuration changes or the timeout
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ])
+      change.dispose()
+      _item.text = `$(${statusIcon})` + iconText
       _item.tooltip = IState.encode(next)
       // hold this thread and allow the dom to render the IState
       await new Promise((resolve) => setTimeout(resolve, 100))
@@ -53,16 +70,26 @@ export async function ExtensionState_statusBarItem(
       } else {
         _item.hide()
       }
+
+      // prettier-ignore
+      disposeConfiguration = vscode.workspace.onDidChangeConfiguration(async (config) => {
+				if (!config.affectsConfiguration(key)) return
+				const next = windowState.read()
+				if (!next) return
+				debugger
+				await REC_nextStateCycle(next, binary(next))
+			}).dispose
+
       busy = false
-    } catch (error) {
-      _item.text = `$(error) Concise`
+    } catch (error: any) {
+      crashedMessage = error?.message || 'unknown'
+      _item.text = `$(error)` + iconText
       _item.tooltip = IState.encode(state.error)
       _item.show()
-      busy = undefined
     }
   }
   if (_item) {
-    await nextStateCycle(setState, binary(setState))
+    await REC_nextStateCycle(setState, binary(setState))
     return
   }
 
@@ -82,29 +109,21 @@ export async function ExtensionState_statusBarItem(
       }
 
       const next = flip(windowState.read())
-      await nextStateCycle(next, next)
+      await REC_nextStateCycle(next, next)
     })
   )
 
-  _item = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    100
-  )
+  _item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0)
   _item.command = myCommandId
 
+  context.subscriptions.push({
+    dispose() {
+      disposeConfiguration()
+    },
+  })
+
   const next = windowState.read() ?? 'active'
-  await updateSettingsCycle(binary(next))
-  if (next == state.active) {
-    // TODO: figure out when exactly the settings update the dom
-    await new Promise((resolve) => setTimeout(resolve, 3000))
-  }
-  _item.text = `$(${statusIcon}) Concise`
-  _item.tooltip = IState.encode(next)
-  // hold this thread and allow the dom to render the IState
-  await new Promise((resolve) => setTimeout(resolve, 100))
-  if (next != state.disposed) {
-    _item.show()
-  }
+  await REC_nextStateCycle(next, binary(next))
 
   context.subscriptions.push(_item)
 }
@@ -146,4 +165,14 @@ function stateManager<T extends string>(
       return newState
     },
   }
+}
+
+function createTask() {
+  let resolve = (value?: unknown) => {},
+    reject = () => {}
+  const promise = new Promise((_resolve, _reject) => {
+    reject = _reject
+    resolve = _resolve
+  })
+  return { promise, resolve, reject }
 }

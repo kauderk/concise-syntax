@@ -283,7 +283,11 @@ const IState = {
 let _item;
 let statusIcon = "symbol-keyword";
 let statusIconLoading = "loading~spin";
+const iconText = "";
 let busy;
+let disposeConfiguration = () => {
+};
+let crashedMessage = "";
 async function ExtensionState_statusBarItem(context, setState) {
   const windowState = getWindowState(context);
   await windowState.write(setState);
@@ -292,20 +296,31 @@ async function ExtensionState_statusBarItem(context, setState) {
     "extension.disposed",
     setState == state.disposed
   );
-  async function nextStateCycle(next2, settings) {
+  async function REC_nextStateCycle(next2, settings) {
     if (!_item) {
       vscode__namespace.window.showErrorMessage("No status bar item found");
+      return;
+    } else if (crashedMessage) {
+      vscode__namespace.window.showErrorMessage(
+        `The extension crashed when updating .vscode/settings.json with property ${key}.textMateRules with error: ${crashedMessage}`
+      );
       return;
     }
     try {
       busy = true;
-      _item.text = `$(${statusIconLoading}) Concise`;
+      disposeConfiguration();
+      _item.text = `$(${statusIconLoading})` + iconText;
+      const task = createTask();
+      const change = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
       await updateSettingsCycle(settings);
       await windowState.write(next2);
-      if (next2 == state.active) {
-        await new Promise((resolve) => setTimeout(resolve, 3e3));
-      }
-      _item.text = `$(${statusIcon}) Concise`;
+      await Promise.race([
+        task.promise,
+        // either the configuration changes or the timeout
+        new Promise((resolve) => setTimeout(resolve, 3e3))
+      ]);
+      change.dispose();
+      _item.text = `$(${statusIcon})` + iconText;
       _item.tooltip = IState.encode(next2);
       await new Promise((resolve) => setTimeout(resolve, 100));
       if (next2 != state.disposed) {
@@ -313,16 +328,25 @@ async function ExtensionState_statusBarItem(context, setState) {
       } else {
         _item.hide();
       }
+      disposeConfiguration = vscode__namespace.workspace.onDidChangeConfiguration(async (config) => {
+        if (!config.affectsConfiguration(key))
+          return;
+        const next3 = windowState.read();
+        if (!next3)
+          return;
+        debugger;
+        await REC_nextStateCycle(next3, binary(next3));
+      }).dispose;
       busy = false;
     } catch (error) {
-      _item.text = `$(error) Concise`;
+      crashedMessage = error?.message || "unknown";
+      _item.text = `$(error)` + iconText;
       _item.tooltip = IState.encode(state.error);
       _item.show();
-      busy = void 0;
     }
   }
   if (_item) {
-    await nextStateCycle(setState, binary(setState));
+    await REC_nextStateCycle(setState, binary(setState));
     return;
   }
   const myCommandId = packageJson.contributes.commands[2].command;
@@ -340,25 +364,18 @@ async function ExtensionState_statusBarItem(context, setState) {
         );
       }
       const next2 = flip(windowState.read());
-      await nextStateCycle(next2, next2);
+      await REC_nextStateCycle(next2, next2);
     })
   );
-  _item = vscode__namespace.window.createStatusBarItem(
-    vscode__namespace.StatusBarAlignment.Right,
-    100
-  );
+  _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _item.command = myCommandId;
+  context.subscriptions.push({
+    dispose() {
+      disposeConfiguration();
+    }
+  });
   const next = windowState.read() ?? "active";
-  await updateSettingsCycle(binary(next));
-  if (next == state.active) {
-    await new Promise((resolve) => setTimeout(resolve, 3e3));
-  }
-  _item.text = `$(${statusIcon}) Concise`;
-  _item.tooltip = IState.encode(next);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  if (next != state.disposed) {
-    _item.show();
-  }
+  await REC_nextStateCycle(next, binary(next));
   context.subscriptions.push(_item);
 }
 function binary(state2) {
@@ -394,6 +411,16 @@ function stateManager(context, key2) {
       return newState;
     }
   };
+}
+function createTask() {
+  let resolve = (value) => {
+  }, reject = () => {
+  };
+  const promise = new Promise((_resolve, _reject) => {
+    reject = _reject;
+    resolve = _resolve;
+  });
+  return { promise, resolve, reject };
 }
 async function installCycle(context) {
   const res = await read();
