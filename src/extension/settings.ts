@@ -54,55 +54,67 @@ export async function updateSettingsCycle(
   if (!res) return
   const { wasEmpty, specialObjectUserRules: userRules } = res
 
+  type UserRule = (typeof userRules)[number]
   const sessionStore = useState(context, 'textMateRules')
-  const sessionRules: Map<number, (typeof userRules)[number]> =
-    JSON_MAP.parseOrNew(sessionStore.read())
+  const sessionRules: Map<number, UserRule> = JSON_MAP.parseOrNew(
+    sessionStore.read()
+  )
 
-  // could be more elegant...
+  /**
+   * {textMateRules} the extension's preset data
+   * {userRules}     the user's data -> from the settings.json file
+   * {sessionRules}  the user's data -> from the previous session
+   */
+  // could be more elegant... this must be a pattern or something
   // this has to be faster than writing the file every time, otherwise it's not worth it
   let diff = false
   if (operation == 'active') {
     if (wasEmpty) {
       diff = true
-      if (sessionRules.size == textMateRules.length) {
-        userRules.push(...sessionRules.values())
-      } else {
-        if (sessionRules.size == 0) {
-          textMateRules.forEach((r, i) => sessionRules.set(i, r))
-        } else {
-          for (let i = 0; i < textMateRules.length; i++) {
-            if (!sessionRules.get(i)) {
-              sessionRules.set(i, textMateRules[i])
-            }
-          }
-        }
-        userRules.push(...sessionRules.values())
-        await sessionStore.write(JSON_MAP.stringify(sessionRules))
-      }
+      syncSessionRules()
+      userRules.push(...sessionRules.values())
     } else {
+      syncSessionRules()
+      const indexToNameMap = new Map(textMateRules.map((r, i) => [r.name, i]))
       const userIndexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]))
+      const updateSessionDiff = (rule: UserRule) => {
+        diff = true // well, this is awkward
+        const j = indexToNameMap.get(rule?.name!)!
+        if (j > -1) {
+          sessionRules.set(j, rule)
+        }
+      }
+      const pick = (rule: (typeof textMateRules)[number]) => {
+        const j = indexToNameMap.get(rule.name)!
+        return {
+          foreground:
+            sessionRules.get(j)?.settings?.foreground ||
+            rule.settings.foreground,
+        }
+      }
+
       for (const presetRule of textMateRules) {
         const i = userIndexToNameMap.get(presetRule.name) ?? -1
-        if (i >= 0) {
+        if (i > -1) {
           const userRule = userRules[i]
           if (!userRule) {
             userRules[i] = JSONC.assign(userRule ?? {}, presetRule)
-            diff = true
+            updateSessionDiff(userRules[i])
             continue
           }
 
           if (presetRule.scope.some((s, i) => s !== userRule.scope?.[i])) {
             userRule.scope = presetRule.scope // it's better to overwrite than to merge
-            diff = true
+            updateSessionDiff(userRule)
           }
           if (!userRule.settings?.foreground?.match(/^#/)) {
             // prettier-ignore
-            userRule.settings = JSONC.assign(userRule.settings ?? {}, presetRule.settings)
-            diff = true
+            userRule.settings = JSONC.assign(userRule.settings ?? {}, pick(presetRule))
+            updateSessionDiff(userRule)
           }
         } else {
           userRules.push(presetRule)
-          diff = true
+          updateSessionDiff(presetRule)
         }
       }
     }
@@ -114,21 +126,50 @@ export async function updateSettingsCycle(
       const indexToNameMap = new Map(textMateRules.map((r, i) => [r.name, i]))
       for (let i = userRules.length - 1; i >= 0; i--) {
         const j = indexToNameMap.get(userRules[i]?.name!)!
-        if (j >= 0) {
+        if (j > -1) {
           diff = true
           sessionRules.set(j, userRules[i])
           userRules.splice(i, 1)
         }
       }
-      await sessionStore.write(JSON_MAP.stringify(sessionRules))
     }
   }
+
+  // sort by textMateRules and put them at the end of userRules
+  // send it to the end of the array
+  ;[...textMateRules].reverse().forEach((r, relative, _arr) => {
+    const index = userRules.findIndex((_r) => _r?.name == r.name)
+    if (index < 0) return
+    const end = userRules.length - 1 - relative
+    if (index != end) {
+      diff = true
+      move(userRules, index, end)
+    }
+  })
+
   if (!diff) {
     return true
   }
 
   debugger
+  await sessionStore.write(JSON_MAP.stringify(sessionRules))
   await res.write()
+
+  // TODO: this is doing too much
+  function syncSessionRules() {
+    if (sessionRules.size == textMateRules.length) {
+      return true
+    }
+    if (sessionRules.size == 0) {
+      textMateRules.forEach((r, i) => sessionRules.set(i, r))
+    } else {
+      for (let i = 0; i < textMateRules.length; i++) {
+        if (!sessionRules.get(i)) {
+          sessionRules.set(i, textMateRules[i])
+        }
+      }
+    }
+  }
 }
 
 async function tryParseSettings() {
@@ -199,3 +240,8 @@ type DeepPartial<T> = T extends object
       [P in keyof T]?: DeepPartial<T[P]>
     }
   : T
+function move(arr: any[], fromIndex: number, toIndex: number) {
+  var element = arr[fromIndex]
+  arr.splice(fromIndex, 1)
+  arr.splice(toIndex, 0, element)
+}
