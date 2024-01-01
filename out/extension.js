@@ -172,20 +172,34 @@ async function updateSettingsCycle(operation) {
   const res = await tryParseSettings();
   if (!res)
     return;
-  const { wasEmpty, userRules } = res;
+  const { wasEmpty, specialObjectUserRules: userRules } = res;
   let diff = false;
   if (operation == "active") {
     if (wasEmpty) {
       diff = true;
       userRules.push(...textMateRules);
     } else {
-      for (const rule of textMateRules) {
-        const exist = userRules.some(
-          (r, i) => r?.name === rule.name ? userRules[i] = rule : false
-        );
-        if (!exist) {
+      const indexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]));
+      for (const presetRule of textMateRules) {
+        const i = indexToNameMap.get(presetRule.name) ?? -1;
+        if (i !== -1) {
+          const userRule = userRules[i];
+          if (!userRule) {
+            userRules[i] = JSONC.assign(userRule ?? {}, presetRule);
+            diff = true;
+            continue;
+          }
+          if (presetRule.scope.some((s, i2) => s !== userRule.scope?.[i2])) {
+            userRule.scope = presetRule.scope;
+            diff = true;
+          }
+          if (!userRule.settings?.foreground?.match(/^#/)) {
+            userRule.settings = JSONC.assign(userRule.settings ?? {}, presetRule.settings);
+            diff = true;
+          }
+        } else {
+          userRules.push(presetRule);
           diff = true;
-          userRules.push(rule);
         }
       }
     }
@@ -246,7 +260,7 @@ async function tryParseSettings() {
     config[key] = { textMateRules: userRules };
   }
   return {
-    userRules,
+    specialObjectUserRules: userRules,
     wasEmpty,
     async write() {
       try {
