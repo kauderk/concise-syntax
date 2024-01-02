@@ -103,7 +103,7 @@ export async function activate(context: vscode.ExtensionContext) {
   function __catch(e: unknown) {
     console.error(e)
     const error = getErrorStore(context)
-    error.write('unhandled').catch(_catch)
+    error.write('unhandled')
   }
 }
 

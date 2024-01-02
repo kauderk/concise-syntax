@@ -49,7 +49,7 @@ const categories = [
 ];
 const main = "./out/extension";
 const activationEvents = [
-  "*"
+  "onStartupFinished"
 ];
 const scripts = {
   watch: "ts-node vite.config.custom.ts --watch",
@@ -587,7 +587,7 @@ async function activate(context) {
   function __catch(e) {
     console.error(e);
     const error = getErrorStore(context);
-    error.write("unhandled").catch(_catch);
+    error.write("unhandled");
   }
 }
 function reloadWindowMessage(message) {

@@ -1278,7 +1278,6 @@ var __publicField = (obj, key, value) => {
     anyEditor = value;
     stateObservable.notify();
   });
-  let firstRender = true;
   const syntaxStyle = createStyles("hide");
   let unsubscribeState = () => {
   };
@@ -1286,10 +1285,9 @@ var __publicField = (obj, key, value) => {
     if (deltaState == state.active) {
       if (!editorUnsubscribe) {
         editorUnsubscribe = createEditorSubscription();
-        highlight.activate(firstRender ? 5e3 : 2500);
+        highlight.activate(500);
       }
       if (anyEditor) {
-        firstRender = false;
         syntaxStyle.styleIt(regexToDomToCss());
       }
     } else {
