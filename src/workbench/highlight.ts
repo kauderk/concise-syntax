@@ -208,30 +208,27 @@ function editorOverlayLifecycle(
 
   // FIXME: find a better way to handle selected lines flickering and layout shifts
   // issue: the top style shifts right before the last frame
-  let done = false
-  const lineTracker = createAttributeArrayMutation({
-    target: () => overlay,
-    children: true,
-    watchAttribute: ['style'],
-    change([style], [oldStyle], node) {
-      if (done) return
-      const top = parseTopStyle(node)
-      if (!isNaN(top) && style && oldStyle != style) {
-        done = true
-        // toastConsole.log('layout shift')
-        mount()
-        lineTracker.stop()
-      }
-    },
-  })
+  let tries = 0
+  const lineTracker = () => {
+    const line = overlay.querySelector(selectedSelector) as H
+    if (!line || tries > 5) {
+      clearInterval(layoutShift)
+      return
+    }
+    const top = parseTopStyle(line)
+    if (!isNaN(top)) {
+      tries += 1
+      // toastConsole.log('layout shift')
+      mount()
+    }
+  }
   mount()
   EditorLanguageTracker.plug()
-  lineTracker.plug()
-  const layoutShift = setTimeout(lineTracker.stop, 2500)
+  const layoutShift = setInterval(lineTracker, 500)
 
   return function dispose() {
-    clearTimeout(layoutShift)
-    lineTracker.stop()
+    tries = 6
+    clearInterval(layoutShift)
     if (editorLabel) styles.clear(editorLabel)
     EditorLanguageTracker.disconnect()
     OverlayLineTracker.disconnect()

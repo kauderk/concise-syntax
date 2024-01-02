@@ -951,29 +951,25 @@ var __publicField = (obj, key, value) => {
         ...pre
       });
     }
-    let done = false;
-    const lineTracker = createAttributeArrayMutation({
-      target: () => overlay,
-      children: true,
-      watchAttribute: ["style"],
-      change([style], [oldStyle], node) {
-        if (done)
-          return;
-        const top = parseTopStyle(node);
-        if (!isNaN(top) && style && oldStyle != style) {
-          done = true;
-          mount();
-          lineTracker.stop();
-        }
+    let tries = 0;
+    const lineTracker = () => {
+      const line = overlay.querySelector(selectedSelector);
+      if (!line || tries > 5) {
+        clearInterval(layoutShift);
+        return;
       }
-    });
+      const top = parseTopStyle(line);
+      if (!isNaN(top)) {
+        tries += 1;
+        mount();
+      }
+    };
     mount();
     EditorLanguageTracker.plug();
-    lineTracker.plug();
-    const layoutShift = setTimeout(lineTracker.stop, 2500);
+    const layoutShift = setInterval(lineTracker, 500);
     return function dispose() {
-      clearTimeout(layoutShift);
-      lineTracker.stop();
+      tries = 6;
+      clearInterval(layoutShift);
       if (editorLabel)
         styles.clear(editorLabel);
       EditorLanguageTracker.disconnect();
