@@ -13,6 +13,7 @@ import {
   createMutation,
   styleIt,
   innerChildrenMutation,
+  toastConsole,
 } from './shared'
 import {
   Selected,
@@ -217,6 +218,7 @@ function editorOverlayLifecycle(
       const top = parseTopStyle(node)
       if (!isNaN(top) && style && oldStyle != style) {
         done = true
+        // toastConsole.log('layout shift')
         mount()
         lineTracker.stop()
       }
@@ -225,7 +227,7 @@ function editorOverlayLifecycle(
   mount()
   EditorLanguageTracker.plug()
   lineTracker.plug()
-  const layoutShift = setTimeout(lineTracker.stop, 500)
+  const layoutShift = setTimeout(lineTracker.stop, 2500)
 
   return function dispose() {
     clearTimeout(layoutShift)

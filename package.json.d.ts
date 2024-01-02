@@ -14,7 +14,7 @@ declare const data: {
   ],
   "main": "./out/extension",
   "activationEvents": [
-    "*"
+    "onStartupFinished"
   ],
   "scripts": {
     "watch": "ts-node vite.config.custom.ts --watch",

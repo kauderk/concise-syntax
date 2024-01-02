@@ -21,6 +21,7 @@ let createEditorSubscription = () =>
     stateObservable.notify()
   })
 
+let firstRender = true
 const syntaxStyle = createStyles('hide')
 let unsubscribeState = () => {}
 const createStateSubscription = () =>
@@ -28,10 +29,12 @@ const createStateSubscription = () =>
     if (deltaState == state.active) {
       if (!editorUnsubscribe) {
         editorUnsubscribe = createEditorSubscription()
-        highlight.activate(500) // search for editors every 500ms instead of 5000ms to react any editor being opened
+        // the editor flickering "bug" came back... and it's hard to reproduce or know what is causing it
+        highlight.activate(firstRender ? 5000 : 2500) // FIXME: find the moment the css finishes loading
       }
 
       if (anyEditor) {
+        firstRender = false
         syntaxStyle.styleIt(regexToDomToCss())
       }
     } else {

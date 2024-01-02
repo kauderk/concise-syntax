@@ -970,7 +970,7 @@ var __publicField = (obj, key, value) => {
     mount();
     EditorLanguageTracker.plug();
     lineTracker.plug();
-    const layoutShift = setTimeout(lineTracker.stop, 500);
+    const layoutShift = setTimeout(lineTracker.stop, 2500);
     return function dispose() {
       clearTimeout(layoutShift);
       lineTracker.stop();
@@ -1282,6 +1282,7 @@ var __publicField = (obj, key, value) => {
     anyEditor = value;
     stateObservable.notify();
   });
+  let firstRender = true;
   const syntaxStyle = createStyles("hide");
   let unsubscribeState = () => {
   };
@@ -1289,9 +1290,10 @@ var __publicField = (obj, key, value) => {
     if (deltaState == state.active) {
       if (!editorUnsubscribe) {
         editorUnsubscribe = createEditorSubscription();
-        highlight.activate(500);
+        highlight.activate(firstRender ? 5e3 : 2500);
       }
       if (anyEditor) {
+        firstRender = false;
         syntaxStyle.styleIt(regexToDomToCss());
       }
     } else {
