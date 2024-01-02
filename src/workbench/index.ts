@@ -28,7 +28,7 @@ const createStateSubscription = () =>
     if (deltaState == state.active) {
       if (!editorUnsubscribe) {
         editorUnsubscribe = createEditorSubscription()
-        highlight.activate()
+        highlight.activate(500) // search for editors every 500ms instead of 5000ms to react any editor being opened
       }
 
       if (anyEditor) {
@@ -47,8 +47,6 @@ const createStateSubscription = () =>
 const syntax = createSyntaxLifecycle(stateObservable)
 const highlight = createHighlightLifeCycle(editorObservable)
 const tryFn = createTryFunction()
-
-debugger
 
 const conciseSyntax = {
   activate() {

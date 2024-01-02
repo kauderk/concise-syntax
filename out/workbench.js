@@ -581,22 +581,19 @@ var __publicField = (obj, key, value) => {
         running = false;
       }, "Lifecycle crashed unexpectedly when disposing");
     }
-    function reload() {
+    function reload(delay = 5e3) {
       dispose();
-      interval = setInterval(patch, 5e3);
+      interval = setInterval(patch, delay);
     }
     function clean() {
-      clearTimeout(exhaust);
       clearInterval(interval);
     }
-    let exhaust;
     return {
-      activate() {
+      activate(delay = 5e3) {
         if (tryFn2.guard("Lifecycle already crashed therefore not activating again")) {
           return;
         }
-        reload();
-        return;
+        reload(delay);
       },
       dispose() {
         if (tryFn2.guard("Lifecycle already crashed therefore not disposing again")) {
@@ -1292,7 +1289,7 @@ var __publicField = (obj, key, value) => {
     if (deltaState == state.active) {
       if (!editorUnsubscribe) {
         editorUnsubscribe = createEditorSubscription();
-        highlight.activate();
+        highlight.activate(500);
       }
       if (anyEditor) {
         syntaxStyle.styleIt(regexToDomToCss());
@@ -1308,7 +1305,6 @@ var __publicField = (obj, key, value) => {
   const syntax = createSyntaxLifecycle(stateObservable);
   const highlight = createHighlightLifeCycle(editorObservable);
   const tryFn = createTryFunction();
-  debugger;
   const conciseSyntax = {
     activate() {
       tryFn(() => {

@@ -45,33 +45,23 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
       running = false
     }, 'Lifecycle crashed unexpectedly when disposing')
   }
-  function reload() {
+  function reload(delay = 5000) {
     dispose()
-    interval = setInterval(patch, 5000)
+    interval = setInterval(patch, delay)
   }
   function clean() {
-    clearTimeout(exhaust)
     clearInterval(interval)
   }
 
-  let exhaust: any
-
   return {
-    activate() {
+    activate(delay = 5000) {
       if (
         tryFn.guard('Lifecycle already crashed therefore not activating again')
       ) {
         return
       }
 
-      reload()
-      return
-      exhaust = setTimeout(() => {
-        clearTimeout(exhaust)
-        if (!anyUsage) {
-          clearInterval(interval)
-        }
-      }, 1000 * 60 * 2)
+      reload(delay)
     },
     dispose() {
       if (
