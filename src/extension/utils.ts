@@ -12,9 +12,9 @@ export function useState<T extends string>(
     read() {
       return (this.value = context.workspaceState.get(key) as T | undefined)
     },
-    async write(newState: T) {
+    write(newState: T) {
       this.value = newState
-      await context.workspaceState.update(key, newState)
+      context.workspaceState.update(key, newState)
       return newState
     },
   }

@@ -62,13 +62,13 @@ const contributes = {
       command: "extension.reload",
       title: "Mount Extension",
       category: "Concise Syntax",
-      enablement: "!extension.disposed"
+      enablement: "extension.disposed"
     },
     {
       command: "extension.disposeExtension",
       title: "Dispose Extension (free memory)",
       category: "Concise Syntax",
-      enablement: "extension.disposed"
+      enablement: "!extension.disposed"
     },
     {
       command: "extension.toggle",
@@ -137,44 +137,12 @@ function useState(context, key2) {
     read() {
       return this.value = context.workspaceState.get(key2);
     },
-    async write(newState) {
+    write(newState) {
       this.value = newState;
-      await context.workspaceState.update(key2, newState);
+      context.workspaceState.update(key2, newState);
       return newState;
     }
   };
-}
-const JSON_MAP = {
-  stringify: (map) => JSON.stringify(map, stringifyMap),
-  parseOrNew: (str) => {
-    try {
-      const m = JSON.parse(str, parseMap);
-      if (m instanceof Map)
-        return m;
-      return /* @__PURE__ */ new Map();
-    } catch (error) {
-      return /* @__PURE__ */ new Map();
-    }
-  }
-};
-function stringifyMap(key2, value) {
-  if (value instanceof Map) {
-    return {
-      dataType: "Map",
-      value: Array.from(value.entries())
-      // or with spread: value: [...value]
-    };
-  } else {
-    return value;
-  }
-}
-function parseMap(key2, value) {
-  if (typeof value === "object" && value !== null) {
-    if (value.dataType === "Map") {
-      return new Map(value.value);
-    }
-  }
-  return value;
 }
 const key = "editor.tokenColorCustomizations";
 const textMateRules = [
@@ -220,55 +188,38 @@ async function updateSettingsCycle(context, operation) {
   if (!res)
     return;
   const { wasEmpty, specialObjectUserRules: userRules } = res;
-  const sessionStore = useState(context, "textMateRules");
-  const sessionRules = JSON_MAP.parseOrNew(
-    sessionStore.read()
-  );
+  const textColor = useState(context, "textColor");
   let diff = false;
   if (operation == "active") {
     if (wasEmpty) {
       diff = true;
-      syncSessionRules();
-      userRules.push(...sessionRules.values());
+      userRules.push(...textMateRules);
+      tryPatchTextColor(userRules[0], "patch");
     } else {
-      syncSessionRules();
-      const indexToNameMap = new Map(textMateRules.map((r, i) => [r.name, i]));
       const userIndexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]));
-      const updateSessionDiff = (rule) => {
-        diff = true;
-        const j = indexToNameMap.get(rule?.name);
-        if (j > -1) {
-          sessionRules.set(j, rule);
-        }
-      };
-      const pick = (rule) => {
-        const j = indexToNameMap.get(rule.name);
-        return {
-          foreground: sessionRules.get(j)?.settings?.foreground || rule.settings.foreground
-        };
-      };
       for (const presetRule of textMateRules) {
         const i = userIndexToNameMap.get(presetRule.name) ?? -1;
         if (i > -1) {
           const userRule = userRules[i];
           if (!userRule) {
-            userRules[i] = JSONC.assign(presetRule, {
-              settings: pick(presetRule)
-            });
-            updateSessionDiff(userRules[i]);
+            userRules[i] = presetRule;
+            tryPatchTextColor(presetRule, "patch");
+            diff = true;
             continue;
           }
           if (presetRule.scope.some((s, i2) => s !== userRule.scope?.[i2])) {
             userRule.scope = presetRule.scope;
-            updateSessionDiff(userRule);
+            diff = true;
           }
           if (!userRule.settings?.foreground?.match(/^#/)) {
-            userRule.settings = JSONC.assign(userRule.settings ?? {}, pick(presetRule));
-            updateSessionDiff(userRule);
+            userRule.settings = presetRule.settings;
+            tryPatchTextColor(userRule, "patch");
+            diff = true;
           }
         } else {
           userRules.push(presetRule);
-          updateSessionDiff(presetRule);
+          tryPatchTextColor(presetRule, "patch");
+          diff = true;
         }
       }
     }
@@ -279,13 +230,25 @@ async function updateSettingsCycle(context, operation) {
     } else {
       const indexToNameMap = new Map(textMateRules.map((r, i) => [r.name, i]));
       for (let i = userRules.length - 1; i >= 0; i--) {
-        const j = indexToNameMap.get(userRules[i]?.name);
+        const name2 = userRules[i]?.name;
+        const j = indexToNameMap.get(name2);
         if (j > -1) {
           diff = true;
-          sessionRules.set(j, userRules[i]);
           userRules.splice(i, 1);
+          tryPatchTextColor(textMateRules[j], "write");
         }
       }
+    }
+  }
+  function tryPatchTextColor(rule, action) {
+    if (rule?.name != textMateRules[0].name)
+      return;
+    const color = textMateRules[0].settings.foreground;
+    if (action == "write") {
+      textColor.write(rule?.settings?.foreground || color);
+    } else {
+      rule.settings = rule.settings || {};
+      rule.settings.foreground = textColor.read() || color;
     }
   }
   [...textMateRules].reverse().forEach((r, relative, _arr) => {
@@ -301,22 +264,7 @@ async function updateSettingsCycle(context, operation) {
   if (!diff) {
     return true;
   }
-  await sessionStore.write(JSON_MAP.stringify(sessionRules));
   await res.write();
-  function syncSessionRules() {
-    if (sessionRules.size == textMateRules.length) {
-      return true;
-    }
-    if (sessionRules.size == 0) {
-      textMateRules.forEach((r, i) => sessionRules.set(i, r));
-    } else {
-      for (let i = 0; i < textMateRules.length; i++) {
-        if (!sessionRules.get(i)) {
-          sessionRules.set(i, textMateRules[i]);
-        }
-      }
-    }
-  }
 }
 async function tryParseSettings() {
   const workspace = vscode__namespace.workspace.workspaceFolders?.[0].uri;
