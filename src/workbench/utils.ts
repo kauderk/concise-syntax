@@ -152,7 +152,18 @@ export function validateAddedView(node: Node, rebootCleanup?: Function) {
     })
     return
   }
-  const container = findScopeElements(firstView).container
+  let container = findScopeElements(firstView).container
+  if (!container) {
+    // FIXME: this is panic scenario
+    container = firstView.querySelector('.editor-container') as any
+    if (!container) {
+      // prettier-ignore
+      toastConsole.warn('Reboot container not found even without :scope selector', {
+				firstView,
+				container,
+			})
+    }
+  }
 
   if (container) {
     return {

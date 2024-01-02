@@ -20,44 +20,31 @@ const editorFlags = {
 // TODO: add cache
 // TODO: call lazy when opening the first jsx file
 export function regexToDomToCss() {
-  const lineEditor = document.querySelector(linesSelector) as HTMLElement
-  if (!lineEditor) {
-    let css = assembleCss(editorFlags.jsx)
-    if (!css) {
-      toastConsole.warn('Failed to load concise cached syntax styles')
-      return ''
-    }
-    console.warn('Fail to find Editor with selector: ', linesSelector)
-    return css
+  const lineEditors = document.querySelectorAll<HTMLElement>(linesSelector)
+
+  for (const lineEditor of lineEditors) {
+    // FIXME: this feels awkward
+    editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx)
+    const css = assembleCss(editorFlags.jsx)
+    if (css) return css
   }
 
-  const jsxEditor = jsx_parseStyles(lineEditor)
-
-  let css = assembleCss(jsxEditor)
+  // TODO: the window side should request the vscode side to send a "calibrate" command
+  const css = assembleCss(editorFlags.jsx)
   if (!css) {
-    css = assembleCss(editorFlags.jsx)
-    if (!css) {
-      toastConsole.warn('Fail to load concise syntax styles even with cache')
-      return ''
-    }
+    toastConsole.warn('Fail to load concise syntax styles even with cache')
+    return '' // FIXME: the entire extension should panic, if this fails then nothing works...
   }
-  Object.assign(editorFlags.jsx.flags, jsxEditor.flags)
-  Object.assign(editorFlags.jsx.customFlags, jsxEditor.customFlags)
+  console.warn('Fail to find Editor with selector: ', linesSelector)
   return css
 }
 
-function jsx_parseStyles(lineEditor: HTMLElement) {
-  const flags = {
-    jsxTag: null as any,
-    jsxTernaryBrace: null as any,
-    jsxTernaryOtherwise: null as any,
-    vsCodeHiddenTokens: null as any,
-    beginQuote: null as any,
-    endQuote: null as any,
-  }
-  const customFlags = {
-    singleQuotes: null as string | null,
-  }
+function jsx_parseStyles(lineEditor: HTMLElement, editorFlag: EditorFlags) {
+  const flags = editorFlag.flags
+  const customFlags = editorFlag.customFlags
+
+  if (isDone()) return editorFlag
+
   const lines = Array.from(lineEditor.querySelectorAll('div>span'))
 
   parser: for (const line of lines) {
@@ -158,14 +145,17 @@ function jsx_parseStyles(lineEditor: HTMLElement) {
       }
     }
 
-    if (
-      anyFlag &&
-      // TODO: figure out how to pass empty flags
-      Object.values(flags).every((f) => !!f) &&
-      Object.values(customFlags).every((f) => !!f)
-    ) {
+    if (anyFlag && isDone()) {
       break parser
     }
+  }
+
+  function isDone() {
+    // TODO: figure out how to pass empty flags
+    return (
+      Object.values(flags).every((f) => !!f) &&
+      Object.values(customFlags).every((f) => !!f)
+    )
   }
 
   return { flags, customFlags }

@@ -3,7 +3,7 @@ import { createHighlightLifeCycle } from './highlight'
 import { extensionId } from './keys'
 import { createTryFunction } from './lifecycle'
 import { State, state } from 'src/shared/state'
-import { createStyles } from './shared'
+import { createStyles, toastConsole } from './shared'
 import { regexToDomToCss } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 export type { editorObservable, stateObservable }
@@ -18,6 +18,7 @@ let createEditorSubscription = () =>
     if (anyEditor || !value) return
     anyEditor = value
 
+    // toastConsole.log('editorObservable')
     stateObservable.notify()
   })
 
@@ -27,14 +28,17 @@ const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
       if (!editorUnsubscribe) {
+        // toastConsole.log('activate editor')
         editorUnsubscribe = createEditorSubscription()
         highlight.activate(500) // FIXME: find the moment the css finishes loading
       }
 
       if (anyEditor) {
+        // toastConsole.log('syntaxStyle')
         syntaxStyle.styleIt(regexToDomToCss())
       }
     } else {
+      // toastConsole.log('deactivate system')
       editorUnsubscribe?.()
       editorUnsubscribe = undefined
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow but you are checking "anyEditor || !value"

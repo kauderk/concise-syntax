@@ -212,6 +212,7 @@ function editorOverlayLifecycle(
   const lineTracker = () => {
     const line = overlay.querySelector(selectedSelector) as H
     if (!line || tries > 5) {
+      // toastConsole.log('clearInterval lineTracker')
       clearInterval(layoutShift)
       return
     }
@@ -229,7 +230,12 @@ function editorOverlayLifecycle(
   return function dispose() {
     tries = 6
     clearInterval(layoutShift)
-    if (editorLabel) styles.clear(editorLabel)
+    if (editorLabel) {
+      styles.clear(editorLabel)
+    } else {
+      // FIXME: this is like leaking information that can't be clean up later
+      toastConsole.log('editorLabel is undefined')
+    }
     EditorLanguageTracker.disconnect()
     OverlayLineTracker.disconnect()
   }
@@ -269,6 +275,7 @@ function createStackStructure(
       const foundEditor = () => {
         _editorObservable.value = true
       }
+      // toastConsole.log('awkwardStack')
       editorStack.set(
         editor,
         editorOverlayLifecycle(editor, overlay, foundEditor)
@@ -277,6 +284,7 @@ function createStackStructure(
     }
   }
   function REC_added(splitViewView: HTMLElement) {
+    // toastConsole.log('REC_added')
     const elements = findScopeElements(splitViewView)
 
     if (elements.nested) {

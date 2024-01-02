@@ -803,7 +803,16 @@ var __publicField = (obj, key, value) => {
       });
       return;
     }
-    const container = findScopeElements(firstView).container;
+    let container = findScopeElements(firstView).container;
+    if (!container) {
+      container = firstView.querySelector(".editor-container");
+      if (!container) {
+        toastConsole.warn("Reboot container not found even without :scope selector", {
+          firstView,
+          container
+        });
+      }
+    }
     if (container) {
       return {
         rootContainer,
@@ -970,8 +979,11 @@ var __publicField = (obj, key, value) => {
     return function dispose() {
       tries = 6;
       clearInterval(layoutShift);
-      if (editorLabel)
+      if (editorLabel) {
         styles.clear(editorLabel);
+      } else {
+        toastConsole.log("editorLabel is undefined");
+      }
       EditorLanguageTracker.disconnect();
       OverlayLineTracker.disconnect();
     };
@@ -1068,42 +1080,27 @@ var __publicField = (obj, key, value) => {
     }
   };
   function regexToDomToCss() {
-    const lineEditor = document.querySelector(linesSelector);
-    if (!lineEditor) {
-      let css2 = assembleCss(editorFlags.jsx);
-      if (!css2) {
-        toastConsole.warn("Failed to load concise cached syntax styles");
-        return "";
-      }
-      console.warn("Fail to find Editor with selector: ", linesSelector);
-      return css2;
+    const lineEditors = document.querySelectorAll(linesSelector);
+    for (const lineEditor of lineEditors) {
+      editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx);
+      const css2 = assembleCss(editorFlags.jsx);
+      if (css2)
+        return css2;
     }
-    const jsxEditor = jsx_parseStyles(lineEditor);
-    let css = assembleCss(jsxEditor);
+    const css = assembleCss(editorFlags.jsx);
     if (!css) {
-      css = assembleCss(editorFlags.jsx);
-      if (!css) {
-        toastConsole.warn("Fail to load concise syntax styles even with cache");
-        return "";
-      }
+      toastConsole.warn("Fail to load concise syntax styles even with cache");
+      return "";
     }
-    Object.assign(editorFlags.jsx.flags, jsxEditor.flags);
-    Object.assign(editorFlags.jsx.customFlags, jsxEditor.customFlags);
+    console.warn("Fail to find Editor with selector: ", linesSelector);
     return css;
   }
-  function jsx_parseStyles(lineEditor) {
+  function jsx_parseStyles(lineEditor, editorFlag) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
-    const flags = {
-      jsxTag: null,
-      jsxTernaryBrace: null,
-      jsxTernaryOtherwise: null,
-      vsCodeHiddenTokens: null,
-      beginQuote: null,
-      endQuote: null
-    };
-    const customFlags = {
-      singleQuotes: null
-    };
+    const flags = editorFlag.flags;
+    const customFlags = editorFlag.customFlags;
+    if (isDone())
+      return editorFlag;
     const lines = Array.from(lineEditor.querySelectorAll("div>span"));
     parser:
       for (const line of lines) {
@@ -1182,11 +1179,13 @@ var __publicField = (obj, key, value) => {
               }
             }
         }
-        if (anyFlag && // TODO: figure out how to pass empty flags
-        Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f)) {
+        if (anyFlag && isDone()) {
           break parser;
         }
       }
+    function isDone() {
+      return Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f);
+    }
     return { flags, customFlags };
   }
   function assembleCss(editorFlags2) {
