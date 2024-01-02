@@ -24,13 +24,16 @@ import {
   styles,
   validateAddedView,
 } from './utils'
+import type { editorObservable } from './index'
 
 /**
  * @description Change color of highlighted or selected lines
  *
  * Take a look at the {createHighlight} function to see how the styles are generated
  */
-export function createHighlightLifeCycle() {
+export function createHighlightLifeCycle(
+  _editorObservable: typeof editorObservable
+) {
   return lifecycle({
     // prettier-ignore
     dom() {
@@ -53,7 +56,10 @@ export function createHighlightLifeCycle() {
        * 							- selected-text
        * 							- current-line
        */
-      const structure = createStackStructure(DOM.watchForRemoval)
+      const structure = createStackStructure(
+        DOM.watchForRemoval,
+        _editorObservable
+      )
 
       return innerChildrenMutation({
         parent: DOM.watchForRemoval,
@@ -88,7 +94,7 @@ export function createHighlightLifeCycle() {
       })
     },
     dispose() {
-      styles.clearAll()
+      styles.clearOverlays()
     },
   })
 }
@@ -128,7 +134,11 @@ function createHighlight({ node, selector, add, set, label, color }: Selected) {
   return true
 }
 
-function editorOverlayLifecycle(editor: HTMLElement, overlay: HTMLElement) {
+function editorOverlayLifecycle(
+  editor: HTMLElement,
+  overlay: HTMLElement,
+  foundEditor: () => void
+) {
   // lookup state
   let editorLabel = editor.getAttribute('aria-label') as any
 
@@ -143,6 +153,7 @@ function editorOverlayLifecycle(editor: HTMLElement, overlay: HTMLElement) {
 
       if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
         if (language === 'typescriptreact') {
+          foundEditor()
           OverlayLineTracker.observe()
         }
         if (oldLabel && label != oldLabel) {
@@ -225,7 +236,10 @@ function editorOverlayLifecycle(editor: HTMLElement, overlay: HTMLElement) {
   }
 }
 
-function createStackStructure(watchForRemoval: HTMLElement) {
+function createStackStructure(
+  watchForRemoval: HTMLElement,
+  _editorObservable: typeof editorObservable
+) {
   let recStack = new Map<HTMLElement, Function>()
   let editorStack = new Map<HTMLElement, Function>()
   let treeStack = new Map<HTMLElement, Function>()
@@ -243,6 +257,8 @@ function createStackStructure(watchForRemoval: HTMLElement) {
     for (const stack of [recStack, editorStack, treeStack]) {
       for (const [keyNode] of stack) {
         if (condition && !condition(keyNode)) continue
+        // TODO: get me out of here
+        if (stack === editorStack) _editorObservable.value = false
         consumeStack(stack, keyNode)
       }
     }
@@ -250,7 +266,14 @@ function createStackStructure(watchForRemoval: HTMLElement) {
   function awkwardStack(elements: ReturnType<typeof findScopeElements>) {
     const { overlay, editor } = elements
     if (overlay && editor && !editorStack.has(editor)) {
-      editorStack.set(editor, editorOverlayLifecycle(editor, overlay))
+      // TODO: get me out of here
+      const foundEditor = () => {
+        _editorObservable.value = true
+      }
+      editorStack.set(
+        editor,
+        editorOverlayLifecycle(editor, overlay, foundEditor)
+      )
       return true
     }
   }

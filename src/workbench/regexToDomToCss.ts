@@ -17,6 +17,8 @@ const editorFlags = {
   },
 }
 
+// TODO: add cache
+// TODO: call lazy when opening the first jsx file
 export function regexToDomToCss() {
   const lineEditor = document.querySelector(linesSelector) as HTMLElement
   if (!lineEditor) {

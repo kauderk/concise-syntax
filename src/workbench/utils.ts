@@ -7,12 +7,6 @@ import {
 } from './keys'
 import { stylesContainer, toastConsole } from './shared'
 
-export function queryOverlays(node: Node) {
-  if (!(node instanceof HTMLElement)) return []
-  const overlays = Array.from(node.querySelectorAll(overlaySelector))
-  if (node.matches(overlaySelector)) overlays.push(node)
-  return overlays as HTMLElement[]
-}
 export function clear(label?: string) {
   stylesContainer
     .querySelectorAll(label ? `[aria-label="${label}"]` : '[aria-label]')
@@ -22,11 +16,8 @@ export const styles = {
   clear(label: string) {
     clear(label)
   },
-  clearAll() {
+  clearOverlays() {
     clear()
-    // stylesContainer.querySelectorAll('style').forEach((style) => {
-    //   style.textContent = ''
-    // })
   },
   getOrCreateLabeledStyle(label: string, selector: string) {
     let style = stylesContainer.querySelector(

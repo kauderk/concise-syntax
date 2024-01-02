@@ -450,12 +450,12 @@ var __publicField = (obj, key, value) => {
   }
   function createAttributeArrayMutation(props) {
     let previousData = [];
-    const bridgeAttribute2 = (target) => props.watchAttribute.map((a) => {
+    const bridgeAttribute = (target) => props.watchAttribute.map((a) => {
       var _a;
       return (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, a);
     });
     function change(target) {
-      const newData = bridgeAttribute2(target);
+      const newData = bridgeAttribute(target);
       if (newData.every((d, i) => d === previousData[i]))
         return;
       const oldAttributes = [...previousData];
@@ -639,6 +639,426 @@ var __publicField = (obj, key, value) => {
     };
     return tryFunction;
   }
+  const state = {
+    active: "active",
+    inactive: "inactive",
+    disposed: "disposed",
+    error: "error"
+  };
+  const IState = {
+    /**
+     *
+     * @param state
+     * @returns
+     */
+    encode(state2) {
+      return `Concise Syntax: ` + state2;
+    },
+    /**
+     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
+     * @param string
+     * @returns
+     */
+    decode(string) {
+      return Object.values(state).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
+    }
+  };
+  const statusBarSelector = `[id="${extensionId}"]`;
+  function createSyntaxLifecycle(_stateObservable) {
+    return lifecycle({
+      dom() {
+        const statusBar = document.querySelector("footer .right-items");
+        return {
+          watchForRemoval: statusBar,
+          check() {
+            return !!document.contains(statusBar == null ? void 0 : statusBar.parentNode);
+          }
+        };
+      },
+      activate(DOM) {
+        return innerChildrenMutation({
+          parent: DOM.watchForRemoval,
+          validate(node, busy) {
+            if (!busy) {
+              return domExtension(DOM.watchForRemoval);
+            }
+          },
+          added(dom) {
+            const attributeObserver = createAttributeArrayMutation({
+              target: () => dom.item,
+              watchAttribute: [bridgeBetweenVscodeExtension],
+              change([bridge]) {
+                const stringState = IState.decode(bridge);
+                let deltaState = _stateObservable.value;
+                if (!stringState || deltaState === stringState)
+                  return;
+                _stateObservable.value = deltaState = stringState;
+              }
+            });
+            attributeObserver.plug();
+            return attributeObserver.stop;
+          },
+          removed(node, consume) {
+            if (node.matches(statusBarSelector)) {
+              consume();
+            }
+          }
+        });
+      },
+      dispose() {
+      }
+    });
+  }
+  function domExtension(statusBar) {
+    const item = statusBar == null ? void 0 : statusBar.querySelector(statusBarSelector);
+    if (!item)
+      return;
+    const icon = item == null ? void 0 : item.querySelector(".codicon");
+    return { icon, item };
+  }
+  function clear(label) {
+    stylesContainer.querySelectorAll(label ? `[aria-label="${label}"]` : "[aria-label]").forEach((style) => style.remove());
+  }
+  const styles = {
+    clear(label) {
+      clear(label);
+    },
+    clearOverlays() {
+      clear();
+    },
+    getOrCreateLabeledStyle(label, selector) {
+      let style = stylesContainer.querySelector(
+        `[aria-label="${label}"][selector="${selector}"]`
+      );
+      if (!style || !stylesContainer.contains(style)) {
+        style = document.createElement("style");
+        style.setAttribute("aria-label", label);
+        style.setAttribute("selector", selector);
+        stylesContainer.appendChild(style);
+      }
+      return style;
+    },
+    swapLabeledStyle(oldLabel, newLabel) {
+      const styles2 = stylesContainer.querySelectorAll(
+        `[aria-label="${oldLabel}"]`
+      );
+      styles2.forEach((style) => {
+        var _a;
+        style.setAttribute("aria-label", newLabel);
+        style.textContent = ((_a = style.textContent) == null ? void 0 : _a.replace(oldLabel, newLabel)) ?? "";
+      });
+    }
+  };
+  function findScopeElements(view) {
+    const container = view.querySelector(":scope > div > .editor-container");
+    const nested = view.querySelector(
+      ":scope > div > div > div > .split-view-container"
+    );
+    const editor = container == null ? void 0 : container.querySelector(editorSelector);
+    const overlay = editor == null ? void 0 : editor.querySelector(overlaySelector);
+    const anyLine = overlay == null ? void 0 : overlay.querySelector(
+      `${selectedSelector}, ${currentSelector}`
+    );
+    return { nested, container, editor, overlay, anyLine };
+  }
+  function e(el) {
+    return el instanceof HTMLElement;
+  }
+  function consumeStack(stack, key) {
+    var _a;
+    (_a = stack.get(key)) == null ? void 0 : _a();
+    stack.delete(key);
+  }
+  function guardStack(stack, key, cleanup) {
+    if (stack.has(key)) {
+      consumeStack(stack, key);
+    }
+    stack.set(key, cleanup);
+  }
+  function parseTopStyle(node) {
+    var _a, _b;
+    return Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
+  }
+  function validateAddedView(node, rebootCleanup) {
+    if (rebootCleanup) {
+      toastConsole.error("Reboot cleanup already exists", {
+        rebootCleanup
+      });
+      return;
+    }
+    if (!e(node)) {
+      toastConsole.warn("Reboot added node is not HTMLElement", { node });
+      return;
+    }
+    const rootContainer = node.querySelector(splitViewContainerSelector);
+    if (!rootContainer) {
+      toastConsole.warn("Reboot rootContainer not found with selector", {
+        node,
+        splitViewContainerSelector
+      });
+      return;
+    }
+    const [firstView, ...restViews] = rootContainer.childNodes;
+    if (!e(firstView)) {
+      toastConsole.warn("Reboot first view element is not HTMLElement", {
+        rootContainer,
+        firstView
+      });
+      return;
+    }
+    const container = findScopeElements(firstView).container;
+    if (container) {
+      return {
+        rootContainer,
+        firstView,
+        container,
+        restViews
+      };
+    } else {
+      toastConsole.error("Reboot first view container not found", {
+        rootContainer,
+        firstView
+      });
+    }
+  }
+  function createHighlightLifeCycle(_editorObservable) {
+    return lifecycle({
+      // prettier-ignore
+      dom() {
+        var _a;
+        const gridRoot = document.querySelector("#workbench\\.parts\\.editor > div.content > div > div");
+        const root = gridRoot.querySelector(":scope > div > div > div.monaco-scrollable-element > " + splitViewContainerSelector);
+        const editor = root == null ? void 0 : root.querySelector(idSelector);
+        const overlays = (_a = editor == null ? void 0 : editor.querySelector(highlightSelector)) == null ? void 0 : _a.parentElement;
+        return {
+          check: () => !!overlays,
+          watchForRemoval: gridRoot
+        };
+      },
+      activate(DOM) {
+        const structure = createStackStructure(
+          DOM.watchForRemoval,
+          _editorObservable
+        );
+        return innerChildrenMutation({
+          parent: DOM.watchForRemoval,
+          dispose: structure.clearStacks,
+          validate: validateAddedView,
+          added(res) {
+            const recursiveViewTracker = structure.REC_EditorOverlayTracker(
+              res.rootContainer
+            );
+            const firsContainerTracker = specialChildrenMutation({
+              target: () => res.container,
+              options: { childList: true },
+              added() {
+                structure.REC_added(res.firstView);
+              },
+              removed() {
+                structure.bruteForceRemove(res.firstView);
+              }
+            });
+            recursiveViewTracker.plug(() => res.restViews);
+            firsContainerTracker.plug();
+            return () => {
+              recursiveViewTracker.stop();
+              firsContainerTracker.stop();
+            };
+          },
+          removed(node, consume) {
+            consume();
+          }
+        });
+      },
+      dispose() {
+        styles.clearOverlays();
+      }
+    });
+  }
+  function createHighlight({ node, selector, add, set, label, color }) {
+    if (!e(node) || !node.querySelector(selector))
+      return;
+    const top = parseTopStyle(node);
+    if (isNaN(top) || set.has(top) === add || !add && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+    document.querySelector(
+      `[aria-label="${label}"]` + highlightSelector + `>[style*="${top}"]>` + selector
+    )) {
+      return;
+    }
+    set[add ? "add" : "delete"](top);
+    const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
+    styleIt(
+      styles.getOrCreateLabeledStyle(label, selector),
+      `[aria-label="${label}"]${linesSelector} :is(${lines}) {
+				--r: ${color};
+		}`
+    );
+    return true;
+  }
+  function editorOverlayLifecycle(editor, overlay, foundEditor) {
+    let editorLabel = editor.getAttribute("aria-label");
+    const EditorLanguageTracker = createAttributeArrayMutation({
+      target: () => editor,
+      watchAttribute: ["data-mode-id", "aria-label"],
+      change([language, label], [, oldLabel]) {
+        editorLabel = label;
+        if (!language || !label)
+          return;
+        OverlayLineTracker.disconnect();
+        if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
+          if (language === "typescriptreact") {
+            foundEditor();
+            OverlayLineTracker.observe();
+          }
+          if (oldLabel && label != oldLabel) {
+            styles.clear(oldLabel);
+            mount();
+          }
+        } else {
+          styles.clear(label);
+        }
+      }
+    });
+    function mount() {
+      selectedLines.clear();
+      currentLines.clear();
+      overlay.childNodes.forEach((node) => highlightStyles(node, true));
+    }
+    let selectedLines = /* @__PURE__ */ new Set();
+    let currentLines = /* @__PURE__ */ new Set();
+    const OverlayLineTracker = createMutation({
+      target: () => overlay,
+      options: {
+        childList: true
+      },
+      added(node) {
+        highlightStyles(node, true);
+      },
+      removed(node) {
+        highlightStyles(node, false);
+      }
+    });
+    function highlightStyles(node, add) {
+      if (!editorLabel)
+        return;
+      const pre = { node, add, label: editorLabel };
+      createHighlight({
+        selector: selectedSelector,
+        color: "orange",
+        set: selectedLines,
+        ...pre
+      }) || createHighlight({
+        selector: currentSelector,
+        color: "brown",
+        set: currentLines,
+        ...pre
+      });
+    }
+    let done = false;
+    const lineTracker = createAttributeArrayMutation({
+      target: () => overlay,
+      children: true,
+      watchAttribute: ["style"],
+      change([style], [oldStyle], node) {
+        if (done)
+          return;
+        const top = parseTopStyle(node);
+        if (!isNaN(top) && style && oldStyle != style) {
+          done = true;
+          mount();
+          lineTracker.stop();
+        }
+      }
+    });
+    mount();
+    EditorLanguageTracker.plug();
+    lineTracker.plug();
+    const layoutShift = setTimeout(lineTracker.stop, 500);
+    return function dispose() {
+      clearTimeout(layoutShift);
+      lineTracker.stop();
+      if (editorLabel)
+        styles.clear(editorLabel);
+      EditorLanguageTracker.disconnect();
+      OverlayLineTracker.disconnect();
+    };
+  }
+  function createStackStructure(watchForRemoval2, _editorObservable) {
+    let recStack = /* @__PURE__ */ new Map();
+    let editorStack = /* @__PURE__ */ new Map();
+    let treeStack = /* @__PURE__ */ new Map();
+    const REC_EditorOverlayTracker = (target) => specialChildrenMutation({
+      target: () => target,
+      options: {
+        childList: true
+      },
+      added: REC_added,
+      removed: bruteForceRemove
+    });
+    function clearStacks(condition) {
+      for (const stack of [recStack, editorStack, treeStack]) {
+        for (const [keyNode] of stack) {
+          if (condition && !condition(keyNode))
+            continue;
+          if (stack === editorStack)
+            _editorObservable.value = false;
+          consumeStack(stack, keyNode);
+        }
+      }
+    }
+    function awkwardStack(elements) {
+      const { overlay, editor } = elements;
+      if (overlay && editor && !editorStack.has(editor)) {
+        const foundEditor = () => {
+          _editorObservable.value = true;
+        };
+        editorStack.set(
+          editor,
+          editorOverlayLifecycle(editor, overlay, foundEditor)
+        );
+        return true;
+      }
+    }
+    function REC_added(splitViewView) {
+      const elements = findScopeElements(splitViewView);
+      if (elements.nested) {
+        const rec = REC_EditorOverlayTracker(elements.nested);
+        rec.plug();
+        guardStack(recStack, splitViewView, rec.stop);
+      } else if (awkwardStack(elements))
+        ;
+      else if (!elements.overlay) {
+        const treeTracker = specialChildrenMutation({
+          target: () => splitViewView,
+          options: {
+            childList: true,
+            subtree: true
+          },
+          // FIXME: this should handle the mutation callback instead of each added node
+          added() {
+            const elements2 = findScopeElements(splitViewView);
+            if (awkwardStack(elements2)) {
+              treeTracker.stop();
+            }
+          },
+          // TODO: this is not needed
+          removed() {
+          }
+        });
+        treeTracker.plug();
+        guardStack(treeStack, splitViewView, treeTracker.stop);
+      }
+    }
+    function bruteForceRemove(splitViewView) {
+      clearStacks((keyNode) => !watchForRemoval2.contains(keyNode));
+    }
+    return {
+      REC_EditorOverlayTracker,
+      clearStacks,
+      REC_added,
+      bruteForceRemove
+    };
+  }
   const editorFlags = {
     jsx: {
       flags: {
@@ -816,465 +1236,90 @@ var __publicField = (obj, key, value) => {
     const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
     return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
   }
-  const state = {
-    active: "active",
-    inactive: "inactive",
-    disposed: "disposed",
-    error: "error"
-  };
-  const IState = {
-    /**
-     *
-     * @param state
-     * @returns
-     */
-    encode(state2) {
-      return `Concise Syntax: ` + state2;
-    },
-    /**
-     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
-     * @param string
-     * @returns
-     */
-    decode(string) {
-      return Object.values(state).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
-    }
-  };
-  const statusBarSelector = `[id="${extensionId}"]`;
-  const bridgeAttribute = (target) => {
-    var _a, _b;
-    return (
-      // You could pass stringified json, at the moment this extension is either active or inactive
-      !((_b = (_a = target.getAttribute) == null ? void 0 : _a.call(target, bridgeBetweenVscodeExtension)) == null ? void 0 : _b.includes("inactive"))
-    );
-  };
-  function createSyntaxLifecycle() {
-    let Extension;
-    const syntaxStyle = createStyles("hide");
-    function change(extension) {
-      Extension = extension;
-      const on = bridgeAttribute(extension.item);
-      extension.icon.style.fontWeight = on ? "bold" : "normal";
-      const title = "Concise Syntax";
-      extension.item.title = on ? `${title}: active` : `${title}: inactive`;
-      syntaxStyle.styleIt(on ? regexToDomToCss() : "");
-    }
-    function clear2() {
-      if (!Extension)
-        return;
-      Extension.item.removeAttribute("title");
-      Extension.icon.style.removeProperty("font-weight");
-    }
-    return lifecycle({
-      dom() {
-        const statusBar = document.querySelector("footer .right-items");
-        return {
-          watchForRemoval: statusBar,
-          check() {
-            return !!document.contains(statusBar == null ? void 0 : statusBar.parentNode);
-          }
-        };
-      },
-      activate(DOM) {
-        let deltaState;
-        return innerChildrenMutation({
-          parent: DOM.watchForRemoval,
-          validate(node, busy) {
-            if (!busy) {
-              return domExtension(DOM.watchForRemoval);
-            }
-          },
-          added(dom) {
-            const attributeObserver = createAttributeArrayMutation({
-              target: () => dom.item,
-              watchAttribute: [bridgeBetweenVscodeExtension],
-              change([bridge]) {
-                const stringState = IState.decode(bridge);
-                if (stringState) {
-                  if (deltaState === stringState) {
-                    return;
-                  }
-                  deltaState = stringState;
-                  toastConsole.log(
-                    `syntax.ts: change() | stringState: ${stringState}`
-                  );
-                  if (stringState == "disposed") {
-                    syntaxStyle.dispose();
-                    clear2();
-                    return;
-                  }
-                  change(dom);
-                } else {
-                  clear2();
-                }
-              }
-            });
-            attributeObserver.plug();
-            return attributeObserver.stop;
-          },
-          removed(node, consume) {
-            if (node.matches(statusBarSelector)) {
-              consume();
-            }
-          }
-        });
-      },
-      dispose() {
-      }
-    });
-  }
-  function domExtension(statusBar) {
-    const item = statusBar == null ? void 0 : statusBar.querySelector(statusBarSelector);
-    if (!item)
-      return;
-    const icon = item == null ? void 0 : item.querySelector(".codicon");
-    return { icon, item };
-  }
-  function clear(label) {
-    stylesContainer.querySelectorAll(label ? `[aria-label="${label}"]` : "[aria-label]").forEach((style) => style.remove());
-  }
-  const styles = {
-    clear(label) {
-      clear(label);
-    },
-    clearAll() {
-      clear();
-    },
-    getOrCreateLabeledStyle(label, selector) {
-      let style = stylesContainer.querySelector(
-        `[aria-label="${label}"][selector="${selector}"]`
-      );
-      if (!style || !stylesContainer.contains(style)) {
-        style = document.createElement("style");
-        style.setAttribute("aria-label", label);
-        style.setAttribute("selector", selector);
-        stylesContainer.appendChild(style);
-      }
-      return style;
-    },
-    swapLabeledStyle(oldLabel, newLabel) {
-      const styles2 = stylesContainer.querySelectorAll(
-        `[aria-label="${oldLabel}"]`
-      );
-      styles2.forEach((style) => {
-        var _a;
-        style.setAttribute("aria-label", newLabel);
-        style.textContent = ((_a = style.textContent) == null ? void 0 : _a.replace(oldLabel, newLabel)) ?? "";
-      });
-    }
-  };
-  function findScopeElements(view) {
-    const container = view.querySelector(":scope > div > .editor-container");
-    const nested = view.querySelector(
-      ":scope > div > div > div > .split-view-container"
-    );
-    const editor = container == null ? void 0 : container.querySelector(editorSelector);
-    const overlay = editor == null ? void 0 : editor.querySelector(overlaySelector);
-    const anyLine = overlay == null ? void 0 : overlay.querySelector(
-      `${selectedSelector}, ${currentSelector}`
-    );
-    return { nested, container, editor, overlay, anyLine };
-  }
-  function e(el) {
-    return el instanceof HTMLElement;
-  }
-  function consumeStack(stack, key) {
-    var _a;
-    (_a = stack.get(key)) == null ? void 0 : _a();
-    stack.delete(key);
-  }
-  function guardStack(stack, key, cleanup) {
-    if (stack.has(key)) {
-      consumeStack(stack, key);
-    }
-    stack.set(key, cleanup);
-  }
-  function parseTopStyle(node) {
-    var _a, _b;
-    return Number((_b = (_a = node.style) == null ? void 0 : _a.top.match(/\d+/)) == null ? void 0 : _b[0]);
-  }
-  function validateAddedView(node, rebootCleanup) {
-    if (rebootCleanup) {
-      toastConsole.error("Reboot cleanup already exists", {
-        rebootCleanup
-      });
-      return;
-    }
-    if (!e(node)) {
-      toastConsole.warn("Reboot added node is not HTMLElement", { node });
-      return;
-    }
-    const rootContainer = node.querySelector(splitViewContainerSelector);
-    if (!rootContainer) {
-      toastConsole.warn("Reboot rootContainer not found with selector", {
-        node,
-        splitViewContainerSelector
-      });
-      return;
-    }
-    const [firstView, ...restViews] = rootContainer.childNodes;
-    if (!e(firstView)) {
-      toastConsole.warn("Reboot first view element is not HTMLElement", {
-        rootContainer,
-        firstView
-      });
-      return;
-    }
-    const container = findScopeElements(firstView).container;
-    if (container) {
-      return {
-        rootContainer,
-        firstView,
-        container,
-        restViews
-      };
-    } else {
-      toastConsole.error("Reboot first view container not found", {
-        rootContainer,
-        firstView
-      });
-    }
-  }
-  function createHighlightLifeCycle() {
-    return lifecycle({
-      // prettier-ignore
-      dom() {
-        var _a;
-        const gridRoot = document.querySelector("#workbench\\.parts\\.editor > div.content > div > div");
-        const root = gridRoot.querySelector(":scope > div > div > div.monaco-scrollable-element > " + splitViewContainerSelector);
-        const editor = root == null ? void 0 : root.querySelector(idSelector);
-        const overlays = (_a = editor == null ? void 0 : editor.querySelector(highlightSelector)) == null ? void 0 : _a.parentElement;
-        return {
-          check: () => !!overlays,
-          watchForRemoval: gridRoot
-        };
-      },
-      activate(DOM) {
-        const structure = createStackStructure(DOM.watchForRemoval);
-        return innerChildrenMutation({
-          parent: DOM.watchForRemoval,
-          dispose: structure.clearStacks,
-          validate: validateAddedView,
-          added(res) {
-            const recursiveViewTracker = structure.REC_EditorOverlayTracker(
-              res.rootContainer
-            );
-            const firsContainerTracker = specialChildrenMutation({
-              target: () => res.container,
-              options: { childList: true },
-              added() {
-                structure.REC_added(res.firstView);
-              },
-              removed() {
-                structure.bruteForceRemove(res.firstView);
-              }
-            });
-            recursiveViewTracker.plug(() => res.restViews);
-            firsContainerTracker.plug();
-            return () => {
-              recursiveViewTracker.stop();
-              firsContainerTracker.stop();
-            };
-          },
-          removed(node, consume) {
-            consume();
-          }
-        });
-      },
-      dispose() {
-        styles.clearAll();
-      }
-    });
-  }
-  function createHighlight({ node, selector, add, set, label, color }) {
-    if (!e(node) || !node.querySelector(selector))
-      return;
-    const top = parseTopStyle(node);
-    if (isNaN(top) || set.has(top) === add || !add && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
-    document.querySelector(
-      `[aria-label="${label}"]` + highlightSelector + `>[style*="${top}"]>` + selector
-    )) {
-      return;
-    }
-    set[add ? "add" : "delete"](top);
-    const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
-    styleIt(
-      styles.getOrCreateLabeledStyle(label, selector),
-      `[aria-label="${label}"]${linesSelector} :is(${lines}) {
-				--r: ${color};
-		}`
-    );
-    return true;
-  }
-  function editorOverlayLifecycle(editor, overlay) {
-    let editorLabel = editor.getAttribute("aria-label");
-    const EditorLanguageTracker = createAttributeArrayMutation({
-      target: () => editor,
-      watchAttribute: ["data-mode-id", "aria-label"],
-      change([language, label], [, oldLabel]) {
-        editorLabel = label;
-        if (!language || !label)
-          return;
-        OverlayLineTracker.disconnect();
-        if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
-          if (language === "typescriptreact") {
-            OverlayLineTracker.observe();
-          }
-          if (oldLabel && label != oldLabel) {
-            styles.clear(oldLabel);
-            mount();
-          }
-        } else {
-          styles.clear(label);
-        }
-      }
-    });
-    function mount() {
-      selectedLines.clear();
-      currentLines.clear();
-      overlay.childNodes.forEach((node) => highlightStyles(node, true));
-    }
-    let selectedLines = /* @__PURE__ */ new Set();
-    let currentLines = /* @__PURE__ */ new Set();
-    const OverlayLineTracker = createMutation({
-      target: () => overlay,
-      options: {
-        childList: true
-      },
-      added(node) {
-        highlightStyles(node, true);
-      },
-      removed(node) {
-        highlightStyles(node, false);
-      }
-    });
-    function highlightStyles(node, add) {
-      if (!editorLabel)
-        return;
-      const pre = { node, add, label: editorLabel };
-      createHighlight({
-        selector: selectedSelector,
-        color: "orange",
-        set: selectedLines,
-        ...pre
-      }) || createHighlight({
-        selector: currentSelector,
-        color: "brown",
-        set: currentLines,
-        ...pre
-      });
-    }
-    let done = false;
-    const lineTracker = createAttributeArrayMutation({
-      target: () => overlay,
-      children: true,
-      watchAttribute: ["style"],
-      change([style], [oldStyle], node) {
-        if (done)
-          return;
-        const top = parseTopStyle(node);
-        if (!isNaN(top) && style && oldStyle != style) {
-          done = true;
-          mount();
-          lineTracker.stop();
-        }
-      }
-    });
-    mount();
-    EditorLanguageTracker.plug();
-    lineTracker.plug();
-    const layoutShift = setTimeout(lineTracker.stop, 500);
-    return function dispose() {
-      clearTimeout(layoutShift);
-      lineTracker.stop();
-      if (editorLabel)
-        styles.clear(editorLabel);
-      EditorLanguageTracker.disconnect();
-      OverlayLineTracker.disconnect();
-    };
-  }
-  function createStackStructure(watchForRemoval2) {
-    let recStack = /* @__PURE__ */ new Map();
-    let editorStack = /* @__PURE__ */ new Map();
-    let treeStack = /* @__PURE__ */ new Map();
-    const REC_EditorOverlayTracker = (target) => specialChildrenMutation({
-      target: () => target,
-      options: {
-        childList: true
-      },
-      added: REC_added,
-      removed: bruteForceRemove
-    });
-    function clearStacks(condition) {
-      for (const stack of [recStack, editorStack, treeStack]) {
-        for (const [keyNode] of stack) {
-          if (condition && !condition(keyNode))
-            continue;
-          consumeStack(stack, keyNode);
-        }
-      }
-    }
-    function awkwardStack(elements) {
-      const { overlay, editor } = elements;
-      if (overlay && editor && !editorStack.has(editor)) {
-        editorStack.set(editor, editorOverlayLifecycle(editor, overlay));
-        return true;
-      }
-    }
-    function REC_added(splitViewView) {
-      const elements = findScopeElements(splitViewView);
-      if (elements.nested) {
-        const rec = REC_EditorOverlayTracker(elements.nested);
-        rec.plug();
-        guardStack(recStack, splitViewView, rec.stop);
-      } else if (awkwardStack(elements))
-        ;
-      else if (!elements.overlay) {
-        const treeTracker = specialChildrenMutation({
-          target: () => splitViewView,
-          options: {
-            childList: true,
-            subtree: true
-          },
-          // FIXME: this should handle the mutation callback instead of each added node
-          added() {
-            const elements2 = findScopeElements(splitViewView);
-            if (awkwardStack(elements2)) {
-              treeTracker.stop();
-            }
-          },
-          // TODO: this is not needed
-          removed() {
-          }
-        });
-        treeTracker.plug();
-        guardStack(treeStack, splitViewView, treeTracker.stop);
-      }
-    }
-    function bruteForceRemove(splitViewView) {
-      clearStacks((keyNode) => !watchForRemoval2.contains(keyNode));
-    }
+  function createObservable(initialValue) {
+    let _value = initialValue;
+    let _subscribers = [];
     return {
-      REC_EditorOverlayTracker,
-      clearStacks,
-      REC_added,
-      bruteForceRemove
+      get value() {
+        return _value;
+      },
+      set value(payload) {
+        this.set(payload);
+      },
+      set(payload) {
+        if (_value === payload)
+          return;
+        _value = payload;
+        this.notify();
+      },
+      notify() {
+        _subscribers.forEach((observer) => {
+          observer(_value);
+        });
+      },
+      subscribe(cb) {
+        _subscribers.push(cb);
+        cb(_value);
+        return () => {
+          _subscribers = _subscribers.filter((o) => o !== cb);
+        };
+      },
+      /**
+       * Subscribe without calling the callback immediately
+       */
+      $ubscribe(cb) {
+        _subscribers.push(cb);
+        return () => {
+          _subscribers = _subscribers.filter((o) => o !== cb);
+        };
+      }
     };
   }
-  const syntax = createSyntaxLifecycle();
-  const highlight = createHighlightLifeCycle();
+  const editorObservable = createObservable(void 0);
+  const stateObservable = createObservable(void 0);
+  let anyEditor;
+  let editorUnsubscribe;
+  let createEditorSubscription = () => editorObservable.$ubscribe((value) => {
+    if (anyEditor || !value)
+      return;
+    anyEditor = value;
+    stateObservable.notify();
+  });
+  const syntaxStyle = createStyles("hide");
+  let unsubscribeState = () => {
+  };
+  const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
+    if (deltaState == state.active) {
+      if (!editorUnsubscribe) {
+        editorUnsubscribe = createEditorSubscription();
+        highlight.activate();
+      }
+      if (anyEditor) {
+        syntaxStyle.styleIt(regexToDomToCss());
+      }
+    } else {
+      editorUnsubscribe == null ? void 0 : editorUnsubscribe();
+      editorUnsubscribe = void 0;
+      highlight.dispose();
+      anyEditor = void 0;
+      syntaxStyle.dispose();
+    }
+  });
+  const syntax = createSyntaxLifecycle(stateObservable);
+  const highlight = createHighlightLifeCycle(editorObservable);
   const tryFn = createTryFunction();
+  debugger;
   const conciseSyntax = {
     activate() {
       tryFn(() => {
         syntax.activate();
-        highlight.activate();
+        unsubscribeState = createStateSubscription();
       }, "Concise Syntax Extension crashed unexpectedly when activating");
     },
     dispose() {
       tryFn(() => {
         syntax.dispose();
-        highlight.dispose();
+        unsubscribeState();
       }, "Concise Syntax Extension crashed unexpectedly when disposing");
     }
   };
