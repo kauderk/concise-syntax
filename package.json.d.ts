@@ -26,12 +26,14 @@ declare const data: {
       {
         "command": "extension.reload",
         "title": "Mount Extension",
-        "category": "Concise Syntax"
+        "category": "Concise Syntax",
+        "enablement": "extension.disposed"
       },
       {
         "command": "extension.disposeExtension",
         "title": "Dispose Extension (free memory)",
-        "category": "Concise Syntax"
+        "category": "Concise Syntax",
+        "enablement": "!extension.disposed"
       },
       {
         "command": "extension.toggle",

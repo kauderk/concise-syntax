@@ -98,7 +98,9 @@ export async function updateSettingsCycle(
         if (i > -1) {
           const userRule = userRules[i]
           if (!userRule) {
-            userRules[i] = JSONC.assign(userRule ?? {}, presetRule)
+            userRules[i] = JSONC.assign(presetRule, {
+              settings: pick(presetRule),
+            })
             updateSessionDiff(userRules[i])
             continue
           }
@@ -151,7 +153,6 @@ export async function updateSettingsCycle(
     return true
   }
 
-  debugger
   await sessionStore.write(JSON_MAP.stringify(sessionRules))
   await res.write()
 

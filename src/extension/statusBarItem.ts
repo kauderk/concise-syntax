@@ -74,15 +74,16 @@ export async function ExtensionState_statusBarItem(
 
       // prettier-ignore
       disposeConfiguration = vscode.workspace.onDidChangeConfiguration(async (config) => {
-				if (!config.affectsConfiguration(key)) return
+				if (busy || !config.affectsConfiguration(key)) return
 				const next = windowState.read()
 				if (!next) return
-				debugger
+				// TODO: add a throttle to be extra safe
 				await REC_nextStateCycle(next, binary(next))
 			}).dispose
 
       busy = false
     } catch (error: any) {
+      debugger
       crashedMessage = error?.message || 'unknown'
       _item.text = `$(error)` + iconText
       _item.tooltip = IState.encode(state.error)

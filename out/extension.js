@@ -61,12 +61,14 @@ const contributes = {
     {
       command: "extension.reload",
       title: "Mount Extension",
-      category: "Concise Syntax"
+      category: "Concise Syntax",
+      enablement: "!extension.disposed"
     },
     {
       command: "extension.disposeExtension",
       title: "Dispose Extension (free memory)",
-      category: "Concise Syntax"
+      category: "Concise Syntax",
+      enablement: "extension.disposed"
     },
     {
       command: "extension.toggle",
@@ -250,7 +252,9 @@ async function updateSettingsCycle(context, operation) {
         if (i > -1) {
           const userRule = userRules[i];
           if (!userRule) {
-            userRules[i] = JSONC.assign(userRule ?? {}, presetRule);
+            userRules[i] = JSONC.assign(presetRule, {
+              settings: pick(presetRule)
+            });
             updateSessionDiff(userRules[i]);
             continue;
           }
@@ -297,7 +301,6 @@ async function updateSettingsCycle(context, operation) {
   if (!diff) {
     return true;
   }
-  debugger;
   await sessionStore.write(JSON_MAP.stringify(sessionRules));
   await res.write();
   function syncSessionRules() {
@@ -449,16 +452,16 @@ async function ExtensionState_statusBarItem(context, setState) {
         _item.hide();
       }
       disposeConfiguration = vscode__namespace.workspace.onDidChangeConfiguration(async (config) => {
-        if (!config.affectsConfiguration(key))
+        if (busy || !config.affectsConfiguration(key))
           return;
         const next3 = windowState.read();
         if (!next3)
           return;
-        debugger;
         await REC_nextStateCycle(next3, binary(next3));
       }).dispose;
       busy = false;
     } catch (error) {
+      debugger;
       crashedMessage = error?.message || "unknown";
       _item.text = `$(error)` + iconText;
       _item.tooltip = IState.encode(state.error);
