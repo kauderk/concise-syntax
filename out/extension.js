@@ -49,7 +49,7 @@ const categories = [
 ];
 const main = "./out/extension";
 const activationEvents = [
-  "onStartupFinished"
+  "*"
 ];
 const scripts = {
   watch: "ts-node vite.config.custom.ts --watch",
@@ -63,6 +63,11 @@ const contributes = {
       title: "Mount Extension",
       category: "Concise Syntax",
       enablement: "extension.disposed"
+    },
+    {
+      command: "extension.showWebview",
+      title: "extension.showWebview",
+      category: "extension.showWebview"
     },
     {
       command: "extension.disposeExtension",

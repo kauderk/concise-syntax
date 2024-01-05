@@ -13,7 +13,7 @@
   ],
   "main": "./out/extension",
   "activationEvents": [
-    "onStartupFinished"
+    "*"
   ],
   "scripts": {
     "watch": "ts-node vite.config.custom.ts --watch",
@@ -27,6 +27,11 @@
         "title": "Mount Extension",
         "category": "Concise Syntax",
         "enablement": "extension.disposed"
+      },
+      {
+        "command": "extension.showWebview",
+        "title": "extension.showWebview",
+        "category": "extension.showWebview"
       },
       {
         "command": "extension.disposeExtension",
