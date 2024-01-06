@@ -21,11 +21,11 @@ let createCalibrateSubscription = () =>
     // prettier-ignore
     new or_return(
       () => document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`),
-      () => toastConsole.error('Line Editor not found')
+      () => toastConsole.error('Calibrate Editor not found')
     )
 		.or_return(
 			TryRegexToDomToCss, 
-			() => toastConsole.error('Line Editor not found')
+			() => toastConsole.error('Failed to calibrate editor')
 		)
 		.finally(css => {
 			syntaxStyle.styleIt(css)

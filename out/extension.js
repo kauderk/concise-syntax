@@ -153,14 +153,14 @@ function useState(context, key2) {
 const key = "editor.tokenColorCustomizations";
 const textMateRules = [
   {
-    name: "kauderk.concise-syntax.text",
+    name: extensionId + "text",
     scope: ["meta.jsx.children.tsx"],
     settings: {
       foreground: "#B59E7A"
     }
   },
   {
-    name: "kauderk.concise-syntax.redundant",
+    name: extensionId + "redundant",
     scope: [
       "punctuation.definition.tag.begin.tsx",
       "punctuation.definition.tag.end.tsx",
@@ -174,14 +174,14 @@ const textMateRules = [
     }
   },
   {
-    name: "kauderk.concise-syntax.quote.begin",
+    name: extensionId + "quote.begin",
     scope: ["punctuation.definition.string.begin.tsx"],
     settings: {
       foreground: "#b5a90000"
     }
   },
   {
-    name: "kauderk.concise-syntax.quote.end",
+    name: extensionId + "quote.end",
     scope: ["punctuation.definition.string.end.tsx"],
     settings: {
       foreground: "#b5030000"
@@ -470,9 +470,6 @@ async function ExtensionState_statusBarItem(context, setState) {
         );
         return;
       }
-      vscode__namespace.window.showInformationMessage(
-        "Calibrating the extension. This will take a few seconds."
-      );
       try {
         c_busy = true;
         if (c_state === false) {
@@ -530,7 +527,6 @@ async function ExtensionState_statusBarItem(context, setState) {
         );
       }
       async function consume_close() {
-        vscode__namespace.window.showInformationMessage("consume_close");
         disposeClosedEditor();
         await updateState("closed");
       }

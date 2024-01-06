@@ -142,9 +142,6 @@ export async function ExtensionState_statusBarItem(
         )
         return
       }
-      vscode.window.showInformationMessage(
-        'Calibrating the extension. This will take a few seconds.'
-      )
 
       // show
       try {
@@ -221,17 +218,13 @@ export async function ExtensionState_statusBarItem(
       } catch (error: any) {
         debugger
         c_state = undefined
-
         await consume_close()
-
         vscode.window.showErrorMessage(
           `Error: failed to open calibrate file -> ${error?.message}`
         )
       }
       async function consume_close() {
-        vscode.window.showInformationMessage('consume_close')
         disposeClosedEditor()
-
         await updateState('closed')
       }
       // prettier-ignore

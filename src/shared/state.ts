@@ -29,6 +29,7 @@ export const IState = {
 }
 
 export const calibrateIcon = 'go-to-file'
+export const calibrationFileName = 'syntax.tsx'
 export const calibrate = {
   opening: 'opening',
   opened: 'opened',

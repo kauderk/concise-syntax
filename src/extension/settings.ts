@@ -2,18 +2,19 @@ import * as vscode from 'vscode'
 import * as fs from 'fs'
 import { _catch, useState } from './utils'
 import JSONC from 'comment-json'
+import { extensionId } from 'src/workbench/keys'
 
 export const key = 'editor.tokenColorCustomizations'
 const textMateRules = [
   {
-    name: 'kauderk.concise-syntax.text',
+    name: extensionId + 'text',
     scope: ['meta.jsx.children.tsx'],
     settings: {
       foreground: '#B59E7A',
     },
   },
   {
-    name: 'kauderk.concise-syntax.redundant',
+    name: extensionId + 'redundant',
     scope: [
       'punctuation.definition.tag.begin.tsx',
       'punctuation.definition.tag.end.tsx',
@@ -27,14 +28,14 @@ const textMateRules = [
     },
   },
   {
-    name: 'kauderk.concise-syntax.quote.begin',
+    name: extensionId + 'quote.begin',
     scope: ['punctuation.definition.string.begin.tsx'],
     settings: {
       foreground: '#b5a90000',
     },
   },
   {
-    name: 'kauderk.concise-syntax.quote.end',
+    name: extensionId + 'quote.end',
     scope: ['punctuation.definition.string.end.tsx'],
     settings: {
       foreground: '#b5030000',
