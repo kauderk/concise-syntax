@@ -165,9 +165,12 @@ export async function ExtensionState_statusBarItem(
           await updateState('opening')
           const document = await vscode.workspace.openTextDocument(uriRemote)
           const editor = await vscode.window.showTextDocument(document, {
-            preview: true,
+            preview: false,
             preserveFocus: false,
           })
+
+          // vscode.window.showInformationMessage('opening...')
+          await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
           await updateState('opened')
 
           // click

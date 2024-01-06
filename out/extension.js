@@ -478,9 +478,10 @@ async function ExtensionState_statusBarItem(context, setState) {
           await updateState("opening");
           const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
           const editor = await vscode__namespace.window.showTextDocument(document, {
-            preview: true,
+            preview: false,
             preserveFocus: false
           });
+          await new Promise((resolve) => setTimeout(resolve, 1e3));
           await updateState("opened");
         } else if (c_state === true) {
           c_state = false;

@@ -29,6 +29,7 @@ let createCalibrateSubscription = () =>
     toastConsole.log('calibrateObservable', value)
     // FIXME: if anything fails the state cycle will be broken
     if (value == 'bootUp') {
+      debugger
       tryClick()
     } else if (value == calibrate.opening) {
       // noop

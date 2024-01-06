@@ -1103,6 +1103,7 @@ var __publicField = (obj, key, value) => {
   };
   function TryRegexToDomToCss(lineEditor) {
     editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx);
+    window.editorFlags = editorFlags;
     return assembleCss(editorFlags.jsx);
   }
   function jsx_parseStyles(lineEditor, editorFlag) {
@@ -1149,11 +1150,18 @@ var __publicField = (obj, key, value) => {
           };
           anyFlag = true;
         } else if (!flags.jsxTernaryOtherwise && ((_f = (_e = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.jsxTernaryOtherwise)) {
-          const closing = SliceClassList(line, -7);
-          if (!closing.okLength)
-            continue;
-          const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing);
-          const selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
+          let selector;
+          const closing7 = SliceClassList(line, -7);
+          if (closing7.okLength) {
+            const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing7);
+            selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
+          } else {
+            const closing5 = SliceClassList(line, -5);
+            if (!closing5.okLength)
+              continue;
+            const [blank0, closeBrace, colonBlank, nullIsh, closeBracket] = toFlatClassList(closing5);
+            selector = `.${blank0}+.${closeBrace}+.${colonBlank}+.${nullIsh}+.${closeBracket}:last-child`;
+          }
           flags.jsxTernaryOtherwise = {
             // find ") : null}" then hide it all
             hide: `:has(${selector}) *`,
@@ -1286,6 +1294,7 @@ var __publicField = (obj, key, value) => {
   let createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
     toastConsole.log("calibrateObservable", value);
     if (value == "bootUp") {
+      debugger;
       tryClick();
     } else if (value == calibrate.opening)
       ;
