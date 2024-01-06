@@ -445,33 +445,73 @@ async function ExtensionState_statusBarItem(context, setState) {
       await REC_nextStateCycle(next2, next2);
     })
   );
+  const remoteCalibratePath = path.join(__dirname, "syntax.tsx");
+  const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
+  let c_state = false;
+  let c_busy = false;
   const calibrateCommand = packageJson.contributes.commands[3].command;
   context.subscriptions.push(
     vscode__namespace.commands.registerCommand(calibrateCommand, async () => {
-      debugger;
-      const remoteCalibratePath = path.join(__dirname, "syntax.tsx");
-      const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
-      try {
-        const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
-        const editor = await vscode__namespace.window.showTextDocument(document, {
-          preview: true,
-          preserveFocus: false
-        });
-        await new Promise((resolve) => setTimeout(resolve, 2e3));
-        await closeFileIfOpen(uriRemote).catch(() => {
-          vscode__namespace.commands.executeCommand("workbench.action.closeActiveEditor");
-        });
-      } catch (error) {
+      if (!_calibrate) {
+        vscode__namespace.window.showErrorMessage("No status bar item found");
+        return;
+      }
+      if (c_state === void 0) {
         vscode__namespace.window.showErrorMessage(
-          `Error: failed to open calibrate file -> ${error.message}`
+          "Error: cannot calibrate because there is no valid state"
+        );
+        return;
+      }
+      if (c_busy) {
+        vscode__namespace.window.showInformationMessage(
+          "The extension is busy. Try again in a few seconds."
+        );
+        return;
+      }
+      debugger;
+      try {
+        if (c_state === false) {
+          c_state = true;
+          c_busy = true;
+          await updateState("opening");
+          const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
+          const editor = await vscode__namespace.window.showTextDocument(document, {
+            preview: true,
+            preserveFocus: false
+          });
+          await updateState("opened");
+          c_busy = false;
+        } else if (c_state === true) {
+          c_state = false;
+          c_busy = true;
+          await closeFileIfOpen(uriRemote);
+          await updateState("closed");
+          c_busy = false;
+        } else {
+          throw new Error("Invalid state");
+        }
+      } catch (error) {
+        c_state = void 0;
+        c_busy = false;
+        await updateState("error");
+        vscode__namespace.window.showErrorMessage(
+          `Error: failed to open calibrate file -> ${error?.message}`
         );
       }
       async function closeFileIfOpen(file) {
-        const tabs = vscode__namespace.window.tabGroups.all.map((tg) => tg.tabs).flat();
-        const index = tabs.findIndex((tab) => tab.input instanceof vscode__namespace.TabInputText && tab.input.uri.path === file.path);
-        if (index !== -1) {
-          await vscode__namespace.window.tabGroups.close(tabs[index]);
+        try {
+          const tabs = vscode__namespace.window.tabGroups.all.map((tg) => tg.tabs).flat();
+          const index = tabs.findIndex((tab) => tab.input instanceof vscode__namespace.TabInputText && tab.input.uri.path === file.path);
+          if (index !== -1) {
+            await vscode__namespace.window.tabGroups.close(tabs[index]);
+          }
+        } catch (error) {
+          vscode__namespace.commands.executeCommand("workbench.action.closeActiveEditor");
         }
+      }
+      function updateState(state2, t = 1e3) {
+        _calibrate.tooltip = state2;
+        return new Promise((resolve) => setTimeout(resolve, t));
       }
     })
   );
@@ -483,7 +523,7 @@ async function ExtensionState_statusBarItem(context, setState) {
   );
   _calibrate.command = calibrateCommand;
   _calibrate.text = `c`;
-  _calibrate.tooltip = IState.encode(state.inactive);
+  _calibrate.tooltip = "bootUp";
   _calibrate.show();
   const next = windowState.read() ?? "active";
   await REC_nextStateCycle(next, binary(next));

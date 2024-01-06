@@ -117,40 +117,95 @@ export async function ExtensionState_statusBarItem(
     })
   )
 
+  const remoteCalibratePath = path.join(__dirname, 'syntax.tsx')
+  const uriRemote = vscode.Uri.file(remoteCalibratePath)
+
+  let c_state: undefined | boolean = false
+  let c_busy = false
   const calibrateCommand = packageJson.contributes.commands[3].command
   context.subscriptions.push(
     vscode.commands.registerCommand(calibrateCommand, async () => {
+      if (!_calibrate) {
+        vscode.window.showErrorMessage('No status bar item found')
+        return
+      }
+      if (c_state === undefined) {
+        vscode.window.showErrorMessage(
+          'Error: cannot calibrate because there is no valid state'
+        )
+        return
+      }
+      if (c_busy) {
+        vscode.window.showInformationMessage(
+          'The extension is busy. Try again in a few seconds.'
+        )
+        return
+      }
       debugger
-      const remoteCalibratePath = path.join(__dirname, 'syntax.tsx')
-      const uriRemote = vscode.Uri.file(remoteCalibratePath)
+
+      /**
+       * standBy     nothing / bootUp
+       * requesting  click   / opening
+       * loaded      dom     / opened
+       * windowState nothing / closed
+       */
 
       // show
       try {
-        const document = await vscode.workspace.openTextDocument(uriRemote)
-        const editor = await vscode.window.showTextDocument(document, {
-          preview: true,
-          preserveFocus: false,
-        })
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-        // If they deprecate it for good then close whatever is open :(
-        await closeFileIfOpen(uriRemote).catch(() => {
-          vscode.commands.executeCommand('workbench.action.closeActiveEditor')
-        })
+        // click - state was bootUp or closed
+        if (c_state === false) {
+          c_state = true
+          c_busy = true
+
+          await updateState('opening')
+          const document = await vscode.workspace.openTextDocument(uriRemote)
+          const editor = await vscode.window.showTextDocument(document, {
+            preview: true,
+            preserveFocus: false,
+          })
+          await updateState('opened')
+
+          c_busy = false
+          // click
+        } else if (c_state === true) {
+          c_state = false
+          c_busy = true
+
+          await closeFileIfOpen(uriRemote)
+          await updateState('closed')
+
+          c_busy = false
+          // just be extra safe
+        } else {
+          throw new Error('Invalid state')
+        }
       } catch (error: any) {
+        c_state = undefined
+        c_busy = false
+        await updateState('error')
         vscode.window.showErrorMessage(
-          `Error: failed to open calibrate file -> ${error.message}`
+          `Error: failed to open calibrate file -> ${error?.message}`
         )
       }
       // prettier-ignore
+      // If they deprecate it for good then close whatever is open :(
       async function closeFileIfOpen(file: vscode.Uri) {
-        // @ts-ignore
-        const tabs: any = vscode.window.tabGroups.all.map(tg => tg.tabs).flat();
-        // @ts-ignore
-        const index = tabs.findIndex(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.path === file.path);
-        if (index !== -1) {
-          // @ts-ignore
-            await vscode.window.tabGroups.close(tabs[index]);
-        }
+				try {
+					// @ts-ignore
+					const tabs: any = vscode.window.tabGroups.all.map(tg => tg.tabs).flat();
+					// @ts-ignore
+					const index = tabs.findIndex(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.path === file.path);
+					if (index !== -1) {
+						// @ts-ignore
+							await vscode.window.tabGroups.close(tabs[index]);
+					}
+				} catch (error) {
+					vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+				}
+      }
+      function updateState(state: string, t = 1000) {
+        _calibrate!.tooltip = state
+        return new Promise((resolve) => setTimeout(resolve, t))
       }
     })
   )
@@ -164,7 +219,7 @@ export async function ExtensionState_statusBarItem(
   )
   _calibrate.command = calibrateCommand
   _calibrate.text = `c`
-  _calibrate.tooltip = IState.encode(state.inactive)
+  _calibrate.tooltip = 'bootUp'
   _calibrate.show()
 
   const next = windowState.read() ?? 'active'
