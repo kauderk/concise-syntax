@@ -1287,74 +1287,75 @@ var __publicField = (obj, key, value) => {
   }
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
-  const calibrateObservable = createObservable(
-    void 0
-  );
+  const calibrateObservable = createObservable(void 0);
   let calibrateUnsubscribe;
   let createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
-    toastConsole.log("calibrateObservable", value);
-    if (value == "bootUp") {
+    if (value != calibrate.opened)
+      return;
+    debugger;
+    const x = new or_return(
+      () => document.querySelector(`[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`),
+      () => toastConsole.error("Line Editor not found")
+    ).or_return(
+      TryRegexToDomToCss,
+      () => toastConsole.error("Line Editor not found")
+    ).finally((css) => {
       debugger;
-      tryClick();
-    } else if (value == calibrate.opening)
-      ;
-    else if (value == calibrate.opened) {
-      const lineEditor = document.querySelector(
-        `[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`
-      );
-      if (!lineEditor) {
-        toastConsole.error("Line Editor not found");
-      } else {
-        const css = TryRegexToDomToCss(lineEditor);
-        if (css) {
-          syntaxStyle.styleIt(css);
+      syntaxStyle.styleIt(css);
+      stateObservable.notify();
+      return 0;
+    });
+    debugger;
+    console.log(x);
+  });
+  class or_return {
+    constructor(fn, onError) {
+      this.fn = fn;
+      this.onError = onError;
+      this.fn = fn;
+      this.onError = onError;
+    }
+    finally(fn) {
+      try {
+        const value = this.fn();
+        if (value) {
+          return fn(value);
         } else {
-          toastConsole.error(
-            "Fail to load concise syntax styles even with cache"
-          );
+          this.onError();
         }
-      }
-      tryClick();
-    } else
-      ;
-    function tryClick() {
-      const c = document.querySelector(ICalibrate.selector);
-      if (!c) {
-        toastConsole.error("Calibrate button not found");
-      } else {
-        c.click();
+      } catch (error) {
+        this.onError();
       }
     }
-  });
-  let anyEditor;
-  let editorUnsubscribe;
-  let createEditorSubscription = () => editorObservable.$ubscribe((value) => {
-    toastConsole.log("editorObservable", value);
-    if (anyEditor || !value)
-      return;
-    anyEditor = value;
-    stateObservable.notify();
-  });
+    or_return(fn, onError) {
+      try {
+        const value = this.fn();
+        if (value) {
+          return new or_return(() => fn(value), onError);
+        } else {
+          this.onError();
+        }
+      } catch (error) {
+        this.onError();
+      }
+      return new or_return(console.log, console.error);
+    }
+  }
   const syntaxStyle = createStyles("hide");
   let unsubscribeState = () => {
   };
   let running = false;
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
-    toastConsole.log("stateObservable", deltaState);
     if (deltaState == state.active) {
       if (running)
-        return toastConsole.warn("Trying to run again");
+        return;
       running = true;
-      editorUnsubscribe = createEditorSubscription();
       highlight.activate(500);
       calibrateUnsubscribe = createCalibrateSubscription();
       calibration.activate(500);
     } else {
       running = false;
-      editorUnsubscribe == null ? void 0 : editorUnsubscribe();
-      editorUnsubscribe = void 0;
       highlight.dispose();
-      anyEditor = void 0;
       syntaxStyle.dispose();
       calibrateUnsubscribe == null ? void 0 : calibrateUnsubscribe();
       calibrateUnsubscribe = void 0;

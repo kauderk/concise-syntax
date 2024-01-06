@@ -11,9 +11,7 @@ export type { editorObservable, stateObservable, calibrateObservable }
 
 const editorObservable = createObservable<undefined | boolean>(undefined)
 const stateObservable = createObservable<State | undefined>(undefined)
-const calibrateObservable = createObservable<Calibrate | undefined | 'bootUp'>(
-  undefined
-)
+const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
 /**
  * standBy     nothing   / bootUp
@@ -26,67 +24,75 @@ const calibrateObservable = createObservable<Calibrate | undefined | 'bootUp'>(
 let calibrateUnsubscribe: Function | undefined
 let createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((value) => {
-    toastConsole.log('calibrateObservable', value)
-    // FIXME: if anything fails the state cycle will be broken
-    if (value == 'bootUp') {
-      debugger
-      tryClick()
-    } else if (value == calibrate.opening) {
-      // noop
-    } else if (value == calibrate.opened) {
-      const lineEditor = document.querySelector<HTMLElement>(
-        `[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`
-      )
-      if (!lineEditor) {
-        toastConsole.error('Line Editor not found')
-      } else {
-        const css = TryRegexToDomToCss(lineEditor)
-        if (css) {
-          syntaxStyle.styleIt(css)
-        } else {
-          toastConsole.error(
-            'Fail to load concise syntax styles even with cache'
-          )
-        }
-      }
-      tryClick()
-    } else if (value == calibrate.closed) {
-      // noop
-    } else {
-      // noop
-    }
-    function tryClick() {
-      const c = document.querySelector<HTMLElement>(ICalibrate.selector)
-      if (!c) {
-        toastConsole.error('Calibrate button not found')
-      } else {
-        c.click()
-      }
-    }
+    if (value != calibrate.opened) return
+    debugger
+    // prettier-ignore
+    const x = new or_return(
+      () => document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`),
+      () => toastConsole.error('Line Editor not found')
+    )
+		.or_return(
+			TryRegexToDomToCss, 
+			() => toastConsole.error('Line Editor not found')
+		)
+		.finally(css => {
+			debugger
+			syntaxStyle.styleIt(css)
+			stateObservable.notify()
+			return 0
+		})
+    debugger
+    console.log(x)
   })
 
-let anyEditor: typeof editorObservable.value
-let editorUnsubscribe: Function | undefined
-let createEditorSubscription = () =>
-  editorObservable.$ubscribe((value) => {
-    toastConsole.log('editorObservable', value)
-    if (anyEditor || !value) return // the unwinding of the editorObservable could cause a stack overflow but you are checking "anyEditor || !value"
-    anyEditor = value
+class or_return<T> {
+  constructor(
+    private fn: () => T | ((a: any) => T),
+    private onError: () => any
+  ) {
+    this.fn = fn
+    this.onError = onError
+  }
 
-    stateObservable.notify()
-  })
+  finally<R, Y = T>(fn: (a: NonNullable<Y>) => R): R | undefined {
+    try {
+      const value = this.fn()
+      if (value) {
+        // @ts-ignore
+        return fn(value)
+      } else {
+        this.onError()
+      }
+    } catch (error) {
+      this.onError()
+    }
+  }
+
+  or_return<Y>(fn: (a: NonNullable<T>) => Y, onError: () => any) {
+    try {
+      const value = this.fn()
+      if (value) {
+        // @ts-ignore
+        return new or_return(() => fn(value), onError)
+      } else {
+        this.onError()
+      }
+    } catch (error) {
+      this.onError()
+    }
+    return new or_return(console.log, console.error) as or_return<Y>
+  }
+}
 
 const syntaxStyle = createStyles('hide')
 let unsubscribeState = () => {}
 let running = false
 const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
-    toastConsole.log('stateObservable', deltaState)
     if (deltaState == state.active) {
-      if (running) return toastConsole.warn('Trying to run again')
+      if (running) return // FIXME:
       running = true
 
-      editorUnsubscribe = createEditorSubscription()
       highlight.activate(500) // FIXME: find the moment the css finishes loading
 
       calibrateUnsubscribe = createCalibrateSubscription()
@@ -94,11 +100,8 @@ const createStateSubscription = () =>
     } else {
       running = false
 
-      editorUnsubscribe?.()
-      editorUnsubscribe = undefined
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow but you are checking "anyEditor || !value"
 
-      anyEditor = undefined
       syntaxStyle.dispose()
 
       calibrateUnsubscribe?.()
