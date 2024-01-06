@@ -1113,13 +1113,9 @@ var __publicField = (obj, key, value) => {
       }
     }
   };
-  function TryRegexToDomToCss(lineEditor) {
-    editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx);
-    window.editorFlags = editorFlags;
-    return assembleCss(editorFlags.jsx);
-  }
-  function jsx_parseStyles(lineEditor, editorFlag) {
+  function jsx_parseStyles(lineEditor, _editorFlag) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+    const editorFlag = structuredClone(_editorFlag);
     const flags = editorFlag.flags;
     const customFlags = editorFlag.customFlags;
     if (isDone())
@@ -1258,6 +1254,23 @@ var __publicField = (obj, key, value) => {
     const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
     return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
   }
+  function mergeDeep(...objects) {
+    const isObject = (obj) => obj && typeof obj === "object";
+    return objects.reduce((prev, obj) => {
+      Object.keys(obj).forEach((key) => {
+        const pVal = prev[key];
+        const oVal = obj[key];
+        if (Array.isArray(pVal) && Array.isArray(oVal)) {
+          prev[key] = pVal.concat(...oVal);
+        } else if (isObject(pVal) && isObject(oVal)) {
+          prev[key] = mergeDeep(pVal, oVal);
+        } else {
+          prev[key] = oVal;
+        }
+      });
+      return prev;
+    }, {});
+  }
   function createObservable(initialValue) {
     let _value = initialValue;
     let _subscribers = [];
@@ -1333,6 +1346,35 @@ var __publicField = (obj, key, value) => {
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
   const calibrateObservable = createObservable(void 0);
+  const sessionKey = extensionId + ".sessionFlags.jsx";
+  function TryRegexToDomToCss(lineEditor) {
+    let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx);
+    try {
+      let session = JSON.parse(window.localStorage.getItem(sessionKey) || "{}");
+      if (typeof session !== "object") {
+        session = {};
+      }
+      jsxFlags = mergeDeep(session, jsxFlags);
+      window.localStorage.setItem(sessionKey, JSON.stringify(jsxFlags));
+    } catch (error) {
+      window.localStorage.removeItem(sessionKey);
+      toastConsole.error(`Failed to store jsx flags: ${error.message}`, { error });
+    }
+    return assembleCss(jsxFlags);
+  }
+  function sessionCss() {
+    try {
+      let session = JSON.parse(window.localStorage.getItem(sessionKey) || "{}");
+      if (typeof session !== "object") {
+        throw new Error("session is not an object");
+      }
+      return assembleCss(session);
+    } catch (error) {
+      window.localStorage.removeItem(sessionKey);
+    }
+  }
+  const calibrateStyle = createStyles("calibrate");
+  calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
   let calibrateUn = deltaFn();
   let createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
     if (value != calibrate.opened)
@@ -1355,6 +1397,13 @@ var __publicField = (obj, key, value) => {
   };
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
+      if (!highlight.running) {
+        const cache = sessionCss();
+        if (cache) {
+          syntaxStyle.styleIt(cache);
+          highlight.activate(2500);
+        }
+      }
       if (!calibration.running) {
         calibrateUn.fn = createCalibrateSubscription();
         calibration.activate(500);

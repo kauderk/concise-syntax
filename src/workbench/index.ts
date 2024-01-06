@@ -5,7 +5,8 @@ import { createTryFunction } from './lifecycle'
 import { IState, State, state } from 'src/shared/state'
 import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
 import { createStyles, toastConsole } from './shared'
-import { TryRegexToDomToCss } from './regexToDomToCss'
+// prettier-ignore
+import { assembleCss, editorFlags, jsx_parseStyles, mergeDeep } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 import { or_return } from '../shared/or_return'
 import { deltaFn } from 'src/shared/utils'
@@ -15,6 +16,35 @@ const editorObservable = createObservable<undefined | boolean>(undefined)
 const stateObservable = createObservable<State | undefined>(undefined)
 const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
+const sessionKey = extensionId + '.sessionFlags.jsx'
+function TryRegexToDomToCss(lineEditor: HTMLElement) {
+  let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx)
+  try {
+    let session = JSON.parse(window.localStorage.getItem(sessionKey) || '{}')
+    if (typeof session !== 'object') {
+      session = {}
+    }
+    jsxFlags = mergeDeep(session, jsxFlags)
+    window.localStorage.setItem(sessionKey, JSON.stringify(jsxFlags))
+  } catch (error: any) {
+    window.localStorage.removeItem(sessionKey)
+    toastConsole.error(`Failed to store jsx flags: ${error.message}`, { error })
+  }
+  return assembleCss(jsxFlags)
+}
+function sessionCss() {
+  try {
+    let session = JSON.parse(window.localStorage.getItem(sessionKey) || '{}')
+    if (typeof session !== 'object') {
+      throw new Error('session is not an object')
+    }
+    return assembleCss(session)
+  } catch (error) {
+    window.localStorage.removeItem(sessionKey)
+  }
+}
+const calibrateStyle = createStyles('calibrate')
+calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
 let calibrateUn = deltaFn()
 let createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((value) => {
@@ -42,6 +72,13 @@ let unsubscribeState = () => {}
 const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
+      if (!highlight.running) {
+        const cache = sessionCss()
+        if (cache) {
+          syntaxStyle.styleIt(cache)
+          highlight.activate(2500)
+        }
+      }
       if (!calibration.running) {
         calibrateUn.fn = createCalibrateSubscription()
         calibration.activate(500)
@@ -49,7 +86,7 @@ const createStateSubscription = () =>
     } else {
       syntaxStyle.dispose()
 
-      highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow but you are checking "anyEditor || !value"
+      highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow
 
       calibrateUn.consume()
       calibration.dispose()

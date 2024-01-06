@@ -1,7 +1,7 @@
-import { linesSelector, customCSS } from './keys'
+import { linesSelector, customCSS, extensionId } from './keys'
 import { toastConsole } from './shared'
 
-const editorFlags = {
+export const editorFlags = {
   jsx: {
     flags: {
       jsxTag: null as FlagOr,
@@ -17,17 +17,11 @@ const editorFlags = {
   },
 }
 
-// TODO: add cache
-// TODO: call lazy when opening the first jsx file
-export function TryRegexToDomToCss(lineEditor: HTMLElement) {
-  // TODO: give the option to reset parts of the cache
-  editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx)
-  // @ts-ignore
-  window.editorFlags = editorFlags
-  return assembleCss(editorFlags.jsx)
-}
-
-function jsx_parseStyles(lineEditor: HTMLElement, editorFlag: EditorFlags) {
+export function jsx_parseStyles(
+  lineEditor: HTMLElement,
+  _editorFlag: EditorFlags
+) {
+  const editorFlag = structuredClone(_editorFlag)
   const flags = editorFlag.flags
   const customFlags = editorFlag.customFlags
 
@@ -159,7 +153,7 @@ function jsx_parseStyles(lineEditor: HTMLElement, editorFlag: EditorFlags) {
 }
 
 type EditorFlags = (typeof editorFlags)[keyof typeof editorFlags]
-function assembleCss(editorFlags: EditorFlags) {
+export function assembleCss(editorFlags: EditorFlags) {
   const root = `${linesSelector}>div>span`
   const { flags, customFlags } = editorFlags
 
@@ -215,4 +209,25 @@ function SliceClassList(line: Element, slice: number) {
     .slice(slice)
     .map((c) => Array.from(c.classList))
   return Object.assign(sliced, { okLength: sliced.length == slice * -1 })
+}
+
+export function mergeDeep(...objects: any[]) {
+  const isObject = (obj: any) => obj && typeof obj === 'object'
+
+  return objects.reduce((prev, obj) => {
+    Object.keys(obj).forEach((key) => {
+      const pVal = prev[key]
+      const oVal = obj[key]
+
+      if (Array.isArray(pVal) && Array.isArray(oVal)) {
+        prev[key] = pVal.concat(...oVal)
+      } else if (isObject(pVal) && isObject(oVal)) {
+        prev[key] = mergeDeep(pVal, oVal)
+      } else {
+        prev[key] = oVal
+      }
+    })
+
+    return prev
+  }, {})
 }

@@ -384,6 +384,7 @@ let c_state = false;
 let c_busy = false;
 let disposeClosedEditor = deltaFn();
 async function ExtensionState_statusBarItem(context, setState) {
+  const extensionState = getStateStore(context);
   const windowState = getWindowState(context);
   await windowState.write(setState);
   vscode__namespace.commands.executeCommand(
@@ -447,7 +448,6 @@ async function ExtensionState_statusBarItem(context, setState) {
   const toggleCommand = packageJson.contributes.commands[2].command;
   context.subscriptions.push(
     vscode__namespace.commands.registerCommand(toggleCommand, async () => {
-      const extensionState = getStateStore(context);
       if (extensionState.read() == "disposed") {
         return vscode__namespace.window.showInformationMessage(
           "The extension is disposed. Mount it to use this command."
@@ -471,6 +471,11 @@ async function ExtensionState_statusBarItem(context, setState) {
         vscode__namespace.window.showErrorMessage("No status bar item found");
         return;
       }
+      if (extensionState.read() == "disposed") {
+        return vscode__namespace.window.showInformationMessage(
+          "The extension is disposed. Mount it to use this command."
+        );
+      }
       if (c_state === void 0) {
         vscode__namespace.window.showErrorMessage(
           "Error: cannot calibrate because there is no valid state"
@@ -485,6 +490,9 @@ async function ExtensionState_statusBarItem(context, setState) {
       }
       try {
         c_busy = true;
+        if (windowState.read() == state.inactive) {
+          await REC_nextStateCycle(state.active, state.active);
+        }
         if (c_state === false) {
           c_state = true;
           await updateState("opening");

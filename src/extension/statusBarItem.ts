@@ -28,7 +28,7 @@ export async function ExtensionState_statusBarItem(
   setState: State
 ) {
   // TODO: decouple the update from the status bar item
-
+  const extensionState = getStateStore(context)
   const windowState = getWindowState(context)
   await windowState.write(setState)
 
@@ -105,7 +105,6 @@ export async function ExtensionState_statusBarItem(
   const toggleCommand = packageJson.contributes.commands[2].command
   context.subscriptions.push(
     vscode.commands.registerCommand(toggleCommand, async () => {
-      const extensionState = getStateStore(context)
       if (extensionState.read() == 'disposed') {
         return vscode.window.showInformationMessage(
           'The extension is disposed. Mount it to use this command.'
@@ -132,6 +131,11 @@ export async function ExtensionState_statusBarItem(
         vscode.window.showErrorMessage('No status bar item found')
         return
       }
+      if (extensionState.read() == 'disposed') {
+        return vscode.window.showInformationMessage(
+          'The extension is disposed. Mount it to use this command.'
+        )
+      }
       if (c_state === undefined) {
         vscode.window.showErrorMessage(
           'Error: cannot calibrate because there is no valid state'
@@ -148,6 +152,12 @@ export async function ExtensionState_statusBarItem(
       // show
       try {
         c_busy = true
+
+        // FIXME: get me out of here
+        if (windowState.read() == state.inactive) {
+          // makes sense right? because having to activate two times is a bit annoying...
+          await REC_nextStateCycle(state.active, state.active)
+        }
 
         // click - state was bootUp or closed
         if (c_state === false) {
