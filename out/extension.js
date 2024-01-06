@@ -106,7 +106,7 @@ const packageJson = {
   contributes,
   devDependencies
 };
-const extensionId = packageJson.publisher + "." + packageJson.name;
+const extensionId = "kauderk.concise-syntax";
 const extensionScriptSrc = extensionId + ".js";
 const extensionScriptTag = () => new RegExp(
   `<script.+${extensionId.replaceAll(".", "\\.")}.+/script>`,
@@ -333,6 +333,7 @@ function move(arr, fromIndex, toIndex) {
   arr.splice(fromIndex, 1);
   arr.splice(toIndex, 0, element);
 }
+const stateIcon = "symbol-keyword";
 const state = {
   active: "active",
   inactive: "inactive",
@@ -340,13 +341,9 @@ const state = {
   error: "error"
 };
 const IState = {
-  /**
-   *
-   * @param state
-   * @returns
-   */
+  selector: iconSelector(stateIcon),
   encode(state2) {
-    return `Concise Syntax: ` + state2;
+    return `Concise Syntax: ${state2}`;
   },
   /**
    * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
@@ -357,9 +354,12 @@ const IState = {
     return Object.values(state).reverse().find((state2) => string?.includes(state2));
   }
 };
+const calibrateIcon = "go-to-file";
+function iconSelector(icon) {
+  return `[id="${extensionId}"]:has(.codicon-${icon})`;
+}
 let _item;
 let _calibrate;
-let statusIcon = "symbol-keyword";
 let statusIconLoading = "loading~spin";
 const iconText = "";
 let busy;
@@ -398,7 +398,7 @@ async function ExtensionState_statusBarItem(context, setState) {
         new Promise((resolve) => setTimeout(resolve, !cash ? 3e3 : 0))
       ]);
       watcher.dispose();
-      _item.text = `$(${statusIcon})` + iconText;
+      _item.text = `$(${stateIcon})` + iconText;
       _item.tooltip = IState.encode(next2);
       await new Promise((resolve) => setTimeout(resolve, 100));
       if (next2 != state.disposed) {
@@ -462,7 +462,7 @@ async function ExtensionState_statusBarItem(context, setState) {
         );
         return;
       }
-      if (c_busy) {
+      if (c_busy || busy) {
         vscode__namespace.window.showInformationMessage(
           "The extension is busy. Try again in a few seconds."
         );
@@ -470,9 +470,9 @@ async function ExtensionState_statusBarItem(context, setState) {
       }
       debugger;
       try {
+        c_busy = true;
         if (c_state === false) {
           c_state = true;
-          c_busy = true;
           await updateState("opening");
           const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
           const editor = await vscode__namespace.window.showTextDocument(document, {
@@ -480,16 +480,14 @@ async function ExtensionState_statusBarItem(context, setState) {
             preserveFocus: false
           });
           await updateState("opened");
-          c_busy = false;
         } else if (c_state === true) {
           c_state = false;
-          c_busy = true;
           await closeFileIfOpen(uriRemote);
           await updateState("closed");
-          c_busy = false;
         } else {
           throw new Error("Invalid state");
         }
+        c_busy = false;
       } catch (error) {
         c_state = void 0;
         c_busy = false;
@@ -522,7 +520,7 @@ async function ExtensionState_statusBarItem(context, setState) {
     0
   );
   _calibrate.command = calibrateCommand;
-  _calibrate.text = `c`;
+  _calibrate.text = `$(${calibrateIcon})`;
   _calibrate.tooltip = "bootUp";
   _calibrate.show();
   const next = windowState.read() ?? "active";

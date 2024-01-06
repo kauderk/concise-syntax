@@ -1,8 +1,8 @@
 import { bridgeBetweenVscodeExtension } from './keys'
 import { lifecycle } from './lifecycle'
 import { createAttributeArrayMutation, innerChildrenMutation } from './shared'
-import type { IState, ICalibrate } from '../shared/state'
-import type { stateObservable, calibrateObservable } from './index'
+import { IState } from '../shared/state'
+import type { stateObservable } from './index'
 
 /**
  * @description When the vscode extension changes the "bridge attribute" apply custom styles
@@ -10,8 +10,7 @@ import type { stateObservable, calibrateObservable } from './index'
  * Take a look at: regexToDomToCss.ts to see how the styles are generated
  */
 export function createSyntaxLifecycle(
-  _stateObservable: typeof stateObservable | typeof calibrateObservable,
-  state: typeof IState | typeof ICalibrate
+  _stateObservable: typeof stateObservable
 ) {
   return lifecycle<{ watchForRemoval: H }>({
     dom() {
@@ -24,7 +23,6 @@ export function createSyntaxLifecycle(
       }
     },
     activate(DOM) {
-      // FIXME: share a single mutation
       return innerChildrenMutation({
         parent: DOM.watchForRemoval,
         validate(node, busy) {
@@ -37,9 +35,10 @@ export function createSyntaxLifecycle(
             target: () => dom.item,
             watchAttribute: [bridgeBetweenVscodeExtension],
             change([bridge]) {
-              const stringState = state.decode(bridge)
-              if (!stringState || _stateObservable.value === stringState) return
-              _stateObservable.value = stringState
+              const stringState = IState.decode(bridge)
+              let deltaState = _stateObservable.value
+              if (!stringState || deltaState === stringState) return
+              _stateObservable.value = deltaState = stringState
             },
           })
 
@@ -47,7 +46,7 @@ export function createSyntaxLifecycle(
           return attributeObserver.stop
         },
         removed(node, consume) {
-          if (node.matches(state.selector)) {
+          if (node.matches(IState.selector)) {
             consume()
           }
         },
@@ -57,12 +56,12 @@ export function createSyntaxLifecycle(
       // syntaxStyle.dispose() FIXME: create a global extension dispose hook
     },
   })
-  function domExtension(statusBar: HTMLElement) {
-    const item = statusBar?.querySelector(state.selector) as H
-    if (!item) return
-    const icon = item?.querySelector('.codicon') as H
-    return { icon, item }
-  }
 }
 
+function domExtension(statusBar: HTMLElement) {
+  const item = statusBar?.querySelector(IState.selector) as H
+  if (!item) return
+  const icon = item?.querySelector('.codicon') as H
+  return { icon, item }
+}
 type H = HTMLElement

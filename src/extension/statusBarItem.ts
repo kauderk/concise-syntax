@@ -2,7 +2,8 @@ import { extensionId } from 'src/shared/write'
 import * as vscode from 'vscode'
 import packageJson from '../../package.json'
 import { key, updateSettingsCycle } from './settings'
-import { IState, State, state } from 'src/shared/state'
+import { IState, State, state, stateIcon } from 'src/shared/state'
+import { calibrateIcon } from 'src/shared/state'
 import { useState } from './utils'
 import path from 'path'
 
@@ -12,7 +13,6 @@ let _calibrate: vscode.StatusBarItem | undefined
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
-let statusIcon = 'symbol-keyword'
 let statusIconLoading = 'loading~spin'
 const iconText = '' //' Concise'
 let busy: boolean | undefined
@@ -63,7 +63,7 @@ export async function ExtensionState_statusBarItem(
         new Promise((resolve) => setTimeout(resolve, !cash ? 3000 : 0)),
       ])
       watcher.dispose()
-      _item.text = `$(${statusIcon})` + iconText
+      _item.text = `$(${stateIcon})` + iconText
       _item.tooltip = IState.encode(next)
       // hold this thread and allow the dom to render the IState
       await new Promise((resolve) => setTimeout(resolve, 100))
@@ -135,7 +135,7 @@ export async function ExtensionState_statusBarItem(
         )
         return
       }
-      if (c_busy) {
+      if (c_busy || busy) {
         vscode.window.showInformationMessage(
           'The extension is busy. Try again in a few seconds.'
         )
@@ -144,18 +144,21 @@ export async function ExtensionState_statusBarItem(
       debugger
 
       /**
-       * standBy     nothing / bootUp
-       * requesting  click   / opening
-       * loaded      dom     / opened
-       * windowState nothing / closed
+       * standBy     nothing   / bootUp
+       * requesting  click     / opening
+       * loaded      dom/click / opened
+       * windowState nothing   / closed
+       *
+       * noting/bootUp > click > opening > opened > dom/click > closed > standBy
        */
 
       // show
       try {
+        c_busy = true
+
         // click - state was bootUp or closed
         if (c_state === false) {
           c_state = true
-          c_busy = true
 
           await updateState('opening')
           const document = await vscode.workspace.openTextDocument(uriRemote)
@@ -165,20 +168,19 @@ export async function ExtensionState_statusBarItem(
           })
           await updateState('opened')
 
-          c_busy = false
           // click
         } else if (c_state === true) {
           c_state = false
-          c_busy = true
 
           await closeFileIfOpen(uriRemote)
           await updateState('closed')
 
-          c_busy = false
           // just be extra safe
         } else {
           throw new Error('Invalid state')
         }
+
+        c_busy = false
       } catch (error: any) {
         c_state = undefined
         c_busy = false
@@ -218,7 +220,7 @@ export async function ExtensionState_statusBarItem(
     0
   )
   _calibrate.command = calibrateCommand
-  _calibrate.text = `c`
+  _calibrate.text = `$(${calibrateIcon})`
   _calibrate.tooltip = 'bootUp'
   _calibrate.show()
 

@@ -636,32 +636,7 @@ var __publicField = (obj, key, value) => {
     };
     return tryFunction;
   }
-  const state = {
-    active: "active",
-    inactive: "inactive",
-    disposed: "disposed",
-    error: "error"
-  };
-  const IState = {
-    /**
-     *
-     * @param state
-     * @returns
-     */
-    encode(state2) {
-      return `Concise Syntax: ` + state2;
-    },
-    /**
-     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
-     * @param string
-     * @returns
-     */
-    decode(string) {
-      return Object.values(state).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
-    }
-  };
-  const statusBarSelector = `[id="${extensionId}"]:has(.codicon-symbol-keyword)`;
-  function createSyntaxLifecycle(_stateObservable) {
+  function createSyntaxLifecycle(_stateObservable, state2) {
     return lifecycle({
       dom() {
         const statusBar = document.querySelector("footer .right-items");
@@ -685,18 +660,17 @@ var __publicField = (obj, key, value) => {
               target: () => dom.item,
               watchAttribute: [bridgeBetweenVscodeExtension],
               change([bridge]) {
-                const stringState = IState.decode(bridge);
-                let deltaState = _stateObservable.value;
-                if (!stringState || deltaState === stringState)
+                const stringState = state2.decode(bridge);
+                if (!stringState || _stateObservable.value === stringState)
                   return;
-                _stateObservable.value = deltaState = stringState;
+                _stateObservable.value = stringState;
               }
             });
             attributeObserver.plug();
             return attributeObserver.stop;
           },
           removed(node, consume) {
-            if (node.matches(statusBarSelector)) {
+            if (node.matches(state2.selector)) {
               consume();
             }
           }
@@ -705,13 +679,13 @@ var __publicField = (obj, key, value) => {
       dispose() {
       }
     });
-  }
-  function domExtension(statusBar) {
-    const item = statusBar == null ? void 0 : statusBar.querySelector(statusBarSelector);
-    if (!item)
-      return;
-    const icon = item == null ? void 0 : item.querySelector(".codicon");
-    return { icon, item };
+    function domExtension(statusBar) {
+      const item = statusBar == null ? void 0 : statusBar.querySelector(state2.selector);
+      if (!item)
+        return;
+      const icon = item == null ? void 0 : item.querySelector(".codicon");
+      return { icon, item };
+    }
   }
   function clear(label) {
     stylesContainer.querySelectorAll(label ? `[aria-label="${label}"]` : "[aria-label]").forEach((style) => style.remove());
@@ -1064,169 +1038,50 @@ var __publicField = (obj, key, value) => {
       bruteForceRemove
     };
   }
-  const editorFlags = {
-    jsx: {
-      flags: {
-        jsxTag: null,
-        jsxTernaryBrace: null,
-        jsxTernaryOtherwise: null,
-        vsCodeHiddenTokens: null,
-        beginQuote: null,
-        endQuote: null
-      },
-      customFlags: {
-        singleQuotes: null
-      }
+  const stateIcon = "symbol-keyword";
+  const state = {
+    active: "active",
+    inactive: "inactive",
+    disposed: "disposed",
+    error: "error"
+  };
+  const IState = {
+    selector: iconSelector(stateIcon),
+    encode(state2) {
+      return `Concise Syntax: ${state2}`;
+    },
+    /**
+     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
+     * @param string
+     * @returns
+     */
+    decode(string) {
+      return Object.values(state).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
     }
   };
-  function regexToDomToCss() {
-    const lineEditors = document.querySelectorAll(linesSelector);
-    for (const lineEditor of lineEditors) {
-      editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx);
-      const css2 = assembleCss(editorFlags.jsx);
-      if (css2)
-        return css2;
+  const calibrateIcon = "go-to-file";
+  const calibrate = {
+    opening: "opening",
+    opened: "opened",
+    closed: "closed",
+    error: "error"
+  };
+  const ICalibrate = {
+    selector: iconSelector(calibrateIcon),
+    encode(state2) {
+      return `Concise Syntax (calibrate): ${state2}`;
+    },
+    /**
+     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
+     * @param string
+     * @returns
+     */
+    decode(string) {
+      return Object.values(calibrate).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
     }
-    const css = assembleCss(editorFlags.jsx);
-    if (!css) {
-      toastConsole.warn("Fail to load concise syntax styles even with cache");
-      return "";
-    }
-    console.warn("Fail to find Editor with selector: ", linesSelector);
-    return css;
-  }
-  function jsx_parseStyles(lineEditor, editorFlag) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
-    const flags = editorFlag.flags;
-    const customFlags = editorFlag.customFlags;
-    if (isDone())
-      return editorFlag;
-    const lines = Array.from(lineEditor.querySelectorAll("div>span"));
-    parser:
-      for (const line of lines) {
-        const text = line.textContent;
-        if (!text)
-          continue;
-        let anyFlag = false;
-        if (!flags.jsxTag && ((_b = (_a = text.match(/.+(<\/(?<jsxTag>.*)?>)$/)) == null ? void 0 : _a.groups) == null ? void 0 : _b.jsxTag)) {
-          const closing = SliceClassList(line, -3);
-          if (!closing.okLength)
-            continue;
-          const [angleBracket, tag, right] = closing.flat();
-          if (angleBracket !== right)
-            continue;
-          flags.jsxTag = {
-            // find the last </tag> and hide it "tag" which is the second to last child
-            hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
-            hover: `.${angleBracket}+.${tag}`
-          };
-          flags.vsCodeHiddenTokens = {
-            // this is the most common case, you could derive it from other flags
-            hide: `>.${angleBracket}`,
-            hover: `.${angleBracket}`
-          };
-          anyFlag = true;
-        } else if (!flags.jsxTernaryBrace && ((_d = (_c = text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.jsxTernaryBrace)) {
-          const closing = SliceClassList(line, -4);
-          if (!closing.okLength)
-            continue;
-          const [blank, questionMark, blank2, openBrace] = toFlatClassList(closing);
-          const selector = `.${blank}+.${questionMark}+.${blank}+.${openBrace}:last-child`;
-          flags.jsxTernaryBrace = {
-            // find the last open brace in " ? ("
-            hide: `:has(${selector}) :last-child`,
-            hover: selector
-          };
-          anyFlag = true;
-        } else if (!flags.jsxTernaryOtherwise && ((_f = (_e = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.jsxTernaryOtherwise)) {
-          const closing = SliceClassList(line, -7);
-          if (!closing.okLength)
-            continue;
-          const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing);
-          const selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
-          flags.jsxTernaryOtherwise = {
-            // find ") : null}" then hide it all
-            hide: `:has(${selector}) *`,
-            hover: selector
-          };
-          anyFlag = true;
-        } else if (!customFlags.singleQuotes && ((_h = (_g = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.singleQuotes)) {
-          const array = Array.from(line.children);
-          const quote = /"|'|`/;
-          singleQuotes:
-            for (let i = 0; i < array.length; i++) {
-              const child = array[i];
-              const current = (_i = child.textContent) == null ? void 0 : _i.match(quote);
-              const next = (_k = (_j = array[i + 1]) == null ? void 0 : _j.textContent) == null ? void 0 : _k.match(quote);
-              if ((current == null ? void 0 : current[0].length) == 1 && current[0] === (next == null ? void 0 : next[0])) {
-                const beginQuote = Array.from(child.classList).join(".");
-                const endQuote = Array.from(array[i + 1].classList).join(".");
-                customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {
-							color: gray;
-						}`;
-                flags.beginQuote = {
-                  // this is the most common case, you could derive it from other flags
-                  hide: `>.${beginQuote}`,
-                  hover: `.${beginQuote}`
-                };
-                flags.endQuote = {
-                  // this is the most common case, you could derive it from other flags
-                  hide: `>.${endQuote}`,
-                  hover: `.${endQuote}`
-                };
-                anyFlag = true;
-                break singleQuotes;
-              }
-            }
-        }
-        if (anyFlag && isDone()) {
-          break parser;
-        }
-      }
-    function isDone() {
-      return Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f);
-    }
-    return { flags, customFlags };
-  }
-  function assembleCss(editorFlags2) {
-    var _a;
-    const root = `${linesSelector}>div>span`;
-    const { flags, customFlags } = editorFlags2;
-    const validFlags = Object.values(flags).filter(
-      (f) => !!((f == null ? void 0 : f.hide) && f.hover)
-    );
-    if (!validFlags.length || !((_a = flags.vsCodeHiddenTokens) == null ? void 0 : _a.hover)) {
-      console.warn("Fail to find common case");
-      return;
-    }
-    const toHover = validFlags.map((f) => f.hover).join(",");
-    const toHidden = validFlags.map((f) => root + f.hide).join(",");
-    const toCustom = Object.values(customFlags).filter((f) => !!f).join("\n");
-    return `
-		.view-lines {
-			--r: transparent;
-		}
-		.view-lines > div:hover {
-			--r: yellow;
-		}
-		.view-lines:has(:is(${toHover}):hover) {
-			--r: red;
-		}
-		${toHidden} {
-			color: var(--r);
-		}
-		${toCustom}
-		`;
-  }
-  function toFlatClassList(Array2) {
-    return Array2.reduce(
-      (acc, val) => acc.concat(val.join(".")),
-      []
-    );
-  }
-  function SliceClassList(line, slice) {
-    const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
-    return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
+  };
+  function iconSelector(icon) {
+    return `[id="${extensionId}"]:has(.codicon-${icon})`;
   }
   function createObservable(initialValue) {
     let _value = initialValue;
@@ -1269,6 +1124,8 @@ var __publicField = (obj, key, value) => {
   }
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
+  const calibrateObservable = createObservable(void 0);
+  let anyCalibration;
   let anyEditor;
   let editorUnsubscribe;
   let createEditorSubscription = () => editorObservable.$ubscribe((value) => {
@@ -1281,13 +1138,16 @@ var __publicField = (obj, key, value) => {
   let unsubscribeState = () => {
   };
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
+    var _a;
     if (deltaState == state.active) {
       if (!editorUnsubscribe) {
         editorUnsubscribe = createEditorSubscription();
         highlight.activate(500);
       }
-      if (anyEditor) {
-        syntaxStyle.styleIt(regexToDomToCss());
+      if (!anyCalibration) {
+        anyCalibration = true;
+        calibration.activate(500);
+        (_a = document.querySelector(ICalibrate.selector)) == null ? void 0 : _a.click();
       }
     } else {
       editorUnsubscribe == null ? void 0 : editorUnsubscribe();
@@ -1295,9 +1155,11 @@ var __publicField = (obj, key, value) => {
       highlight.dispose();
       anyEditor = void 0;
       syntaxStyle.dispose();
+      anyCalibration = void 0;
     }
   });
-  const syntax = createSyntaxLifecycle(stateObservable);
+  const syntax = createSyntaxLifecycle(stateObservable, IState);
+  const calibration = createSyntaxLifecycle(calibrateObservable, ICalibrate);
   const highlight = createHighlightLifeCycle(editorObservable);
   const tryFn = createTryFunction();
   const conciseSyntax = {
