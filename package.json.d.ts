@@ -14,7 +14,7 @@ declare const data: {
   ],
   "main": "./out/extension",
   "activationEvents": [
-    "onStartupFinished"
+    "*"
   ],
   "scripts": {
     "watch": "ts-node vite.config.custom.ts --watch",
@@ -38,6 +38,12 @@ declare const data: {
       {
         "command": "extension.toggle",
         "title": "Toggle",
+        "category": "Concise Syntax",
+        "enablement": "!extension.disposed"
+      },
+      {
+        "command": "extension.calibrate",
+        "title": "Calibrate",
         "category": "Concise Syntax",
         "enablement": "!extension.disposed"
       }

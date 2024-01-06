@@ -29,11 +29,6 @@
         "enablement": "extension.disposed"
       },
       {
-        "command": "extension.showWebview",
-        "title": "extension.showWebview",
-        "category": "extension.showWebview"
-      },
-      {
         "command": "extension.disposeExtension",
         "title": "Dispose Extension (free memory)",
         "category": "Concise Syntax",
@@ -42,6 +37,12 @@
       {
         "command": "extension.toggle",
         "title": "Toggle",
+        "category": "Concise Syntax",
+        "enablement": "!extension.disposed"
+      },
+      {
+        "command": "extension.calibrate",
+        "title": "Calibrate",
         "category": "Concise Syntax",
         "enablement": "!extension.disposed"
       }

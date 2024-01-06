@@ -4,8 +4,10 @@ import packageJson from '../../package.json'
 import { key, updateSettingsCycle } from './settings'
 import { IState, State, state } from 'src/shared/state'
 import { useState } from './utils'
+import path from 'path'
 
 let _item: vscode.StatusBarItem | undefined
+let _calibrate: vscode.StatusBarItem | undefined
 
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
@@ -95,9 +97,9 @@ export async function ExtensionState_statusBarItem(
     return
   }
 
-  const myCommandId = packageJson.contributes.commands[2].command
+  const toggleCommand = packageJson.contributes.commands[2].command
   context.subscriptions.push(
-    vscode.commands.registerCommand(myCommandId, async () => {
+    vscode.commands.registerCommand(toggleCommand, async () => {
       const extensionState = getStateStore(context)
       if (extensionState.read() == 'disposed') {
         return vscode.window.showInformationMessage(
@@ -115,8 +117,55 @@ export async function ExtensionState_statusBarItem(
     })
   )
 
+  const calibrateCommand = packageJson.contributes.commands[3].command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(calibrateCommand, async () => {
+      debugger
+      const remoteCalibratePath = path.join(__dirname, 'syntax.tsx')
+      const uriRemote = vscode.Uri.file(remoteCalibratePath)
+
+      // show
+      try {
+        const document = await vscode.workspace.openTextDocument(uriRemote)
+        const editor = await vscode.window.showTextDocument(document, {
+          preview: true,
+          preserveFocus: false,
+        })
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        // If they deprecate it for good then close whatever is open :(
+        await closeFileIfOpen(uriRemote).catch(() => {
+          vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+        })
+      } catch (error: any) {
+        vscode.window.showErrorMessage(
+          `Error: failed to open calibrate file -> ${error.message}`
+        )
+      }
+      // prettier-ignore
+      async function closeFileIfOpen(file: vscode.Uri) {
+        // @ts-ignore
+        const tabs: any = vscode.window.tabGroups.all.map(tg => tg.tabs).flat();
+        // @ts-ignore
+        const index = tabs.findIndex(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.path === file.path);
+        if (index !== -1) {
+          // @ts-ignore
+            await vscode.window.tabGroups.close(tabs[index]);
+        }
+      }
+    })
+  )
+
   _item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0)
-  _item.command = myCommandId
+  _item.command = toggleCommand
+
+  _calibrate = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    0
+  )
+  _calibrate.command = calibrateCommand
+  _calibrate.text = `c`
+  _calibrate.tooltip = IState.encode(state.inactive)
+  _calibrate.show()
 
   const next = windowState.read() ?? 'active'
   await REC_nextStateCycle(next, binary(next))

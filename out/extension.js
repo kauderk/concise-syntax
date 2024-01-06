@@ -65,11 +65,6 @@ const contributes = {
       enablement: "extension.disposed"
     },
     {
-      command: "extension.showWebview",
-      title: "extension.showWebview",
-      category: "extension.showWebview"
-    },
-    {
       command: "extension.disposeExtension",
       title: "Dispose Extension (free memory)",
       category: "Concise Syntax",
@@ -78,6 +73,12 @@ const contributes = {
     {
       command: "extension.toggle",
       title: "Toggle",
+      category: "Concise Syntax",
+      enablement: "!extension.disposed"
+    },
+    {
+      command: "extension.calibrate",
+      title: "Calibrate",
       category: "Concise Syntax",
       enablement: "!extension.disposed"
     }
@@ -357,6 +358,7 @@ const IState = {
   }
 };
 let _item;
+let _calibrate;
 let statusIcon = "symbol-keyword";
 let statusIconLoading = "loading~spin";
 const iconText = "";
@@ -425,9 +427,9 @@ async function ExtensionState_statusBarItem(context, setState) {
     await REC_nextStateCycle(setState, binary(setState));
     return;
   }
-  const myCommandId = packageJson.contributes.commands[2].command;
+  const toggleCommand = packageJson.contributes.commands[2].command;
   context.subscriptions.push(
-    vscode__namespace.commands.registerCommand(myCommandId, async () => {
+    vscode__namespace.commands.registerCommand(toggleCommand, async () => {
       const extensionState = getStateStore(context);
       if (extensionState.read() == "disposed") {
         return vscode__namespace.window.showInformationMessage(
@@ -443,8 +445,46 @@ async function ExtensionState_statusBarItem(context, setState) {
       await REC_nextStateCycle(next2, next2);
     })
   );
+  const calibrateCommand = packageJson.contributes.commands[3].command;
+  context.subscriptions.push(
+    vscode__namespace.commands.registerCommand(calibrateCommand, async () => {
+      debugger;
+      const remoteCalibratePath = path.join(__dirname, "syntax.tsx");
+      const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
+      try {
+        const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
+        const editor = await vscode__namespace.window.showTextDocument(document, {
+          preview: true,
+          preserveFocus: false
+        });
+        await new Promise((resolve) => setTimeout(resolve, 2e3));
+        await closeFileIfOpen(uriRemote).catch(() => {
+          vscode__namespace.commands.executeCommand("workbench.action.closeActiveEditor");
+        });
+      } catch (error) {
+        vscode__namespace.window.showErrorMessage(
+          `Error: failed to open calibrate file -> ${error.message}`
+        );
+      }
+      async function closeFileIfOpen(file) {
+        const tabs = vscode__namespace.window.tabGroups.all.map((tg) => tg.tabs).flat();
+        const index = tabs.findIndex((tab) => tab.input instanceof vscode__namespace.TabInputText && tab.input.uri.path === file.path);
+        if (index !== -1) {
+          await vscode__namespace.window.tabGroups.close(tabs[index]);
+        }
+      }
+    })
+  );
   _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
-  _item.command = myCommandId;
+  _item.command = toggleCommand;
+  _calibrate = vscode__namespace.window.createStatusBarItem(
+    vscode__namespace.StatusBarAlignment.Right,
+    0
+  );
+  _calibrate.command = calibrateCommand;
+  _calibrate.text = `c`;
+  _calibrate.tooltip = IState.encode(state.inactive);
+  _calibrate.show();
   const next = windowState.read() ?? "active";
   await REC_nextStateCycle(next, binary(next));
   context.subscriptions.push(_item, {

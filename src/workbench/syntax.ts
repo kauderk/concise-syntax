@@ -8,7 +8,7 @@ import {
 import { IState, State } from '../shared/state'
 import type { stateObservable } from './index'
 
-const statusBarSelector = `[id="${extensionId}"]`
+const statusBarSelector = `[id="${extensionId}"]:has(.codicon-symbol-keyword)`
 
 /**
  * @description When the vscode extension changes the "bridge attribute" apply custom styles

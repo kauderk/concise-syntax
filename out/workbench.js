@@ -660,7 +660,7 @@ var __publicField = (obj, key, value) => {
       return Object.values(state).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
     }
   };
-  const statusBarSelector = `[id="${extensionId}"]`;
+  const statusBarSelector = `[id="${extensionId}"]:has(.codicon-symbol-keyword)`;
   function createSyntaxLifecycle(_stateObservable) {
     return lifecycle({
       dom() {
