@@ -1,5 +1,6 @@
 import { windowId } from './keys'
 import { Toastify, minifiedCss } from '../shared/toast.js'
+import { deltaFn } from 'src/shared/utils'
 
 export const stylesContainer =
   document.getElementById(windowId) ?? document.createElement('div')
@@ -319,31 +320,27 @@ export function innerChildrenMutation<T>(options: {
   added(validPayload: NonNullable<T>): () => void
   removed(node: HTMLElement, consume: Function): (() => void) | void
 }) {
-  let cleanUp: Function | undefined
+  let cleanUp = deltaFn()
   const observer = specialChildrenMutation({
     target: () => options.parent,
     options: { childList: true },
     added(node) {
-      const data = options.validate(node, cleanUp)
+      const data = options.validate(node, cleanUp.fn)
       if (!data) return
       const res = options.added(data)
       if (res) {
-        cleanUp = res
+        cleanUp.fn = res
       }
     },
     removed(node) {
-      options.removed(node, consume)
+      options.removed(node, cleanUp.consume)
     },
   })
-  function consume() {
-    cleanUp?.()
-    cleanUp = undefined
-  }
 
   observer.plug()
   return () => {
     options.dispose?.()
-    consume()
+    cleanUp.consume()
     observer.stop()
   }
 }

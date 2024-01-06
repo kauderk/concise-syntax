@@ -1,3 +1,4 @@
+import { deltaFn } from 'src/shared/utils'
 import { toastConsole, watchForRemoval } from './shared'
 
 export type LifecycleProps<T> = {
@@ -13,37 +14,32 @@ export type LifecycleProps<T> = {
  */
 export function lifecycle<T>(props: LifecycleProps<T>) {
   let running = false
-  let anyUsage = false
   let tryFn = createTryFunction({ fallback: clean })
   let interval: NodeJS.Timeout
-  let disposeObserver: Function | void
-  let disposeActivate: Function | void
+  let disposeObserver = deltaFn()
+  let disposeActivate = deltaFn()
 
   function patch() {
     const dom = props.dom()
     if (running || !dom.check()) return
-    anyUsage = true
     running = true
     clearInterval(interval)
 
     tryFn(() => {
-      disposeObserver = watchForRemoval(dom.watchForRemoval, reload)
-      disposeActivate = props.activate(dom)
+      disposeObserver.fn = watchForRemoval(dom.watchForRemoval, reload)
+      disposeActivate.fn = props.activate(dom)!
     }, 'Lifecycle crashed unexpectedly when activating')
   }
   function dispose() {
     clearInterval(interval)
 
     tryFn(() => {
-      disposeActivate?.()
-      disposeActivate = undefined
-      disposeObserver?.()
-      disposeObserver = undefined
+      disposeActivate.consume()
+      disposeObserver.consume()
 
       props.dispose?.()
-
-      running = false
     }, 'Lifecycle crashed unexpectedly when disposing')
+    running = false
   }
   function reload(delay = 5000) {
     dispose()
@@ -54,6 +50,9 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
   }
 
   return {
+    get running() {
+      return running
+    },
     activate(delay = 5000) {
       if (
         tryFn.guard('Lifecycle already crashed therefore not activating again')

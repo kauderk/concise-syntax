@@ -6,18 +6,22 @@ import { IState, State, state, stateIcon } from 'src/shared/state'
 import { calibrateIcon } from 'src/shared/state'
 import { useState } from './utils'
 import path from 'path'
-
-let _item: vscode.StatusBarItem | undefined
-let _calibrate: vscode.StatusBarItem | undefined
+import { deltaFn } from 'src/shared/utils'
 
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
  */
-let statusIconLoading = 'loading~spin'
+let _item: vscode.StatusBarItem | undefined
+const statusIconLoading = 'loading~spin'
 const iconText = '' //' Concise'
 let busy: boolean | undefined
-let disposeConfiguration = () => {}
+let disposeConfiguration = deltaFn()
 let crashedMessage = ''
+
+let _calibrate: vscode.StatusBarItem | undefined
+let c_state: undefined | boolean = false
+let c_busy = false
+let disposeClosedEditor = deltaFn()
 
 export async function ExtensionState_statusBarItem(
   context: vscode.ExtensionContext,
@@ -51,7 +55,7 @@ export async function ExtensionState_statusBarItem(
     try {
       busy = true
 
-      disposeConfiguration()
+      disposeConfiguration.consume()
 
       _item.text = `$(${statusIconLoading})` + iconText
       const task = createTask()
@@ -75,7 +79,7 @@ export async function ExtensionState_statusBarItem(
       }
 
       // prettier-ignore
-      disposeConfiguration = vscode.workspace.onDidChangeConfiguration(async (config) => {
+      disposeConfiguration.fn = vscode.workspace.onDidChangeConfiguration(async (config) => {
 				if (busy || !config.affectsConfiguration(key)) return
 				const next = windowState.read()
 				if (!next) return
@@ -92,6 +96,7 @@ export async function ExtensionState_statusBarItem(
       _item.show()
     }
   }
+
   if (_item) {
     await REC_nextStateCycle(setState, binary(setState))
     return
@@ -120,9 +125,6 @@ export async function ExtensionState_statusBarItem(
   const remoteCalibratePath = path.join(__dirname, 'syntax.tsx')
   const uriRemote = vscode.Uri.file(remoteCalibratePath)
 
-  let c_state: undefined | boolean = false
-  let c_busy = false
-  let disposeClosedEditor = () => {}
   const calibrateCommand = packageJson.contributes.commands[3].command
   context.subscriptions.push(
     vscode.commands.registerCommand(calibrateCommand, async () => {
@@ -158,7 +160,8 @@ export async function ExtensionState_statusBarItem(
             preserveFocus: false,
           })
 
-          onDidCloseTextDocument(async (doc) => {
+          disposeClosedEditor.consume()
+          disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
             if (doc.uri.path === uriRemote.path) {
               c_state = false
               await consume_close()
@@ -166,45 +169,13 @@ export async function ExtensionState_statusBarItem(
             }
           })
 
-          function onDidCloseTextDocument(
-            tryClose: (doc: {
-              uri: { path: string }
-            }) => Promise<boolean | undefined>
-          ) {
-            disposeClosedEditor?.()
-
-            // https://github.com/microsoft/vscode/issues/102737#issuecomment-660208607
-            // prettier-ignore
-            disposeClosedEditor = (vscode.window as any).tabGroups?.onDidChangeTabs?.(async (changedEvent:any) => {
-							for (const doc of Array.from(changedEvent.closed)) {
-								if (await tryClose((doc as any).input)) {
-									return
-								}
-							}
-						})?.dispose || 
-						// this is delayed by 4-5 minutes, so it's not reliable
-						vscode.workspace.onDidCloseTextDocument(async (doc) => {
-							if (await tryClose(doc)) {
-								// noop
-							} else{
-								// sometimes the callback decides to not work :D
-								for (const editor of vscode.window.visibleTextEditors) {
-									if (await tryClose(editor.document)) {
-										return
-									}
-								}
-							}
-						}).dispose
-          }
-
-          // vscode.window.showInformationMessage('opening...')
           await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
           await updateState('opened')
 
           // click
         } else if (c_state === true) {
           c_state = false
-          disposeClosedEditor()
+          disposeClosedEditor.consume()
 
           await closeFileIfOpen(uriRemote)
           await updateState('closed')
@@ -224,24 +195,8 @@ export async function ExtensionState_statusBarItem(
         )
       }
       async function consume_close() {
-        disposeClosedEditor()
+        disposeClosedEditor.consume()
         await updateState('closed')
-      }
-      // prettier-ignore
-      // If they deprecate it for good then close whatever is open :(
-      async function closeFileIfOpen(file: vscode.Uri) {
-				try {
-					// @ts-ignore
-					const tabs: any = vscode.window.tabGroups.all.map(tg => tg.tabs).flat();
-					// @ts-ignore
-					const index = tabs.findIndex(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.path === file.path);
-					if (index !== -1) {
-						// @ts-ignore
-							return await vscode.window.tabGroups.close(tabs[index]);
-					}
-				} catch (error) {
-					vscode.commands.executeCommand('workbench.action.closeActiveEditor')
-				}
       }
       function updateState(state: string, t = 1000) {
         _calibrate!.tooltip = state
@@ -267,10 +222,53 @@ export async function ExtensionState_statusBarItem(
 
   context.subscriptions.push(_item, {
     dispose() {
-      disposeConfiguration()
-      disposeClosedEditor()
+      disposeConfiguration.consume()
+      disposeClosedEditor.consume()
     },
   })
+}
+
+function onDidCloseTextDocument(
+  tryClose: (doc: { uri: { path: string } }) => Promise<boolean | undefined>
+) {
+  // https://github.com/microsoft/vscode/issues/102737#issuecomment-660208607
+  // prettier-ignore
+  return (vscode.window as any).tabGroups?.onDidChangeTabs?.(async (changedEvent:any) => {
+		for (const doc of Array.from(changedEvent.closed)) {
+			if (await tryClose((doc as any).input)) {
+				return
+			}
+		}
+	})?.dispose || 
+	// this is delayed by 4-5 minutes, so it's not reliable
+	vscode.workspace.onDidCloseTextDocument(async (doc) => {
+		if (await tryClose(doc)) {
+			// noop
+		} else{
+			// sometimes the callback decides to not work :D
+			for (const editor of vscode.window.visibleTextEditors) {
+				if (await tryClose(editor.document)) {
+					return
+				}
+			}
+		}
+	}).dispose
+}
+// prettier-ignore
+// If they deprecate it for good then close whatever is open :(
+async function closeFileIfOpen(file: vscode.Uri) {
+	try {
+		// @ts-ignore
+		const tabs: any = vscode.window.tabGroups.all.map(tg => tg.tabs).flat();
+		// @ts-ignore
+		const index = tabs.findIndex(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.path === file.path);
+		if (index !== -1) {
+			// @ts-ignore
+				return await vscode.window.tabGroups.close(tabs[index]);
+		}
+	} catch (error) {
+		vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+	}
 }
 
 export function binary(state?: State) {

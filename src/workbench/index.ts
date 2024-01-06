@@ -8,13 +8,14 @@ import { createStyles, toastConsole } from './shared'
 import { TryRegexToDomToCss } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 import { or_return } from '../shared/or_return'
+import { deltaFn } from 'src/shared/utils'
 export type { editorObservable, stateObservable, calibrateObservable }
 
 const editorObservable = createObservable<undefined | boolean>(undefined)
 const stateObservable = createObservable<State | undefined>(undefined)
 const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
-let calibrateUnsubscribe: Function | undefined
+let calibrateUn = deltaFn()
 let createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((value) => {
     if (value != calibrate.opened) return
@@ -29,32 +30,28 @@ let createCalibrateSubscription = () =>
 		)
 		.finally(css => {
 			syntaxStyle.styleIt(css)
-			stateObservable.notify()
+
+			if (!highlight.running) {
+        highlight.activate(500) // FIXME: find the moment the css finishes loading
+      }
 		})
   })
 
 const syntaxStyle = createStyles('hide')
 let unsubscribeState = () => {}
-let running = false
 const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
-      if (running) return // FIXME:
-      running = true
-
-      highlight.activate(500) // FIXME: find the moment the css finishes loading
-
-      calibrateUnsubscribe = createCalibrateSubscription()
-      calibration.activate(500)
+      if (!calibration.running) {
+        calibrateUn.fn = createCalibrateSubscription()
+        calibration.activate(500)
+      }
     } else {
-      running = false
+      syntaxStyle.dispose()
 
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow but you are checking "anyEditor || !value"
 
-      syntaxStyle.dispose()
-
-      calibrateUnsubscribe?.()
-      calibrateUnsubscribe = undefined
+      calibrateUn.consume()
       calibration.dispose()
     }
   })

@@ -20,6 +20,21 @@ var __publicField = (obj, key, value) => {
   const selectedSelector = ".selected-text";
   const currentSelector = ".current-line";
   const splitViewContainerSelector = ".split-view-container";
+  function deltaFn() {
+    let delta;
+    return {
+      consume() {
+        delta == null ? void 0 : delta();
+        delta = void 0;
+      },
+      get fn() {
+        return delta;
+      },
+      set fn(value) {
+        delta = value;
+      }
+    };
+  }
   /*!
   * Toastify js 1.12.0
   * https://github.com/apvarun/toastify-js
@@ -530,63 +545,57 @@ var __publicField = (obj, key, value) => {
     return dispose;
   }
   function innerChildrenMutation(options) {
-    let cleanUp;
+    let cleanUp = deltaFn();
     const observer = specialChildrenMutation({
       target: () => options.parent,
       options: { childList: true },
       added(node) {
-        const data = options.validate(node, cleanUp);
+        const data = options.validate(node, cleanUp.fn);
         if (!data)
           return;
         const res = options.added(data);
         if (res) {
-          cleanUp = res;
+          cleanUp.fn = res;
         }
       },
       removed(node) {
-        options.removed(node, consume);
+        options.removed(node, cleanUp.consume);
       }
     });
-    function consume() {
-      cleanUp == null ? void 0 : cleanUp();
-      cleanUp = void 0;
-    }
     observer.plug();
     return () => {
       var _a;
       (_a = options.dispose) == null ? void 0 : _a.call(options);
-      consume();
+      cleanUp.consume();
       observer.stop();
     };
   }
   function lifecycle(props) {
-    let running2 = false;
+    let running = false;
     let tryFn2 = createTryFunction({ fallback: clean });
     let interval;
-    let disposeObserver;
-    let disposeActivate;
+    let disposeObserver = deltaFn();
+    let disposeActivate = deltaFn();
     function patch() {
       const dom = props.dom();
-      if (running2 || !dom.check())
+      if (running || !dom.check())
         return;
-      running2 = true;
+      running = true;
       clearInterval(interval);
       tryFn2(() => {
-        disposeObserver = watchForRemoval(dom.watchForRemoval, reload);
-        disposeActivate = props.activate(dom);
+        disposeObserver.fn = watchForRemoval(dom.watchForRemoval, reload);
+        disposeActivate.fn = props.activate(dom);
       }, "Lifecycle crashed unexpectedly when activating");
     }
     function dispose() {
       clearInterval(interval);
       tryFn2(() => {
         var _a;
-        disposeActivate == null ? void 0 : disposeActivate();
-        disposeActivate = void 0;
-        disposeObserver == null ? void 0 : disposeObserver();
-        disposeObserver = void 0;
+        disposeActivate.consume();
+        disposeObserver.consume();
         (_a = props.dispose) == null ? void 0 : _a.call(props);
-        running2 = false;
       }, "Lifecycle crashed unexpectedly when disposing");
+      running = false;
     }
     function reload(delay = 5e3) {
       dispose();
@@ -596,6 +605,9 @@ var __publicField = (obj, key, value) => {
       clearInterval(interval);
     }
     return {
+      get running() {
+        return running;
+      },
       activate(delay = 5e3) {
         if (tryFn2.guard("Lifecycle already crashed therefore not activating again")) {
           return;
@@ -1321,7 +1333,7 @@ var __publicField = (obj, key, value) => {
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
   const calibrateObservable = createObservable(void 0);
-  let calibrateUnsubscribe;
+  let calibrateUn = deltaFn();
   let createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
     if (value != calibrate.opened)
       return;
@@ -1333,27 +1345,24 @@ var __publicField = (obj, key, value) => {
       () => toastConsole.error("Failed to calibrate editor")
     ).finally((css) => {
       syntaxStyle.styleIt(css);
-      stateObservable.notify();
+      if (!highlight.running) {
+        highlight.activate(500);
+      }
     });
   });
   const syntaxStyle = createStyles("hide");
   let unsubscribeState = () => {
   };
-  let running = false;
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
-      if (running)
-        return;
-      running = true;
-      highlight.activate(500);
-      calibrateUnsubscribe = createCalibrateSubscription();
-      calibration.activate(500);
+      if (!calibration.running) {
+        calibrateUn.fn = createCalibrateSubscription();
+        calibration.activate(500);
+      }
     } else {
-      running = false;
-      highlight.dispose();
       syntaxStyle.dispose();
-      calibrateUnsubscribe == null ? void 0 : calibrateUnsubscribe();
-      calibrateUnsubscribe = void 0;
+      highlight.dispose();
+      calibrateUn.consume();
       calibration.dispose();
     }
   });
