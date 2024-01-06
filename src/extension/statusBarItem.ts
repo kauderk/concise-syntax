@@ -122,6 +122,7 @@ export async function ExtensionState_statusBarItem(
 
   let c_state: undefined | boolean = false
   let c_busy = false
+  let disposeClosedEditor = () => {}
   const calibrateCommand = packageJson.contributes.commands[3].command
   context.subscriptions.push(
     vscode.commands.registerCommand(calibrateCommand, async () => {
@@ -169,6 +170,45 @@ export async function ExtensionState_statusBarItem(
             preserveFocus: false,
           })
 
+          onDidCloseTextDocument(async (doc) => {
+            if (doc.uri.path === uriRemote.path) {
+              c_state = false
+              await consume_close()
+              return true
+            }
+          })
+
+          function onDidCloseTextDocument(
+            tryClose: (doc: {
+              uri: { path: string }
+            }) => Promise<boolean | undefined>
+          ) {
+            disposeClosedEditor?.()
+
+            // https://github.com/microsoft/vscode/issues/102737#issuecomment-660208607
+            // prettier-ignore
+            disposeClosedEditor = (vscode.window as any).tabGroups?.onDidChangeTabs?.(async (changedEvent:any) => {
+							for (const doc of Array.from(changedEvent.closed)) {
+								if (await tryClose((doc as any).input)) {
+									return
+								}
+							}
+						})?.dispose || 
+						// this is delayed by 4-5 minutes, so it's not reliable
+						vscode.workspace.onDidCloseTextDocument(async (doc) => {
+							if (await tryClose(doc)) {
+								// noop
+							} else{
+								// sometimes the callback decides to not work :D
+								for (const editor of vscode.window.visibleTextEditors) {
+									if (await tryClose(editor.document)) {
+										return
+									}
+								}
+							}
+						}).dispose
+          }
+
           // vscode.window.showInformationMessage('opening...')
           await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
           await updateState('opened')
@@ -176,6 +216,7 @@ export async function ExtensionState_statusBarItem(
           // click
         } else if (c_state === true) {
           c_state = false
+          disposeClosedEditor()
 
           await closeFileIfOpen(uriRemote)
           await updateState('closed')
@@ -188,11 +229,18 @@ export async function ExtensionState_statusBarItem(
         c_busy = false
       } catch (error: any) {
         c_state = undefined
-        c_busy = false
-        await updateState('error')
+
+        await consume_close()
+
         vscode.window.showErrorMessage(
           `Error: failed to open calibrate file -> ${error?.message}`
         )
+      }
+      async function consume_close() {
+        vscode.window.showInformationMessage('consume_close')
+        disposeClosedEditor()
+
+        await updateState('closed')
       }
       // prettier-ignore
       // If they deprecate it for good then close whatever is open :(
@@ -204,7 +252,7 @@ export async function ExtensionState_statusBarItem(
 					const index = tabs.findIndex(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.path === file.path);
 					if (index !== -1) {
 						// @ts-ignore
-							await vscode.window.tabGroups.close(tabs[index]);
+							return await vscode.window.tabGroups.close(tabs[index]);
 					}
 				} catch (error) {
 					vscode.commands.executeCommand('workbench.action.closeActiveEditor')
@@ -235,6 +283,7 @@ export async function ExtensionState_statusBarItem(
   context.subscriptions.push(_item, {
     dispose() {
       disposeConfiguration()
+      disposeClosedEditor()
     },
   })
 }

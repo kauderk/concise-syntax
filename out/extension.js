@@ -449,6 +449,8 @@ async function ExtensionState_statusBarItem(context, setState) {
   const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
   let c_state = false;
   let c_busy = false;
+  let disposeClosedEditor = () => {
+  };
   const calibrateCommand = packageJson.contributes.commands[3].command;
   context.subscriptions.push(
     vscode__namespace.commands.registerCommand(calibrateCommand, async () => {
@@ -474,6 +476,26 @@ async function ExtensionState_statusBarItem(context, setState) {
       try {
         c_busy = true;
         if (c_state === false) {
+          let onDidCloseTextDocument = function(tryClose) {
+            disposeClosedEditor?.();
+            disposeClosedEditor = vscode__namespace.window.tabGroups?.onDidChangeTabs?.(async (changedEvent) => {
+              for (const doc of Array.from(changedEvent.closed)) {
+                if (await tryClose(doc.input)) {
+                  return;
+                }
+              }
+            })?.dispose || // this is delayed by 4-5 minutes, so it's not reliable
+            vscode__namespace.workspace.onDidCloseTextDocument(async (doc) => {
+              if (await tryClose(doc)) {
+              } else {
+                for (const editor2 of vscode__namespace.window.visibleTextEditors) {
+                  if (await tryClose(editor2.document)) {
+                    return;
+                  }
+                }
+              }
+            }).dispose;
+          };
           c_state = true;
           await updateState("opening");
           const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
@@ -481,10 +503,18 @@ async function ExtensionState_statusBarItem(context, setState) {
             preview: false,
             preserveFocus: false
           });
+          onDidCloseTextDocument(async (doc) => {
+            if (doc.uri.path === uriRemote.path) {
+              c_state = false;
+              await consume_close();
+              return true;
+            }
+          });
           await new Promise((resolve) => setTimeout(resolve, 1e3));
           await updateState("opened");
         } else if (c_state === true) {
           c_state = false;
+          disposeClosedEditor();
           await closeFileIfOpen(uriRemote);
           await updateState("closed");
         } else {
@@ -493,18 +523,22 @@ async function ExtensionState_statusBarItem(context, setState) {
         c_busy = false;
       } catch (error) {
         c_state = void 0;
-        c_busy = false;
-        await updateState("error");
+        await consume_close();
         vscode__namespace.window.showErrorMessage(
           `Error: failed to open calibrate file -> ${error?.message}`
         );
+      }
+      async function consume_close() {
+        vscode__namespace.window.showInformationMessage("consume_close");
+        disposeClosedEditor();
+        await updateState("closed");
       }
       async function closeFileIfOpen(file) {
         try {
           const tabs = vscode__namespace.window.tabGroups.all.map((tg) => tg.tabs).flat();
           const index = tabs.findIndex((tab) => tab.input instanceof vscode__namespace.TabInputText && tab.input.uri.path === file.path);
           if (index !== -1) {
-            await vscode__namespace.window.tabGroups.close(tabs[index]);
+            return await vscode__namespace.window.tabGroups.close(tabs[index]);
           }
         } catch (error) {
           vscode__namespace.commands.executeCommand("workbench.action.closeActiveEditor");
@@ -531,6 +565,7 @@ async function ExtensionState_statusBarItem(context, setState) {
   context.subscriptions.push(_item, {
     dispose() {
       disposeConfiguration();
+      disposeClosedEditor();
     }
   });
 }
