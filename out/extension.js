@@ -468,7 +468,9 @@ async function ExtensionState_statusBarItem(context, setState) {
         );
         return;
       }
-      debugger;
+      vscode__namespace.window.showInformationMessage(
+        "Calibrating the extension. This will take a few seconds."
+      );
       try {
         c_busy = true;
         if (c_state === false) {

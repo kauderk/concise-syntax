@@ -43,8 +43,14 @@ export const toastConsole = new Proxy(
           console.groupCollapsed(print, objects ?? {})
           console.trace() // hidden in collapsed group
           console.groupEnd()
+        } else if (level == 'warn') {
+          console.group('\x1b[33m\x1b[40m', `\u26a0 ${print}`, objects ?? {})
+          console.trace()
+          console.groupEnd()
         } else {
-          console[level](print, objects ?? {})
+          console.group('\x1b[31m\x1b[40m', `\u26D4 ${print}`, objects ?? {})
+          console.trace()
+          console.groupEnd()
         }
         // FIXME: accommodate to the user's theme
         const toastStyle = createStyles('toast')

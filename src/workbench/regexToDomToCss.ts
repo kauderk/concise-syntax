@@ -19,24 +19,10 @@ const editorFlags = {
 
 // TODO: add cache
 // TODO: call lazy when opening the first jsx file
-export function regexToDomToCss() {
-  const lineEditors = document.querySelectorAll<HTMLElement>(linesSelector)
-
-  for (const lineEditor of lineEditors) {
-    // FIXME: this feels awkward
-    editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx)
-    const css = assembleCss(editorFlags.jsx)
-    if (css) return css
-  }
-
-  // TODO: the window side should request the vscode side to send a "calibrate" command
-  const css = assembleCss(editorFlags.jsx)
-  if (!css) {
-    toastConsole.warn('Fail to load concise syntax styles even with cache')
-    return '' // FIXME: the entire extension should panic, if this fails then nothing works...
-  }
-  console.warn('Fail to find Editor with selector: ', linesSelector)
-  return css
+export function TryRegexToDomToCss(lineEditor: HTMLElement) {
+  // TODO: give the option to reset parts of the cache
+  editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx)
+  return assembleCss(editorFlags.jsx)
 }
 
 function jsx_parseStyles(lineEditor: HTMLElement, editorFlag: EditorFlags) {

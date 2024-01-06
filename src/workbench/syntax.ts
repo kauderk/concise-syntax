@@ -10,7 +10,7 @@ import type { stateObservable, calibrateObservable } from './index'
  * Take a look at: regexToDomToCss.ts to see how the styles are generated
  */
 export function createSyntaxLifecycle(
-  _stateObservable: typeof stateObservable | typeof calibrateObservable,
+  observable: typeof stateObservable | typeof calibrateObservable,
   state: typeof IState | typeof ICalibrate
 ) {
   return lifecycle<{ watchForRemoval: H }>({
@@ -28,18 +28,20 @@ export function createSyntaxLifecycle(
       return innerChildrenMutation({
         parent: DOM.watchForRemoval,
         validate(node, busy) {
-          if (!busy) {
-            return domExtension(DOM.watchForRemoval)
-          }
+          if (busy) return
+          const item = DOM.watchForRemoval?.querySelector(state.selector) as H
+          const icon = item?.querySelector('.codicon') as H
+          if (!item || !icon) return
+          return { icon, item }
         },
         added(dom) {
           const attributeObserver = createAttributeArrayMutation({
             target: () => dom.item,
             watchAttribute: [bridgeBetweenVscodeExtension],
             change([bridge]) {
-              const stringState = state.decode(bridge)
-              if (!stringState || _stateObservable.value === stringState) return
-              _stateObservable.value = stringState
+              const delta = state.decode(bridge)
+              if (!delta || observable.value === delta) return
+              observable.value = delta
             },
           })
 
@@ -53,16 +55,7 @@ export function createSyntaxLifecycle(
         },
       })
     },
-    dispose() {
-      // syntaxStyle.dispose() FIXME: create a global extension dispose hook
-    },
   })
-  function domExtension(statusBar: HTMLElement) {
-    const item = statusBar?.querySelector(state.selector) as H
-    if (!item) return
-    const icon = item?.querySelector('.codicon') as H
-    return { icon, item }
-  }
 }
 
 type H = HTMLElement

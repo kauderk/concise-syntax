@@ -13,7 +13,8 @@ var __publicField = (obj, key, value) => {
   const bridgeBetweenVscodeExtension = "aria-label";
   const editorSelector = ".editor-instance";
   const idSelector = '[data-mode-id="typescriptreact"]';
-  const linesSelector = idSelector + ` .view-lines.monaco-mouse-cursor-text`;
+  const viewLinesSelector = ".view-lines.monaco-mouse-cursor-text";
+  const linesSelector = idSelector + ` ` + viewLinesSelector;
   const overlaySelector = ".view-overlays";
   const highlightSelector = idSelector + ` ` + overlaySelector;
   const selectedSelector = ".selected-text";
@@ -366,8 +367,14 @@ var __publicField = (obj, key, value) => {
             console.groupCollapsed(print, objects ?? {});
             console.trace();
             console.groupEnd();
+          } else if (level == "warn") {
+            console.group("\x1B[33m\x1B[40m", `⚠ ${print}`, objects ?? {});
+            console.trace();
+            console.groupEnd();
           } else {
-            console[level](print, objects ?? {});
+            console.group("\x1B[31m\x1B[40m", `⛔ ${print}`, objects ?? {});
+            console.trace();
+            console.groupEnd();
           }
           const toastStyle = createStyles("toast");
           toastStyle.styleIt(minifiedCss);
@@ -553,16 +560,16 @@ var __publicField = (obj, key, value) => {
     };
   }
   function lifecycle(props) {
-    let running = false;
+    let running2 = false;
     let tryFn2 = createTryFunction({ fallback: clean });
     let interval;
     let disposeObserver;
     let disposeActivate;
     function patch() {
       const dom = props.dom();
-      if (running || !dom.check())
+      if (running2 || !dom.check())
         return;
-      running = true;
+      running2 = true;
       clearInterval(interval);
       tryFn2(() => {
         disposeObserver = watchForRemoval(dom.watchForRemoval, reload);
@@ -578,7 +585,7 @@ var __publicField = (obj, key, value) => {
         disposeObserver == null ? void 0 : disposeObserver();
         disposeObserver = void 0;
         (_a = props.dispose) == null ? void 0 : _a.call(props);
-        running = false;
+        running2 = false;
       }, "Lifecycle crashed unexpectedly when disposing");
     }
     function reload(delay = 5e3) {
@@ -636,7 +643,7 @@ var __publicField = (obj, key, value) => {
     };
     return tryFunction;
   }
-  function createSyntaxLifecycle(_stateObservable, state2) {
+  function createSyntaxLifecycle(observable, state2) {
     return lifecycle({
       dom() {
         const statusBar = document.querySelector("footer .right-items");
@@ -651,19 +658,24 @@ var __publicField = (obj, key, value) => {
         return innerChildrenMutation({
           parent: DOM.watchForRemoval,
           validate(node, busy) {
-            if (!busy) {
-              return domExtension(DOM.watchForRemoval);
-            }
+            var _a;
+            if (busy)
+              return;
+            const item = (_a = DOM.watchForRemoval) == null ? void 0 : _a.querySelector(state2.selector);
+            const icon = item == null ? void 0 : item.querySelector(".codicon");
+            if (!item || !icon)
+              return;
+            return { icon, item };
           },
           added(dom) {
             const attributeObserver = createAttributeArrayMutation({
               target: () => dom.item,
               watchAttribute: [bridgeBetweenVscodeExtension],
               change([bridge]) {
-                const stringState = state2.decode(bridge);
-                if (!stringState || _stateObservable.value === stringState)
+                const delta = state2.decode(bridge);
+                if (!delta || observable.value === delta)
                   return;
-                _stateObservable.value = stringState;
+                observable.value = delta;
               }
             });
             attributeObserver.plug();
@@ -675,17 +687,8 @@ var __publicField = (obj, key, value) => {
             }
           }
         });
-      },
-      dispose() {
       }
     });
-    function domExtension(statusBar) {
-      const item = statusBar == null ? void 0 : statusBar.querySelector(state2.selector);
-      if (!item)
-        return;
-      const icon = item == null ? void 0 : item.querySelector(".codicon");
-      return { icon, item };
-    }
   }
   function clear(label) {
     stylesContainer.querySelectorAll(label ? `[aria-label="${label}"]` : "[aria-label]").forEach((style) => style.remove());
@@ -1083,6 +1086,158 @@ var __publicField = (obj, key, value) => {
   function iconSelector(icon) {
     return `[id="${extensionId}"]:has(.codicon-${icon})`;
   }
+  const editorFlags = {
+    jsx: {
+      flags: {
+        jsxTag: null,
+        jsxTernaryBrace: null,
+        jsxTernaryOtherwise: null,
+        vsCodeHiddenTokens: null,
+        beginQuote: null,
+        endQuote: null
+      },
+      customFlags: {
+        singleQuotes: null
+      }
+    }
+  };
+  function TryRegexToDomToCss(lineEditor) {
+    editorFlags.jsx = jsx_parseStyles(lineEditor, editorFlags.jsx);
+    return assembleCss(editorFlags.jsx);
+  }
+  function jsx_parseStyles(lineEditor, editorFlag) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+    const flags = editorFlag.flags;
+    const customFlags = editorFlag.customFlags;
+    if (isDone())
+      return editorFlag;
+    const lines = Array.from(lineEditor.querySelectorAll("div>span"));
+    parser:
+      for (const line of lines) {
+        const text = line.textContent;
+        if (!text)
+          continue;
+        let anyFlag = false;
+        if (!flags.jsxTag && ((_b = (_a = text.match(/.+(<\/(?<jsxTag>.*)?>)$/)) == null ? void 0 : _a.groups) == null ? void 0 : _b.jsxTag)) {
+          const closing = SliceClassList(line, -3);
+          if (!closing.okLength)
+            continue;
+          const [angleBracket, tag, right] = closing.flat();
+          if (angleBracket !== right)
+            continue;
+          flags.jsxTag = {
+            // find the last </tag> and hide it "tag" which is the second to last child
+            hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
+            hover: `.${angleBracket}+.${tag}`
+          };
+          flags.vsCodeHiddenTokens = {
+            // this is the most common case, you could derive it from other flags
+            hide: `>.${angleBracket}`,
+            hover: `.${angleBracket}`
+          };
+          anyFlag = true;
+        } else if (!flags.jsxTernaryBrace && ((_d = (_c = text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.jsxTernaryBrace)) {
+          const closing = SliceClassList(line, -4);
+          if (!closing.okLength)
+            continue;
+          const [blank, questionMark, blank2, openBrace] = toFlatClassList(closing);
+          const selector = `.${blank}+.${questionMark}+.${blank}+.${openBrace}:last-child`;
+          flags.jsxTernaryBrace = {
+            // find the last open brace in " ? ("
+            hide: `:has(${selector}) :last-child`,
+            hover: selector
+          };
+          anyFlag = true;
+        } else if (!flags.jsxTernaryOtherwise && ((_f = (_e = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.jsxTernaryOtherwise)) {
+          const closing = SliceClassList(line, -7);
+          if (!closing.okLength)
+            continue;
+          const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing);
+          const selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
+          flags.jsxTernaryOtherwise = {
+            // find ") : null}" then hide it all
+            hide: `:has(${selector}) *`,
+            hover: selector
+          };
+          anyFlag = true;
+        } else if (!customFlags.singleQuotes && ((_h = (_g = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.singleQuotes)) {
+          const array = Array.from(line.children);
+          const quote = /"|'|`/;
+          singleQuotes:
+            for (let i = 0; i < array.length; i++) {
+              const child = array[i];
+              const current = (_i = child.textContent) == null ? void 0 : _i.match(quote);
+              const next = (_k = (_j = array[i + 1]) == null ? void 0 : _j.textContent) == null ? void 0 : _k.match(quote);
+              if ((current == null ? void 0 : current[0].length) == 1 && current[0] === (next == null ? void 0 : next[0])) {
+                const beginQuote = Array.from(child.classList).join(".");
+                const endQuote = Array.from(array[i + 1].classList).join(".");
+                customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {
+							color: gray;
+						}`;
+                flags.beginQuote = {
+                  // this is the most common case, you could derive it from other flags
+                  hide: `>.${beginQuote}`,
+                  hover: `.${beginQuote}`
+                };
+                flags.endQuote = {
+                  // this is the most common case, you could derive it from other flags
+                  hide: `>.${endQuote}`,
+                  hover: `.${endQuote}`
+                };
+                anyFlag = true;
+                break singleQuotes;
+              }
+            }
+        }
+        if (anyFlag && isDone()) {
+          break parser;
+        }
+      }
+    function isDone() {
+      return Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f);
+    }
+    return { flags, customFlags };
+  }
+  function assembleCss(editorFlags2) {
+    var _a;
+    const root = `${linesSelector}>div>span`;
+    const { flags, customFlags } = editorFlags2;
+    const validFlags = Object.values(flags).filter(
+      (f) => !!((f == null ? void 0 : f.hide) && f.hover)
+    );
+    if (!validFlags.length || !((_a = flags.vsCodeHiddenTokens) == null ? void 0 : _a.hover)) {
+      console.warn("Fail to find common case");
+      return;
+    }
+    const toHover = validFlags.map((f) => f.hover).join(",");
+    const toHidden = validFlags.map((f) => root + f.hide).join(",");
+    const toCustom = Object.values(customFlags).filter((f) => !!f).join("\n");
+    return `
+		.view-lines {
+			--r: transparent;
+		}
+		.view-lines > div:hover {
+			--r: yellow;
+		}
+		.view-lines:has(:is(${toHover}):hover) {
+			--r: red;
+		}
+		${toHidden} {
+			color: var(--r);
+		}
+		${toCustom}
+		`;
+  }
+  function toFlatClassList(Array2) {
+    return Array2.reduce(
+      (acc, val) => acc.concat(val.join(".")),
+      []
+    );
+  }
+  function SliceClassList(line, slice) {
+    const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
+    return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
+  }
   function createObservable(initialValue) {
     let _value = initialValue;
     let _subscribers = [];
@@ -1124,11 +1279,48 @@ var __publicField = (obj, key, value) => {
   }
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
-  const calibrateObservable = createObservable(void 0);
-  let anyCalibration;
+  const calibrateObservable = createObservable(
+    void 0
+  );
+  let calibrateUnsubscribe;
+  let createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
+    toastConsole.log("calibrateObservable", value);
+    if (value == "bootUp") {
+      tryClick();
+    } else if (value == calibrate.opening)
+      ;
+    else if (value == calibrate.opened) {
+      const lineEditor = document.querySelector(
+        `[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`
+      );
+      if (!lineEditor) {
+        toastConsole.error("Line Editor not found");
+      } else {
+        const css = TryRegexToDomToCss(lineEditor);
+        if (css) {
+          syntaxStyle.styleIt(css);
+        } else {
+          toastConsole.error(
+            "Fail to load concise syntax styles even with cache"
+          );
+        }
+      }
+      tryClick();
+    } else
+      ;
+    function tryClick() {
+      const c = document.querySelector(ICalibrate.selector);
+      if (!c) {
+        toastConsole.error("Calibrate button not found");
+      } else {
+        c.click();
+      }
+    }
+  });
   let anyEditor;
   let editorUnsubscribe;
   let createEditorSubscription = () => editorObservable.$ubscribe((value) => {
+    toastConsole.log("editorObservable", value);
     if (anyEditor || !value)
       return;
     anyEditor = value;
@@ -1137,25 +1329,27 @@ var __publicField = (obj, key, value) => {
   const syntaxStyle = createStyles("hide");
   let unsubscribeState = () => {
   };
+  let running = false;
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
-    var _a;
+    toastConsole.log("stateObservable", deltaState);
     if (deltaState == state.active) {
-      if (!editorUnsubscribe) {
-        editorUnsubscribe = createEditorSubscription();
-        highlight.activate(500);
-      }
-      if (!anyCalibration) {
-        anyCalibration = true;
-        calibration.activate(500);
-        (_a = document.querySelector(ICalibrate.selector)) == null ? void 0 : _a.click();
-      }
+      if (running)
+        return toastConsole.warn("Trying to run again");
+      running = true;
+      editorUnsubscribe = createEditorSubscription();
+      highlight.activate(500);
+      calibrateUnsubscribe = createCalibrateSubscription();
+      calibration.activate(500);
     } else {
+      running = false;
       editorUnsubscribe == null ? void 0 : editorUnsubscribe();
       editorUnsubscribe = void 0;
       highlight.dispose();
       anyEditor = void 0;
       syntaxStyle.dispose();
-      anyCalibration = void 0;
+      calibrateUnsubscribe == null ? void 0 : calibrateUnsubscribe();
+      calibrateUnsubscribe = void 0;
+      calibration.dispose();
     }
   });
   const syntax = createSyntaxLifecycle(stateObservable, IState);
@@ -1172,6 +1366,7 @@ var __publicField = (obj, key, value) => {
     dispose() {
       tryFn(() => {
         syntax.dispose();
+        stateObservable.value = state.inactive;
         unsubscribeState();
       }, "Concise Syntax Extension crashed unexpectedly when disposing");
     }

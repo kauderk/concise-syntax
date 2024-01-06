@@ -141,7 +141,9 @@ export async function ExtensionState_statusBarItem(
         )
         return
       }
-      debugger
+      vscode.window.showInformationMessage(
+        'Calibrating the extension. This will take a few seconds.'
+      )
 
       /**
        * standBy     nothing   / bootUp

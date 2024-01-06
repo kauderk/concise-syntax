@@ -16,8 +16,8 @@ export const customCSS = `
 
 export const editorSelector = '.editor-instance'
 export const idSelector = '[data-mode-id="typescriptreact"]'
-export const linesSelector =
-  idSelector + ` .view-lines.monaco-mouse-cursor-text`
+export const viewLinesSelector = '.view-lines.monaco-mouse-cursor-text'
+export const linesSelector = idSelector + ` ` + viewLinesSelector
 export const overlaySelector = '.view-overlays'
 export const highlightSelector = idSelector + ` ` + overlaySelector
 export const selectedSelector = '.selected-text'

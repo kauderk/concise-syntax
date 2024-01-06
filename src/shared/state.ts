@@ -1,4 +1,4 @@
-import { extensionId } from 'src/workbench/keys'
+import { extensionId } from '../workbench/keys'
 
 export const stateIcon = 'symbol-keyword'
 export const state = {

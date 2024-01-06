@@ -1,17 +1,19 @@
 import { createSyntaxLifecycle } from './syntax'
 import { createHighlightLifeCycle } from './highlight'
-import { extensionId } from './keys'
+import { extensionId, viewLinesSelector } from './keys'
 import { createTryFunction } from './lifecycle'
 import { IState, State, state } from 'src/shared/state'
 import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
-import { createStyles } from './shared'
-import { regexToDomToCss } from './regexToDomToCss'
+import { createStyles, toastConsole } from './shared'
+import { TryRegexToDomToCss } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 export type { editorObservable, stateObservable, calibrateObservable }
 
 const editorObservable = createObservable<undefined | boolean>(undefined)
 const stateObservable = createObservable<State | undefined>(undefined)
-const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
+const calibrateObservable = createObservable<Calibrate | undefined | 'bootUp'>(
+  undefined
+)
 
 /**
  * standBy     nothing   / bootUp
@@ -21,18 +23,44 @@ const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
  *
  * noting/bootUp > click > opening > opened > dom/click > closed > standBy
  */
-let anyCalibration: any //typeof calibrateObservable.value
 let calibrateUnsubscribe: Function | undefined
 let createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((value) => {
-    if (value == calibrate.opening) {
+    toastConsole.log('calibrateObservable', value)
+    // FIXME: if anything fails the state cycle will be broken
+    if (value == 'bootUp') {
+      tryClick()
+    } else if (value == calibrate.opening) {
       // noop
     } else if (value == calibrate.opened) {
-      syntaxStyle.styleIt(regexToDomToCss())
+      const lineEditor = document.querySelector<HTMLElement>(
+        `[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`
+      )
+      if (!lineEditor) {
+        toastConsole.error('Line Editor not found')
+      } else {
+        const css = TryRegexToDomToCss(lineEditor)
+        if (css) {
+          syntaxStyle.styleIt(css)
+        } else {
+          toastConsole.error(
+            'Fail to load concise syntax styles even with cache'
+          )
+        }
+      }
+      tryClick()
     } else if (value == calibrate.closed) {
-      document.querySelector<HTMLElement>(ICalibrate.selector)?.click()
+      // noop
     } else {
       // noop
+    }
+    function tryClick() {
+      const c = document.querySelector<HTMLElement>(ICalibrate.selector)
+      if (!c) {
+        toastConsole.error('Calibrate button not found')
+      } else {
+        c.click()
+      }
     }
   })
 
@@ -40,6 +68,7 @@ let anyEditor: typeof editorObservable.value
 let editorUnsubscribe: Function | undefined
 let createEditorSubscription = () =>
   editorObservable.$ubscribe((value) => {
+    toastConsole.log('editorObservable', value)
     if (anyEditor || !value) return // the unwinding of the editorObservable could cause a stack overflow but you are checking "anyEditor || !value"
     anyEditor = value
 
@@ -48,21 +77,22 @@ let createEditorSubscription = () =>
 
 const syntaxStyle = createStyles('hide')
 let unsubscribeState = () => {}
+let running = false
 const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
+    toastConsole.log('stateObservable', deltaState)
     if (deltaState == state.active) {
-      if (!editorUnsubscribe) {
-        editorUnsubscribe = createEditorSubscription()
-        highlight.activate(500) // FIXME: find the moment the css finishes loading
-      }
+      if (running) return toastConsole.warn('Trying to run again')
+      running = true
 
-      if (!anyCalibration) {
-        anyCalibration = true
-        calibration.activate(500)
-        // when the calibration item is found...
-        document.querySelector<HTMLElement>(ICalibrate.selector)?.click()
-      }
+      editorUnsubscribe = createEditorSubscription()
+      highlight.activate(500) // FIXME: find the moment the css finishes loading
+
+      calibrateUnsubscribe = createCalibrateSubscription()
+      calibration.activate(500)
     } else {
+      running = false
+
       editorUnsubscribe?.()
       editorUnsubscribe = undefined
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow but you are checking "anyEditor || !value"
@@ -70,7 +100,9 @@ const createStateSubscription = () =>
       anyEditor = undefined
       syntaxStyle.dispose()
 
-      anyCalibration = undefined
+      calibrateUnsubscribe?.()
+      calibrateUnsubscribe = undefined
+      calibration.dispose()
     }
   })
 
@@ -81,6 +113,7 @@ const tryFn = createTryFunction()
 
 const conciseSyntax = {
   activate() {
+    // TODO: return a local dispose function
     tryFn(() => {
       syntax.activate()
       unsubscribeState = createStateSubscription()
@@ -89,6 +122,7 @@ const conciseSyntax = {
   dispose() {
     tryFn(() => {
       syntax.dispose()
+      stateObservable.value = state.inactive
       unsubscribeState()
     }, 'Concise Syntax Extension crashed unexpectedly when disposing')
   },
