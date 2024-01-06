@@ -7,27 +7,19 @@ import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
 import { createStyles, toastConsole } from './shared'
 import { TryRegexToDomToCss } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
+import { or_return } from '../shared/or_return'
 export type { editorObservable, stateObservable, calibrateObservable }
 
 const editorObservable = createObservable<undefined | boolean>(undefined)
 const stateObservable = createObservable<State | undefined>(undefined)
 const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
-/**
- * standBy     nothing   / bootUp
- * requesting  click     / opening
- * loaded      dom/click / opened
- * windowState nothing   / closed
- *
- * noting/bootUp > click > opening > opened > dom/click > closed > standBy
- */
 let calibrateUnsubscribe: Function | undefined
 let createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((value) => {
     if (value != calibrate.opened) return
-    debugger
     // prettier-ignore
-    const x = new or_return(
+    new or_return(
       () => document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`),
       () => toastConsole.error('Line Editor not found')
     )
@@ -36,53 +28,10 @@ let createCalibrateSubscription = () =>
 			() => toastConsole.error('Line Editor not found')
 		)
 		.finally(css => {
-			debugger
 			syntaxStyle.styleIt(css)
 			stateObservable.notify()
-			return 0
 		})
-    debugger
-    console.log(x)
   })
-
-class or_return<T> {
-  constructor(
-    private fn: () => T | ((a: any) => T),
-    private onError: () => any
-  ) {
-    this.fn = fn
-    this.onError = onError
-  }
-
-  finally<R, Y = T>(fn: (a: NonNullable<Y>) => R): R | undefined {
-    try {
-      const value = this.fn()
-      if (value) {
-        // @ts-ignore
-        return fn(value)
-      } else {
-        this.onError()
-      }
-    } catch (error) {
-      this.onError()
-    }
-  }
-
-  or_return<Y>(fn: (a: NonNullable<T>) => Y, onError: () => any) {
-    try {
-      const value = this.fn()
-      if (value) {
-        // @ts-ignore
-        return new or_return(() => fn(value), onError)
-      } else {
-        this.onError()
-      }
-    } catch (error) {
-      this.onError()
-    }
-    return new or_return(console.log, console.error) as or_return<Y>
-  }
-}
 
 const syntaxStyle = createStyles('hide')
 let unsubscribeState = () => {}

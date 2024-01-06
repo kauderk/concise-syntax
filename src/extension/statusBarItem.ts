@@ -146,15 +146,6 @@ export async function ExtensionState_statusBarItem(
         'Calibrating the extension. This will take a few seconds.'
       )
 
-      /**
-       * standBy     nothing   / bootUp
-       * requesting  click     / opening
-       * loaded      dom/click / opened
-       * windowState nothing   / closed
-       *
-       * noting/bootUp > click > opening > opened > dom/click > closed > standBy
-       */
-
       // show
       try {
         c_busy = true
@@ -228,6 +219,7 @@ export async function ExtensionState_statusBarItem(
 
         c_busy = false
       } catch (error: any) {
+        debugger
         c_state = undefined
 
         await consume_close()

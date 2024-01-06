@@ -1285,29 +1285,6 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
-  const editorObservable = createObservable(void 0);
-  const stateObservable = createObservable(void 0);
-  const calibrateObservable = createObservable(void 0);
-  let calibrateUnsubscribe;
-  let createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
-    if (value != calibrate.opened)
-      return;
-    debugger;
-    const x = new or_return(
-      () => document.querySelector(`[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`),
-      () => toastConsole.error("Line Editor not found")
-    ).or_return(
-      TryRegexToDomToCss,
-      () => toastConsole.error("Line Editor not found")
-    ).finally((css) => {
-      debugger;
-      syntaxStyle.styleIt(css);
-      stateObservable.notify();
-      return 0;
-    });
-    debugger;
-    console.log(x);
-  });
   class or_return {
     constructor(fn, onError) {
       this.fn = fn;
@@ -1341,6 +1318,24 @@ var __publicField = (obj, key, value) => {
       return new or_return(console.log, console.error);
     }
   }
+  const editorObservable = createObservable(void 0);
+  const stateObservable = createObservable(void 0);
+  const calibrateObservable = createObservable(void 0);
+  let calibrateUnsubscribe;
+  let createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
+    if (value != calibrate.opened)
+      return;
+    new or_return(
+      () => document.querySelector(`[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`),
+      () => toastConsole.error("Line Editor not found")
+    ).or_return(
+      TryRegexToDomToCss,
+      () => toastConsole.error("Line Editor not found")
+    ).finally((css) => {
+      syntaxStyle.styleIt(css);
+      stateObservable.notify();
+    });
+  });
   const syntaxStyle = createStyles("hide");
   let unsubscribeState = () => {
   };

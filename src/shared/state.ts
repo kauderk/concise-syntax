@@ -35,6 +35,14 @@ export const calibrate = {
   closed: 'closed',
   error: 'error',
 } as const
+/**
+ * standBy     nothing   / bootUp
+ * requesting  click     / opening
+ * loaded      dom/click / opened
+ * windowState nothing   / closed
+ *
+ * noting/bootUp > click > opening > opened > dom/click > closed > standBy
+ */
 export type Calibrate = (typeof calibrate)[keyof typeof calibrate]
 /**
  * Exploit the fact that vscode will render strings to the DOM

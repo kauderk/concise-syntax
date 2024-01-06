@@ -522,6 +522,7 @@ async function ExtensionState_statusBarItem(context, setState) {
         }
         c_busy = false;
       } catch (error) {
+        debugger;
         c_state = void 0;
         await consume_close();
         vscode__namespace.window.showErrorMessage(
