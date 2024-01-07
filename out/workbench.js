@@ -581,14 +581,14 @@ var __publicField = (obj, key, value) => {
       if (running || !dom.check())
         return;
       running = true;
-      clearInterval(interval);
+      clean();
       tryFn2(() => {
         disposeObserver.fn = watchForRemoval(dom.watchForRemoval, reload);
         disposeActivate.fn = props.activate(dom);
       }, "Lifecycle crashed unexpectedly when activating");
     }
     function dispose() {
-      clearInterval(interval);
+      clean();
       tryFn2(() => {
         var _a;
         disposeActivate.consume();
@@ -890,8 +890,9 @@ var __publicField = (obj, key, value) => {
     );
     return true;
   }
-  function editorOverlayLifecycle(editor, overlay, foundEditor) {
+  function editorOverlayLifecycle(editor, _overlay, foundEditor) {
     let editorLabel = editor.getAttribute("aria-label");
+    let deltaOverlay = _overlay;
     const EditorLanguageTracker = createAttributeArrayMutation({
       target: () => editor,
       watchAttribute: ["data-mode-id", "aria-label"],
@@ -900,6 +901,10 @@ var __publicField = (obj, key, value) => {
         if (!language || !label)
           return;
         OverlayLineTracker.disconnect();
+        if (!editor.contains(deltaOverlay)) {
+          debugger;
+          deltaOverlay = (editor == null ? void 0 : editor.querySelector(overlaySelector)) ?? deltaOverlay;
+        }
         if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
           if (language === "typescriptreact") {
             foundEditor();
@@ -917,12 +922,12 @@ var __publicField = (obj, key, value) => {
     function mount() {
       selectedLines.clear();
       currentLines.clear();
-      overlay.childNodes.forEach((node) => highlightStyles(node, true));
+      deltaOverlay.childNodes.forEach((node) => highlightStyles(node, true));
     }
     let selectedLines = /* @__PURE__ */ new Set();
     let currentLines = /* @__PURE__ */ new Set();
     const OverlayLineTracker = createMutation({
-      target: () => overlay,
+      target: () => deltaOverlay,
       options: {
         childList: true
       },
@@ -951,7 +956,7 @@ var __publicField = (obj, key, value) => {
     }
     let tries = 0;
     const lineTracker = () => {
-      const line = overlay.querySelector(selectedSelector);
+      const line = deltaOverlay.querySelector(selectedSelector);
       if (!line || tries > 5) {
         clearInterval(layoutShift);
         return;
@@ -1396,10 +1401,8 @@ var __publicField = (obj, key, value) => {
   const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
     if (value) {
       const cache = sessionCss();
-      if (cache) {
-        console.log("real cache?");
+      if (cache)
         syntaxStyle.styleIt(cache);
-      }
       return "Symbol.dispose";
     }
   });
@@ -1407,18 +1410,15 @@ var __publicField = (obj, key, value) => {
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
       if (!calibration.running) {
-        console.log("active");
         calibration.activate(500);
         let unSubscribers = [createCalibrateSubscription()];
-        const cache = sessionCss();
-        if (cache && !highlight.running) {
+        if (sessionCss() && !highlight.running) {
           highlight.activate(500);
           unSubscribers.push(createEditorSubscription());
         }
         return () => unSubscribers.forEach((un) => un());
       }
     } else {
-      console.log("dispose");
       syntaxStyle.dispose();
       highlight.dispose();
       calibration.dispose();

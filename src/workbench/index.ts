@@ -71,11 +71,7 @@ const createEditorSubscription = () =>
   editorObservable.$ubscribe((value) => {
     if (value) {
       const cache = sessionCss()
-      if (cache) {
-        console.log('real cache?')
-        syntaxStyle.styleIt(cache)
-      }
-
+      if (cache) syntaxStyle.styleIt(cache)
       return 'Symbol.dispose'
     }
   })
@@ -86,30 +82,17 @@ const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
       if (!calibration.running) {
-        console.log('active')
         calibration.activate(500)
         let unSubscribers = [createCalibrateSubscription()]
 
-        const cache = sessionCss()
-        if (cache && !highlight.running) {
-          // let tries = 0
-          // let interval = 10
-          // const dirty = setInterval(() => {
-          //   if (tries++ > interval) return
-          //   if (!editorObservable.value) {
-          //     console.log('cache')
-          //     syntaxStyle.styleIt(cache)
-          //   }
-          // }, 2500 / interval)
+        if (sessionCss() && !highlight.running) {
           highlight.activate(500) // FIXME: find the moment the css finishes loading
           unSubscribers.push(createEditorSubscription())
-          // unSubscribers.push(() => clearTimeout(dirty))
         }
 
         return () => unSubscribers.forEach((un) => un())
       }
     } else {
-      console.log('dispose')
       syntaxStyle.dispose()
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow
       calibration.dispose()

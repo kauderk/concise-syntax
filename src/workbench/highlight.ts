@@ -3,6 +3,7 @@ import {
   highlightSelector,
   idSelector,
   linesSelector,
+  overlaySelector,
   selectedSelector,
   splitViewContainerSelector,
 } from './keys'
@@ -137,11 +138,13 @@ function createHighlight({ node, selector, add, set, label, color }: Selected) {
 
 function editorOverlayLifecycle(
   editor: HTMLElement,
-  overlay: HTMLElement,
+  _overlay: HTMLElement,
   foundEditor: () => void
 ) {
   // lookup state
   let editorLabel = editor.getAttribute('aria-label') as any
+  // when changing the textDocument the editor outlives the overlay
+  let deltaOverlay = _overlay as HTMLElement // | undefined
 
   const EditorLanguageTracker = createAttributeArrayMutation({
     target: () => editor,
@@ -151,6 +154,13 @@ function editorOverlayLifecycle(
       if (!language || !label) return // hydrating...
 
       OverlayLineTracker.disconnect()
+
+      // FIXME: this is a panic scenario, should throw and exception or execute a failure callback
+      if (!editor.contains(deltaOverlay!)) {
+        debugger
+        // also if it fails to query the overlay, use the last one because a undefined overlay will cause a crash
+        deltaOverlay = editor?.querySelector<H>(overlaySelector) ?? deltaOverlay
+      }
 
       if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
         if (language === 'typescriptreact') {
@@ -169,7 +179,7 @@ function editorOverlayLifecycle(
   function mount() {
     selectedLines.clear()
     currentLines.clear()
-    overlay.childNodes.forEach((node) => highlightStyles(node, true)) // if you restart vscode, there might be selected lines already
+    deltaOverlay.childNodes.forEach((node) => highlightStyles(node, true)) // if you restart vscode, there might be selected lines already
   }
 
   // lookup state
@@ -177,7 +187,7 @@ function editorOverlayLifecycle(
   let currentLines = new Set<number>()
 
   const OverlayLineTracker = createMutation({
-    target: () => overlay,
+    target: () => deltaOverlay,
     options: {
       childList: true,
     },
@@ -210,7 +220,7 @@ function editorOverlayLifecycle(
   // issue: the top style shifts right before the last frame
   let tries = 0
   const lineTracker = () => {
-    const line = overlay.querySelector(selectedSelector) as H
+    const line = deltaOverlay.querySelector(selectedSelector) as H
     if (!line || tries > 5) {
       // toastConsole.log('clearInterval lineTracker')
       clearInterval(layoutShift)

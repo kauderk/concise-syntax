@@ -23,7 +23,7 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
     const dom = props.dom()
     if (running || !dom.check()) return
     running = true
-    clearInterval(interval)
+    clean()
 
     tryFn(() => {
       disposeObserver.fn = watchForRemoval(dom.watchForRemoval, reload)
@@ -31,7 +31,7 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
     }, 'Lifecycle crashed unexpectedly when activating')
   }
   function dispose() {
-    clearInterval(interval)
+    clean()
 
     tryFn(() => {
       disposeActivate.consume()
