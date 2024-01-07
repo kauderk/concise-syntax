@@ -29,14 +29,20 @@ const textMateRules = [
   },
   {
     name: extensionId + 'quote.begin',
-    scope: ['punctuation.definition.string.begin.tsx'],
+    scope: [
+      'punctuation.definition.string.begin.tsx',
+      'punctuation.definition.string.template.begin.tsx',
+    ],
     settings: {
       foreground: '#b5a90000',
     },
   },
   {
     name: extensionId + 'quote.end',
-    scope: ['punctuation.definition.string.end.tsx'],
+    scope: [
+      'punctuation.definition.string.end.tsx',
+      'punctuation.definition.string.template.end.tsx',
+    ],
     settings: {
       foreground: '#b5030000',
     },
