@@ -5,6 +5,7 @@ export const editorFlags = {
   jsx: {
     flags: {
       jsxTag: null as FlagOr,
+      jsxTagUpperCase: null as FlagOr,
       jsxTernaryBrace: null as FlagOr,
       jsxTernaryOtherwise: null as FlagOr,
       vsCodeHiddenTokens: null as FlagOr,
@@ -52,6 +53,24 @@ export function jsx_parseStyles(
         // this is the most common case, you could derive it from other flags
         hide: `>.${angleBracket}`,
         hover: `.${angleBracket}`,
+      }
+
+      anyFlag = true
+    } else if (
+      // TODO: better abstraction to implement overloads
+      !flags.jsxTagUpperCase &&
+      text.match(/.+(<\/(?<jsxTagUpperCase>[A-Z].*)?>)$/)?.groups
+        ?.jsxTagUpperCase
+    ) {
+      const closing = SliceClassList(line, -3)
+      if (!closing.okLength) continue
+      const [angleBracket, tag, right] = closing.flat()
+      if (angleBracket !== right) continue
+
+      flags.jsxTagUpperCase = {
+        // find the last </Tag> and hide it "tag" which is the second to last child
+        hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
+        hover: `.${angleBracket}+.${tag}`,
       }
 
       anyFlag = true

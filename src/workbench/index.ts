@@ -25,6 +25,7 @@ function TryRegexToDomToCss(lineEditor: HTMLElement) {
       session = {}
     }
     jsxFlags = mergeDeep(session, jsxFlags)
+    // TODO: check if there are new flags or new schema then delete the session
     window.localStorage.setItem(sessionKey, JSON.stringify(jsxFlags))
   } catch (error: any) {
     window.localStorage.removeItem(sessionKey)
@@ -143,5 +144,4 @@ console.log(extensionId, conciseSyntax)
 /**
  * FIXME
  * empty quotes flags are not working
- * editorFlags overloads "</For>"
  */

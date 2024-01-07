@@ -1117,6 +1117,7 @@ var __publicField = (obj, key, value) => {
     jsx: {
       flags: {
         jsxTag: null,
+        jsxTagUpperCase: null,
         jsxTernaryBrace: null,
         jsxTernaryOtherwise: null,
         vsCodeHiddenTokens: null,
@@ -1129,7 +1130,7 @@ var __publicField = (obj, key, value) => {
     }
   };
   function jsx_parseStyles(lineEditor, _editorFlag) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
     const editorFlag = structuredClone(_editorFlag);
     const flags = editorFlag.flags;
     const customFlags = editorFlag.customFlags;
@@ -1160,7 +1161,23 @@ var __publicField = (obj, key, value) => {
             hover: `.${angleBracket}`
           };
           anyFlag = true;
-        } else if (!flags.jsxTernaryBrace && ((_d = (_c = text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.jsxTernaryBrace)) {
+        } else if (
+          // TODO: better abstraction to implement overloads
+          !flags.jsxTagUpperCase && ((_d = (_c = text.match(/.+(<\/(?<jsxTagUpperCase>[A-Z].*)?>)$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.jsxTagUpperCase)
+        ) {
+          const closing = SliceClassList(line, -3);
+          if (!closing.okLength)
+            continue;
+          const [angleBracket, tag, right] = closing.flat();
+          if (angleBracket !== right)
+            continue;
+          flags.jsxTagUpperCase = {
+            // find the last </Tag> and hide it "tag" which is the second to last child
+            hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
+            hover: `.${angleBracket}+.${tag}`
+          };
+          anyFlag = true;
+        } else if (!flags.jsxTernaryBrace && ((_f = (_e = text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.jsxTernaryBrace)) {
           const closing = SliceClassList(line, -4);
           if (!closing.okLength)
             continue;
@@ -1172,7 +1189,7 @@ var __publicField = (obj, key, value) => {
             hover: selector
           };
           anyFlag = true;
-        } else if (!flags.jsxTernaryOtherwise && ((_f = (_e = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.jsxTernaryOtherwise)) {
+        } else if (!flags.jsxTernaryOtherwise && ((_h = (_g = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.jsxTernaryOtherwise)) {
           let selector;
           const closing7 = SliceClassList(line, -7);
           if (closing7.okLength) {
@@ -1191,14 +1208,14 @@ var __publicField = (obj, key, value) => {
             hover: selector
           };
           anyFlag = true;
-        } else if (!customFlags.singleQuotes && ((_h = (_g = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.singleQuotes)) {
+        } else if (!customFlags.singleQuotes && ((_j = (_i = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _i.groups) == null ? void 0 : _j.singleQuotes)) {
           const array = Array.from(line.children);
           const quote = /"|'|`/;
           singleQuotes:
             for (let i = 0; i < array.length; i++) {
               const child = array[i];
-              const current = (_i = child.textContent) == null ? void 0 : _i.match(quote);
-              const next = (_k = (_j = array[i + 1]) == null ? void 0 : _j.textContent) == null ? void 0 : _k.match(quote);
+              const current = (_k = child.textContent) == null ? void 0 : _k.match(quote);
+              const next = (_m = (_l = array[i + 1]) == null ? void 0 : _l.textContent) == null ? void 0 : _m.match(quote);
               if ((current == null ? void 0 : current[0].length) == 1 && current[0] === (next == null ? void 0 : next[0])) {
                 const beginQuote = Array.from(child.classList).join(".");
                 const endQuote = Array.from(array[i + 1].classList).join(".");
