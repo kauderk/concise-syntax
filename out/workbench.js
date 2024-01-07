@@ -908,7 +908,7 @@ var __publicField = (obj, key, value) => {
         if (!editor.contains(deltaOverlay)) {
           deltaOverlay = (editor == null ? void 0 : editor.querySelector(overlaySelector)) ?? deltaOverlay;
         }
-        if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
+        if (label.match(/(\.tsx$)|(\.tsx, )/)) {
           if (language === "typescriptreact") {
             foundEditor();
             OverlayLineTracker.observe();

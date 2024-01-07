@@ -167,7 +167,7 @@ function editorOverlayLifecycle(
         deltaOverlay = editor?.querySelector<H>(overlaySelector) ?? deltaOverlay
       }
 
-      if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
+      if (label.match(/(\.tsx$)|(\.tsx, )/)) {
         if (language === 'typescriptreact') {
           foundEditor()
           OverlayLineTracker.observe()

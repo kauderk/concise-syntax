@@ -132,3 +132,16 @@ window.conciseSyntax = conciseSyntax
 conciseSyntax.activate()
 
 console.log(extensionId, conciseSyntax)
+
+/**
+ * TODO
+ * when updating settings.json and calibrating, the editor should update
+ * there should be a way to update the editor without calibrating
+ * there should be a way to hook textMateRules when activating the extension
+ * 	for example the case of constant.language.boolean "{true}"
+ * */
+/**
+ * FIXME
+ * empty quotes flags are not working
+ * editorFlags overloads "</For>"
+ */
