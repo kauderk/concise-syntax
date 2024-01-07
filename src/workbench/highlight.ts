@@ -142,7 +142,7 @@ function editorOverlayLifecycle(
   foundEditor: () => void
 ) {
   // lookup state
-  let editorLabel = editor.getAttribute('aria-label') as any
+  let editorLabel = editor.getAttribute('aria-label') as string | undefined
   // when changing the textDocument the editor outlives the overlay
   let deltaOverlay = _overlay as HTMLElement // | undefined
 
@@ -151,13 +151,18 @@ function editorOverlayLifecycle(
     watchAttribute: ['data-mode-id', 'aria-label'],
     change([language, label], [, oldLabel]) {
       editorLabel = label
-      if (!language || !label) return // hydrating...
+
+      if (!language || !label) {
+        if (oldLabel && label != oldLabel) {
+          styles.clear(oldLabel)
+        }
+        return
+      }
 
       OverlayLineTracker.disconnect()
 
       // FIXME: this is a panic scenario, should throw and exception or execute a failure callback
       if (!editor.contains(deltaOverlay!)) {
-        debugger
         // also if it fails to query the overlay, use the last one because a undefined overlay will cause a crash
         deltaOverlay = editor?.querySelector<H>(overlaySelector) ?? deltaOverlay
       }
@@ -166,10 +171,10 @@ function editorOverlayLifecycle(
         if (language === 'typescriptreact') {
           foundEditor()
           OverlayLineTracker.observe()
+          bruteForceLayoutShift()
         }
         if (oldLabel && label != oldLabel) {
-          styles.clear(oldLabel)
-          mount()
+          toastConsole.log('look! this gets executed...', oldLabel)
         }
       } else {
         styles.clear(label)
@@ -219,32 +224,38 @@ function editorOverlayLifecycle(
   // FIXME: find a better way to handle selected lines flickering and layout shifts
   // issue: the top style shifts right before the last frame
   let tries = 0
+  const limit = 5
+  let layoutShift: any
   const lineTracker = () => {
     const line = deltaOverlay.querySelector(selectedSelector) as H
-    if (!line || tries > 5) {
-      // toastConsole.log('clearInterval lineTracker')
+    if (!line || tries > limit) {
       clearInterval(layoutShift)
       return
     }
     const top = parseTopStyle(line)
     if (!isNaN(top)) {
       tries += 1
-      // toastConsole.log('layout shift')
       mount()
     }
   }
+  function bruteForceLayoutShift() {
+    tries = 0
+    clearInterval(layoutShift)
+    layoutShift = setInterval(lineTracker, 100)
+  }
+
   mount()
   EditorLanguageTracker.plug()
-  const layoutShift = setInterval(lineTracker, 500)
+  bruteForceLayoutShift()
 
   return function dispose() {
-    tries = 6
+    tries = limit + 2
     clearInterval(layoutShift)
     if (editorLabel) {
       styles.clear(editorLabel)
     } else {
       // FIXME: this is like leaking information that can't be clean up later
-      toastConsole.log('editorLabel is undefined')
+      toastConsole.error('editorLabel is undefined')
     }
     EditorLanguageTracker.disconnect()
     OverlayLineTracker.disconnect()

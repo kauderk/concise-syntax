@@ -59,7 +59,7 @@ const createCalibrateSubscription = () =>
 			() => toastConsole.error('Failed to calibrate editor')
 		)
 		.finally(css => {
-			syntaxStyle.styleIt(css)
+			requestAnimationFrame(() => syntaxStyle.styleIt(css))
 
 			if (!highlight.running) {
         highlight.activate(500) // FIXME: find the moment the css finishes loading

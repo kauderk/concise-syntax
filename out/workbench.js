@@ -898,21 +898,24 @@ var __publicField = (obj, key, value) => {
       watchAttribute: ["data-mode-id", "aria-label"],
       change([language, label], [, oldLabel]) {
         editorLabel = label;
-        if (!language || !label)
+        if (!language || !label) {
+          if (oldLabel && label != oldLabel) {
+            styles.clear(oldLabel);
+          }
           return;
+        }
         OverlayLineTracker.disconnect();
         if (!editor.contains(deltaOverlay)) {
-          debugger;
           deltaOverlay = (editor == null ? void 0 : editor.querySelector(overlaySelector)) ?? deltaOverlay;
         }
         if (label.match(/(\.tsx$)|(\.tsx, E)/)) {
           if (language === "typescriptreact") {
             foundEditor();
             OverlayLineTracker.observe();
+            bruteForceLayoutShift();
           }
           if (oldLabel && label != oldLabel) {
-            styles.clear(oldLabel);
-            mount();
+            toastConsole.log("look! this gets executed...", oldLabel);
           }
         } else {
           styles.clear(label);
@@ -955,9 +958,11 @@ var __publicField = (obj, key, value) => {
       });
     }
     let tries = 0;
+    const limit = 5;
+    let layoutShift;
     const lineTracker = () => {
       const line = deltaOverlay.querySelector(selectedSelector);
-      if (!line || tries > 5) {
+      if (!line || tries > limit) {
         clearInterval(layoutShift);
         return;
       }
@@ -967,16 +972,21 @@ var __publicField = (obj, key, value) => {
         mount();
       }
     };
+    function bruteForceLayoutShift() {
+      tries = 0;
+      clearInterval(layoutShift);
+      layoutShift = setInterval(lineTracker, 100);
+    }
     mount();
     EditorLanguageTracker.plug();
-    const layoutShift = setInterval(lineTracker, 500);
+    bruteForceLayoutShift();
     return function dispose() {
-      tries = 6;
+      tries = limit + 2;
       clearInterval(layoutShift);
       if (editorLabel) {
         styles.clear(editorLabel);
       } else {
-        toastConsole.log("editorLabel is undefined");
+        toastConsole.error("editorLabel is undefined");
       }
       EditorLanguageTracker.disconnect();
       OverlayLineTracker.disconnect();
@@ -1392,7 +1402,7 @@ var __publicField = (obj, key, value) => {
       TryRegexToDomToCss,
       () => toastConsole.error("Failed to calibrate editor")
     ).finally((css) => {
-      syntaxStyle.styleIt(css);
+      requestAnimationFrame(() => syntaxStyle.styleIt(css));
       if (!highlight.running) {
         highlight.activate(500);
       }
