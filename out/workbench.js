@@ -1274,39 +1274,42 @@ var __publicField = (obj, key, value) => {
   function createObservable(initialValue) {
     let _value = initialValue;
     let _subscribers = [];
+    let _toDispose = /* @__PURE__ */ new Map();
+    function splice(sub) {
+      var _a;
+      _subscribers = _subscribers.filter((fn) => fn !== sub);
+      (_a = _toDispose.get(sub)) == null ? void 0 : _a.forEach((fn) => typeof fn === "function" && fn());
+      _toDispose.delete(sub);
+    }
     return {
       get value() {
         return _value;
       },
       set value(payload) {
-        this.set(payload);
-      },
-      set(payload) {
         if (_value === payload)
           return;
         _value = payload;
         this.notify();
       },
       notify() {
-        _subscribers.forEach((observer) => {
-          observer(_value);
-        });
-      },
-      subscribe(cb) {
-        _subscribers.push(cb);
-        cb(_value);
-        return () => {
-          _subscribers = _subscribers.filter((o) => o !== cb);
-        };
+        debugger;
+        for (let i = 0; i < _subscribers.length; i++) {
+          const sub = _subscribers[i];
+          const res = sub(_value);
+          if (typeof res === "function") {
+            _toDispose.set(sub, (_toDispose.get(sub) || []).concat(res));
+          } else if (res === "Symbol.dispose") {
+            splice(sub);
+            i -= 1;
+          }
+        }
       },
       /**
        * Subscribe without calling the callback immediately
        */
-      $ubscribe(cb) {
-        _subscribers.push(cb);
-        return () => {
-          _subscribers = _subscribers.filter((o) => o !== cb);
-        };
+      $ubscribe(sub) {
+        _subscribers.push(sub);
+        return () => splice(sub);
       }
     };
   }
@@ -1346,7 +1349,7 @@ var __publicField = (obj, key, value) => {
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
   const calibrateObservable = createObservable(void 0);
-  const sessionKey = extensionId + ".sessionFlags.jsx";
+  const sessionKey = `${extensionId}.sessionFlags.jsx`;
   function TryRegexToDomToCss(lineEditor) {
     let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx);
     try {
@@ -1375,8 +1378,7 @@ var __publicField = (obj, key, value) => {
   }
   const calibrateStyle = createStyles("calibrate");
   calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
-  let calibrateUn = deltaFn();
-  let createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
+  const createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
     if (value != calibrate.opened)
       return;
     new or_return(
@@ -1392,47 +1394,54 @@ var __publicField = (obj, key, value) => {
       }
     });
   });
+  const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
+    if (value) {
+      const cache = sessionCss();
+      if (cache) {
+        syntaxStyle.styleIt(cache);
+      }
+      return "Symbol.dispose";
+    }
+  });
   const syntaxStyle = createStyles("hide");
-  let unsubscribeState = () => {
-  };
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
-      if (!highlight.running) {
-        const cache = sessionCss();
-        if (cache) {
-          syntaxStyle.styleIt(cache);
-          highlight.activate(2500);
-        }
-      }
       if (!calibration.running) {
-        calibrateUn.fn = createCalibrateSubscription();
         calibration.activate(500);
+        let unSubscribers = [createCalibrateSubscription()];
+        if (sessionCss() && !highlight.running) {
+          highlight.activate(2500);
+          unSubscribers.push(createEditorSubscription());
+        }
+        return () => unSubscribers.forEach((un) => un());
       }
     } else {
       syntaxStyle.dispose();
       highlight.dispose();
-      calibrateUn.consume();
       calibration.dispose();
     }
   });
   const syntax = createSyntaxLifecycle(stateObservable, IState);
   const calibration = createSyntaxLifecycle(calibrateObservable, ICalibrate);
   const highlight = createHighlightLifeCycle(editorObservable);
+  const deltaDispose = deltaFn();
   const tryFn = createTryFunction();
   const conciseSyntax = {
     activate() {
       tryFn(() => {
+        deltaDispose.consume();
         syntax.activate();
-        unsubscribeState = createStateSubscription();
-      }, "Concise Syntax Extension crashed unexpectedly when activating");
+        const unSubscribeState = createStateSubscription();
+        deltaDispose.fn = () => {
+          tryFn(() => {
+            syntax.dispose();
+            stateObservable.value = state.inactive;
+            unSubscribeState();
+          }, "Failed to dispose concise-syntax");
+        };
+      }, "Failed to activate concise-syntax");
     },
-    dispose() {
-      tryFn(() => {
-        syntax.dispose();
-        stateObservable.value = state.inactive;
-        unsubscribeState();
-      }, "Concise Syntax Extension crashed unexpectedly when disposing");
-    }
+    dispose: deltaDispose.consume
   };
   if (window.conciseSyntax) {
     window.conciseSyntax.dispose();

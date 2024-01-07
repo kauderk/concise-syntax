@@ -1,7 +1,6 @@
 import { createSyntaxLifecycle } from './syntax'
 import { createHighlightLifeCycle } from './highlight'
 import { extensionId, viewLinesSelector } from './keys'
-import { createTryFunction } from './lifecycle'
 import { IState, State, state } from 'src/shared/state'
 import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
 import { createStyles, toastConsole } from './shared'
@@ -10,13 +9,14 @@ import { assembleCss, editorFlags, jsx_parseStyles, mergeDeep } from './regexToD
 import { createObservable } from '../shared/observable'
 import { or_return } from '../shared/or_return'
 import { deltaFn } from 'src/shared/utils'
+import { createTryFunction } from './lifecycle'
 export type { editorObservable, stateObservable, calibrateObservable }
 
 const editorObservable = createObservable<undefined | boolean>(undefined)
 const stateObservable = createObservable<State | undefined>(undefined)
 const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
-const sessionKey = extensionId + '.sessionFlags.jsx'
+const sessionKey = `${extensionId}.sessionFlags.jsx`
 function TryRegexToDomToCss(lineEditor: HTMLElement) {
   let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx)
   try {
@@ -45,8 +45,8 @@ function sessionCss() {
 }
 const calibrateStyle = createStyles('calibrate')
 calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
-let calibrateUn = deltaFn()
-let createCalibrateSubscription = () =>
+
+const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((value) => {
     if (value != calibrate.opened) return
     // prettier-ignore
@@ -67,28 +67,36 @@ let createCalibrateSubscription = () =>
 		})
   })
 
+const createEditorSubscription = () =>
+  editorObservable.$ubscribe((value) => {
+    if (value) {
+      const cache = sessionCss()
+      if (cache) {
+        syntaxStyle.styleIt(cache)
+      }
+      return 'Symbol.dispose'
+    }
+  })
+
 const syntaxStyle = createStyles('hide')
-let unsubscribeState = () => {}
+// Just use the "using" keyword...
 const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
-      if (!highlight.running) {
-        const cache = sessionCss()
-        if (cache) {
-          syntaxStyle.styleIt(cache)
-          highlight.activate(2500)
-        }
-      }
       if (!calibration.running) {
-        calibrateUn.fn = createCalibrateSubscription()
         calibration.activate(500)
+        let unSubscribers = [createCalibrateSubscription()]
+
+        if (sessionCss() && !highlight.running) {
+          highlight.activate(2500)
+          unSubscribers.push(createEditorSubscription())
+        }
+
+        return () => unSubscribers.forEach((un) => un())
       }
     } else {
       syntaxStyle.dispose()
-
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow
-
-      calibrateUn.consume()
       calibration.dispose()
     }
   })
@@ -96,23 +104,25 @@ const createStateSubscription = () =>
 const syntax = createSyntaxLifecycle(stateObservable, IState)
 const calibration = createSyntaxLifecycle(calibrateObservable, ICalibrate)
 const highlight = createHighlightLifeCycle(editorObservable)
-const tryFn = createTryFunction()
 
+const deltaDispose = deltaFn()
+const tryFn = createTryFunction()
 const conciseSyntax = {
   activate() {
-    // TODO: return a local dispose function
     tryFn(() => {
+      deltaDispose.consume()
       syntax.activate()
-      unsubscribeState = createStateSubscription()
-    }, 'Concise Syntax Extension crashed unexpectedly when activating')
+      const unSubscribeState = createStateSubscription()
+      deltaDispose.fn = () => {
+        tryFn(() => {
+          syntax.dispose()
+          stateObservable.value = state.inactive
+          unSubscribeState()
+        }, 'Failed to dispose concise-syntax')
+      }
+    }, 'Failed to activate concise-syntax')
   },
-  dispose() {
-    tryFn(() => {
-      syntax.dispose()
-      stateObservable.value = state.inactive
-      unsubscribeState()
-    }, 'Concise Syntax Extension crashed unexpectedly when disposing')
-  },
+  dispose: deltaDispose.consume,
 }
 
 // prettier-ignore

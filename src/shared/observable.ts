@@ -3,43 +3,46 @@
  */
 export function createObservable<T>(initialValue: T) {
   let _value: T = initialValue
-  let _subscribers: ((payload: T) => void)[] = []
+  type SelfCleanup = (() => void) | 'Symbol.dispose' // is this well supported?
+  type Subscriber = (payload: T) => SelfCleanup | void
+  let _subscribers: Subscriber[] = []
+  let _toDispose = new Map<Subscriber, SelfCleanup[]>()
 
+  function splice(sub: Subscriber) {
+    _subscribers = _subscribers.filter((fn) => fn !== sub)
+    _toDispose.get(sub)?.forEach((fn) => typeof fn === 'function' && fn())
+    _toDispose.delete(sub)
+  }
   return {
     get value(): T {
       return _value
     },
     set value(payload: T) {
-      this.set(payload)
-    },
-    set(payload: T) {
       if (_value === payload) return
-
       _value = payload
       this.notify()
     },
     notify() {
-      _subscribers.forEach((observer) => {
-        observer(_value)
-      })
-    },
-    subscribe(cb: (payload: T) => void) {
-      _subscribers.push(cb)
-      cb(_value)
-      return () => {
-        // unsubscribe
-        _subscribers = _subscribers.filter((o) => o !== cb)
+      debugger
+      for (let i = 0; i < _subscribers.length; i++) {
+        const sub = _subscribers[i]
+        const res = sub(_value)
+
+        if (typeof res === 'function') {
+          // prettier-ignore
+          _toDispose.set(sub, (_toDispose.get(sub) || []).concat(res))
+        } else if (res === 'Symbol.dispose') {
+          splice(sub)
+          i -= 1
+        }
       }
     },
     /**
      * Subscribe without calling the callback immediately
      */
-    $ubscribe(cb: (payload: T) => void) {
-      _subscribers.push(cb)
-      return () => {
-        // unsubscribe
-        _subscribers = _subscribers.filter((o) => o !== cb)
-      }
+    $ubscribe(sub: Subscriber) {
+      _subscribers.push(sub)
+      return () => splice(sub)
     },
   }
 }
