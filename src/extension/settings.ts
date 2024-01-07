@@ -5,16 +5,17 @@ import JSONC from 'comment-json'
 import { extensionId } from 'src/workbench/keys'
 
 export const key = 'editor.tokenColorCustomizations'
+const name = `${extensionId}.`
 const textMateRules = [
   {
-    name: extensionId + 'text',
+    name: name + 'text',
     scope: ['meta.jsx.children.tsx'],
     settings: {
       foreground: '#B59E7A',
     },
   },
   {
-    name: extensionId + 'redundant',
+    name: name + 'redundant',
     scope: [
       'punctuation.definition.tag.begin.tsx',
       'punctuation.definition.tag.end.tsx',
@@ -28,7 +29,7 @@ const textMateRules = [
     },
   },
   {
-    name: extensionId + 'quote.begin',
+    name: name + 'quote.begin',
     scope: [
       'punctuation.definition.string.begin.tsx',
       'punctuation.definition.string.template.begin.tsx',
@@ -38,7 +39,7 @@ const textMateRules = [
     },
   },
   {
-    name: extensionId + 'quote.end',
+    name: name + 'quote.end',
     scope: [
       'punctuation.definition.string.end.tsx',
       'punctuation.definition.string.template.end.tsx',
@@ -48,7 +49,7 @@ const textMateRules = [
     },
   },
   {
-    name: extensionId + 'separator',
+    name: name + 'separator',
     scope: ['punctuation.separator.comma.tsx'],
     settings: {
       foreground: '#d4d4d4f0',

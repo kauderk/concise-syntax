@@ -35,7 +35,7 @@ const msg = {
   reloadAfterVersionUpgrade: "Detected reloading Concise syntax after VSCode is upgraded. Performing application only.",
   cannotLoad: (url) => `Cannot load '${url}'. Skipping.`
 };
-const name = "concise-syntax";
+const name$1 = "concise-syntax";
 const displayName = "Concise Syntax";
 const description = "Hide unnecessary syntax or markup from programming languages";
 const version = "0.0.1";
@@ -92,7 +92,7 @@ const devDependencies = {
   vscode: "^1.1.37"
 };
 const packageJson = {
-  name,
+  name: name$1,
   displayName,
   description,
   version,
@@ -151,16 +151,17 @@ function useState(context, key2) {
   };
 }
 const key = "editor.tokenColorCustomizations";
+const name = `${extensionId}.`;
 const textMateRules = [
   {
-    name: extensionId + "text",
+    name: name + "text",
     scope: ["meta.jsx.children.tsx"],
     settings: {
       foreground: "#B59E7A"
     }
   },
   {
-    name: extensionId + "redundant",
+    name: name + "redundant",
     scope: [
       "punctuation.definition.tag.begin.tsx",
       "punctuation.definition.tag.end.tsx",
@@ -174,7 +175,7 @@ const textMateRules = [
     }
   },
   {
-    name: extensionId + "quote.begin",
+    name: name + "quote.begin",
     scope: [
       "punctuation.definition.string.begin.tsx",
       "punctuation.definition.string.template.begin.tsx"
@@ -184,7 +185,7 @@ const textMateRules = [
     }
   },
   {
-    name: extensionId + "quote.end",
+    name: name + "quote.end",
     scope: [
       "punctuation.definition.string.end.tsx",
       "punctuation.definition.string.template.end.tsx"
@@ -194,7 +195,7 @@ const textMateRules = [
     }
   },
   {
-    name: extensionId + "separator",
+    name: name + "separator",
     scope: ["punctuation.separator.comma.tsx"],
     settings: {
       foreground: "#d4d4d4f0"
