@@ -1153,7 +1153,7 @@ var __publicField = (obj, key, value) => {
             continue;
           flags.jsxTag = {
             // find the last </tag> and hide it "tag" which is the second to last child
-            hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
+            hide: `:has([class="${angleBracket}"]+.${tag}+.${angleBracket}) [class="${angleBracket}"]+.${tag}`,
             hover: `.${angleBracket}+.${tag}`
           };
           flags.vsCodeHiddenTokens = {
@@ -1174,7 +1174,7 @@ var __publicField = (obj, key, value) => {
             continue;
           flags.jsxTagUpperCase = {
             // find the last </Tag> and hide it "tag" which is the second to last child
-            hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
+            hide: `:has([class="${angleBracket}"]+.${tag}+.${angleBracket}) [class="${angleBracket}"]+.${tag}`,
             hover: `.${angleBracket}+.${tag}`
           };
           anyFlag = true;
