@@ -135,8 +135,8 @@ export function jsx_parseStyles(
           const endQuote = Array.from(array[i + 1].classList).join('.') // wow, why isn't typescript freaking out?
 
           // Find "" or '' or `` and show them
-          customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {
-							color: gray;
+          customFlags.singleQuotes = `[class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote} {
+							--r: gray;
 						}`
           flags.beginQuote = {
             // this is the most common case, you could derive it from other flags

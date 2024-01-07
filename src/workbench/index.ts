@@ -141,7 +141,3 @@ console.log(extensionId, conciseSyntax)
  * there should be a way to hook textMateRules when activating the extension
  * 	for example the case of constant.language.boolean "{true}"
  * */
-/**
- * FIXME
- * empty quotes flags are not working
- */

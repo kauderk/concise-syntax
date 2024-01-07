@@ -1219,8 +1219,8 @@ var __publicField = (obj, key, value) => {
               if ((current == null ? void 0 : current[0].length) == 1 && current[0] === (next == null ? void 0 : next[0])) {
                 const beginQuote = Array.from(child.classList).join(".");
                 const endQuote = Array.from(array[i + 1].classList).join(".");
-                customFlags.singleQuotes = `.${beginQuote}:has(+.${endQuote}), .${beginQuote}+.${endQuote} {
-							color: gray;
+                customFlags.singleQuotes = `[class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote} {
+							--r: gray;
 						}`;
                 flags.beginQuote = {
                   // this is the most common case, you could derive it from other flags
