@@ -41,6 +41,13 @@ const textMateRules = [
       foreground: '#b5030000',
     },
   },
+  {
+    name: extensionId + 'separator',
+    scope: ['punctuation.separator.comma.tsx'],
+    settings: {
+      foreground: '#d4d4d4f0',
+    },
+  },
 ]
 const settingsJsonPath = '.vscode/settings.json'
 const remoteSettingsJsonPath = 'remote.settings.jsonc'

@@ -9,6 +9,7 @@ export const editorFlags = {
       jsxTernaryBrace: null as FlagOr,
       jsxTernaryOtherwise: null as FlagOr,
       vsCodeHiddenTokens: null as FlagOr,
+      separator: null as FlagOr,
       beginQuote: null as FlagOr,
       endQuote: null as FlagOr,
     },
@@ -71,6 +72,22 @@ export function jsx_parseStyles(
         // find the last </Tag> and hide it "tag" which is the second to last child
         hide: `:has(:nth-last-child(3).${angleBracket}+.${tag}+.${angleBracket}) :nth-last-child(2)`,
         hover: `.${angleBracket}+.${tag}`,
+      }
+
+      anyFlag = true
+    } else if (
+      // TODO: find out what else could be affected through experimentation
+      !flags.separator &&
+      text.match(/(?<separator>,$)/)?.groups?.separator
+    ) {
+      const closing = SliceClassList(line, -1)
+      if (!closing.okLength) continue
+      const [terminator] = closing.flat()
+
+      flags.separator = {
+        // find the last , and hide it
+        hide: `>.${terminator}:last-child`,
+        hover: `.${terminator}`,
       }
 
       anyFlag = true

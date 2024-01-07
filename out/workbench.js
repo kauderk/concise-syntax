@@ -1121,6 +1121,7 @@ var __publicField = (obj, key, value) => {
         jsxTernaryBrace: null,
         jsxTernaryOtherwise: null,
         vsCodeHiddenTokens: null,
+        separator: null,
         beginQuote: null,
         endQuote: null
       },
@@ -1130,7 +1131,7 @@ var __publicField = (obj, key, value) => {
     }
   };
   function jsx_parseStyles(lineEditor, _editorFlag) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
     const editorFlag = structuredClone(_editorFlag);
     const flags = editorFlag.flags;
     const customFlags = editorFlag.customFlags;
@@ -1177,7 +1178,21 @@ var __publicField = (obj, key, value) => {
             hover: `.${angleBracket}+.${tag}`
           };
           anyFlag = true;
-        } else if (!flags.jsxTernaryBrace && ((_f = (_e = text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.jsxTernaryBrace)) {
+        } else if (
+          // TODO: find out what else could be affected through experimentation
+          !flags.separator && ((_f = (_e = text.match(/(?<separator>,$)/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.separator)
+        ) {
+          const closing = SliceClassList(line, -1);
+          if (!closing.okLength)
+            continue;
+          const [terminator] = closing.flat();
+          flags.separator = {
+            // find the last , and hide it
+            hide: `>.${terminator}:last-child`,
+            hover: `.${terminator}`
+          };
+          anyFlag = true;
+        } else if (!flags.jsxTernaryBrace && ((_h = (_g = text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.jsxTernaryBrace)) {
           const closing = SliceClassList(line, -4);
           if (!closing.okLength)
             continue;
@@ -1189,7 +1204,7 @@ var __publicField = (obj, key, value) => {
             hover: selector
           };
           anyFlag = true;
-        } else if (!flags.jsxTernaryOtherwise && ((_h = (_g = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.jsxTernaryOtherwise)) {
+        } else if (!flags.jsxTernaryOtherwise && ((_j = (_i = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _i.groups) == null ? void 0 : _j.jsxTernaryOtherwise)) {
           let selector;
           const closing7 = SliceClassList(line, -7);
           if (closing7.okLength) {
@@ -1208,14 +1223,14 @@ var __publicField = (obj, key, value) => {
             hover: selector
           };
           anyFlag = true;
-        } else if (!customFlags.singleQuotes && ((_j = (_i = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _i.groups) == null ? void 0 : _j.singleQuotes)) {
+        } else if (!customFlags.singleQuotes && ((_l = (_k = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _k.groups) == null ? void 0 : _l.singleQuotes)) {
           const array = Array.from(line.children);
           const quote = /"|'|`/;
           singleQuotes:
             for (let i = 0; i < array.length; i++) {
               const child = array[i];
-              const current = (_k = child.textContent) == null ? void 0 : _k.match(quote);
-              const next = (_m = (_l = array[i + 1]) == null ? void 0 : _l.textContent) == null ? void 0 : _m.match(quote);
+              const current = (_m = child.textContent) == null ? void 0 : _m.match(quote);
+              const next = (_o = (_n = array[i + 1]) == null ? void 0 : _n.textContent) == null ? void 0 : _o.match(quote);
               if ((current == null ? void 0 : current[0].length) == 1 && current[0] === (next == null ? void 0 : next[0])) {
                 const beginQuote = Array.from(child.classList).join(".");
                 const endQuote = Array.from(array[i + 1].classList).join(".");
