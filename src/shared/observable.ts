@@ -23,7 +23,7 @@ export function createObservable<T>(initialValue: T) {
       this.notify()
     },
     notify() {
-      debugger
+      // debugger right now it is hardcoded... maybe after each subscriber callback _toDispose should be cleaned up
       for (let i = 0; i < _subscribers.length; i++) {
         const sub = _subscribers[i]
         const res = sub(_value)

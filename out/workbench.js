@@ -1292,7 +1292,6 @@ var __publicField = (obj, key, value) => {
         this.notify();
       },
       notify() {
-        debugger;
         for (let i = 0; i < _subscribers.length; i++) {
           const sub = _subscribers[i];
           const res = sub(_value);
@@ -1398,6 +1397,7 @@ var __publicField = (obj, key, value) => {
     if (value) {
       const cache = sessionCss();
       if (cache) {
+        console.log("real cache?");
         syntaxStyle.styleIt(cache);
       }
       return "Symbol.dispose";
@@ -1407,15 +1407,18 @@ var __publicField = (obj, key, value) => {
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
       if (!calibration.running) {
+        console.log("active");
         calibration.activate(500);
         let unSubscribers = [createCalibrateSubscription()];
-        if (sessionCss() && !highlight.running) {
-          highlight.activate(2500);
+        const cache = sessionCss();
+        if (cache && !highlight.running) {
+          highlight.activate(500);
           unSubscribers.push(createEditorSubscription());
         }
         return () => unSubscribers.forEach((un) => un());
       }
     } else {
+      console.log("dispose");
       syntaxStyle.dispose();
       highlight.dispose();
       calibration.dispose();
