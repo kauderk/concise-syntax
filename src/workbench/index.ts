@@ -141,3 +141,7 @@ console.log(extensionId, conciseSyntax)
  * there should be a way to hook textMateRules when activating the extension
  * 	for example the case of constant.language.boolean "{true}"
  * */
+/**
+ * FIXME
+ * handle drastic user changes for example when changing vscode's profile
+ */

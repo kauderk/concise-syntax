@@ -15,6 +15,7 @@ export const editorFlags = {
     },
     customFlags: {
       singleQuotes: null as string | null,
+      jsxTernaryOtherwiseHover: null as string | null,
     },
   },
 }
@@ -133,6 +134,10 @@ export function jsx_parseStyles(
         hide: `:has(${selector}) *`,
         hover: selector,
       }
+      // FIXME: find a better way to do this
+      customFlags.jsxTernaryOtherwiseHover = `.view-lines:has(.view-line span:hover ${selector}) {
+				--r: red;
+			}`
 
       anyFlag = true
     } else if (

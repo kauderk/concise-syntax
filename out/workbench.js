@@ -1126,7 +1126,8 @@ var __publicField = (obj, key, value) => {
         endQuote: null
       },
       customFlags: {
-        singleQuotes: null
+        singleQuotes: null,
+        jsxTernaryOtherwiseHover: null
       }
     }
   };
@@ -1222,6 +1223,9 @@ var __publicField = (obj, key, value) => {
             hide: `:has(${selector}) *`,
             hover: selector
           };
+          customFlags.jsxTernaryOtherwiseHover = `.view-lines:has(.view-line span:hover ${selector}) {
+				--r: red;
+			}`;
           anyFlag = true;
         } else if (!customFlags.singleQuotes && ((_l = (_k = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _k.groups) == null ? void 0 : _l.singleQuotes)) {
           const array = Array.from(line.children);
