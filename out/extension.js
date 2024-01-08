@@ -135,34 +135,6 @@ async function preRead(base) {
     }
   };
 }
-function _catch(e) {
-}
-function useState(context, key2) {
-  return {
-    value: "",
-    read() {
-      return this.value = context.workspaceState.get(key2);
-    },
-    async write(newState) {
-      this.value = newState;
-      await context.workspaceState.update(key2, newState);
-      return newState;
-    }
-  };
-}
-function useGlobal(context, key2) {
-  return {
-    value: "",
-    read() {
-      return this.value = context.globalState.get(key2);
-    },
-    async write(newState) {
-      this.value = newState;
-      await context.globalState.update(key2, newState);
-      return newState;
-    }
-  };
-}
 const key = "editor.tokenColorCustomizations";
 const name = `${extensionId}.`;
 const textMateRules = [
@@ -221,13 +193,11 @@ async function updateSettingsCycle(context, operation) {
   if (!res)
     return;
   const { wasEmpty, specialObjectUserRules: userRules } = res;
-  const textColor = useState(context, "textColor");
   let diff = false;
   if (operation == "active") {
     if (wasEmpty) {
       diff = true;
       userRules.push(...textMateRules);
-      tryPatchTextColor(userRules[0], "patch");
     } else {
       const userIndexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]));
       for (const presetRule of textMateRules) {
@@ -236,7 +206,6 @@ async function updateSettingsCycle(context, operation) {
           const userRule = userRules[i];
           if (!userRule) {
             userRules[i] = presetRule;
-            tryPatchTextColor(presetRule, "patch");
             diff = true;
             continue;
           }
@@ -244,14 +213,13 @@ async function updateSettingsCycle(context, operation) {
             userRule.scope = presetRule.scope;
             diff = true;
           }
-          if (!userRule.settings?.foreground?.match(/^#/)) {
-            userRule.settings = presetRule.settings;
-            tryPatchTextColor(userRule, "patch");
+          if (userRule.settings?.foreground !== presetRule.settings.foreground) {
+            userRule.settings ??= {};
+            userRule.settings.foreground = presetRule.settings.foreground;
             diff = true;
           }
         } else {
           userRules.push(presetRule);
-          tryPatchTextColor(presetRule, "patch");
           diff = true;
         }
       }
@@ -263,25 +231,12 @@ async function updateSettingsCycle(context, operation) {
     } else {
       const indexToNameMap = new Map(textMateRules.map((r, i) => [r.name, i]));
       for (let i = userRules.length - 1; i >= 0; i--) {
-        const name2 = userRules[i]?.name;
-        const j = indexToNameMap.get(name2);
+        const j = indexToNameMap.get(userRules[i]?.name);
         if (j > -1) {
           diff = true;
           userRules.splice(i, 1);
-          tryPatchTextColor(textMateRules[j], "write");
         }
       }
-    }
-  }
-  function tryPatchTextColor(rule, action) {
-    if (rule?.name != textMateRules[0].name)
-      return;
-    const color = textMateRules[0].settings.foreground;
-    if (action == "write") {
-      textColor.write(rule?.settings?.foreground || color);
-    } else {
-      rule.settings = rule.settings || {};
-      rule.settings.foreground = textColor.read() || color;
     }
   }
   [...textMateRules].reverse().forEach((r, relative, _arr) => {
@@ -386,6 +341,34 @@ const calibrateIcon = "go-to-file";
 const calibrationFileName = "syntax.tsx";
 function iconSelector(icon) {
   return `[id="${extensionId}"]:has(.codicon-${icon})`;
+}
+function _catch(e) {
+}
+function useState(context, key2) {
+  return {
+    value: "",
+    read() {
+      return this.value = context.workspaceState.get(key2);
+    },
+    async write(newState) {
+      this.value = newState;
+      await context.workspaceState.update(key2, newState);
+      return newState;
+    }
+  };
+}
+function useGlobal(context, key2) {
+  return {
+    value: "",
+    read() {
+      return this.value = context.globalState.get(key2);
+    },
+    async write(newState) {
+      this.value = newState;
+      await context.globalState.update(key2, newState);
+      return newState;
+    }
+  };
 }
 function deltaFn(consume = false) {
   let delta;

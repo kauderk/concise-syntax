@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
-import { _catch, useState } from './utils'
+import { _catch } from './utils'
 import JSONC from 'comment-json'
 import { extensionId } from 'src/workbench/keys'
 
@@ -68,8 +68,6 @@ export async function updateSettingsCycle(
   if (!res) return
   const { wasEmpty, specialObjectUserRules: userRules } = res
 
-  const textColor = useState(context, 'textColor')
-
   // could be more elegant...
   // this has to be faster than writing the file every time, otherwise it's not worth it
   let diff = false
@@ -77,7 +75,6 @@ export async function updateSettingsCycle(
     if (wasEmpty) {
       diff = true
       userRules.push(...textMateRules)
-      tryPatchTextColor(userRules[0], 'patch')
     } else {
       const userIndexToNameMap = new Map(userRules.map((r, i) => [r?.name, i]))
 
@@ -87,7 +84,6 @@ export async function updateSettingsCycle(
           const userRule = userRules[i]
           if (!userRule) {
             userRules[i] = presetRule
-            tryPatchTextColor(presetRule, 'patch')
             diff = true
             continue
           }
@@ -96,14 +92,14 @@ export async function updateSettingsCycle(
             userRule.scope = presetRule.scope
             diff = true
           }
-          if (!userRule.settings?.foreground?.match(/^#/)) {
-            userRule.settings = presetRule.settings
-            tryPatchTextColor(userRule, 'patch')
+          // prettier-ignore
+          if (userRule.settings?.foreground!== presetRule.settings.foreground) {
+						userRule.settings ??= {}
+            userRule.settings.foreground = presetRule.settings.foreground
             diff = true
           }
         } else {
           userRules.push(presetRule)
-          tryPatchTextColor(presetRule, 'patch')
           diff = true
         }
       }
@@ -115,25 +111,12 @@ export async function updateSettingsCycle(
     } else {
       const indexToNameMap = new Map(textMateRules.map((r, i) => [r.name, i]))
       for (let i = userRules.length - 1; i >= 0; i--) {
-        const name = userRules[i]?.name!
-        const j = indexToNameMap.get(name)!
+        const j = indexToNameMap.get(userRules[i]?.name!)!
         if (j > -1) {
           diff = true
           userRules.splice(i, 1)
-          tryPatchTextColor(textMateRules[j], 'write')
         }
       }
-    }
-  }
-  // so far this is the only variable that matters, if there's need for other check the previous git commit
-  function tryPatchTextColor(rule: any, action: 'write' | 'patch') {
-    if (rule?.name != textMateRules[0].name) return
-    const color = textMateRules[0].settings.foreground
-    if (action == 'write') {
-      textColor.write(rule?.settings?.foreground || color)
-    } else {
-      rule.settings = rule.settings || {}
-      rule.settings.foreground = textColor.read() || color
     }
   }
 
