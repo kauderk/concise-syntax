@@ -438,6 +438,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       busy = true;
       debugger;
       disposeConfiguration.consume();
+      calibrate_confirmation_token.consume();
       if (!(overloads.calibratedThen || calibrationState.read() == state.active)) {
         await defaultWindowState(_item, state.stale);
         busy = false;
@@ -461,6 +462,12 @@ async function ExtensionState_statusBarItem(context, setState) {
         }
       }
       if (typeof cash == "function") {
+        if (overloads.diff) {
+          withProgress({
+            title: "Concise Syntax: revalidating...",
+            seconds: 5
+          });
+        }
         const task = createTask();
         const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
         await cash();
@@ -569,27 +576,10 @@ async function ExtensionState_statusBarItem(context, setState) {
         await new Promise((resolve) => setTimeout(resolve, 1e3));
         await tryUpdateCalibrateState("opened", 500);
         checkCalibratedCommandContext(state.active);
-        const progressSeconds = 10;
-        vscode__namespace.window.withProgress(
-          {
-            location: vscode__namespace.ProgressLocation.Window,
-            title: "Concise Syntax was calibrated you may close the file",
-            cancellable: true
-          },
-          // prettier-ignore
-          async () => new Promise(async (resolve) => {
-            calibrate_confirmation_token.value = new vscode__namespace.CancellationTokenSource();
-            const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
-              calibrate_confirmation_token.consume();
-              dispose();
-              resolve(null);
-            }).dispose;
-            for (let i = 0; i < progressSeconds; i++) {
-              await hold(1e3);
-            }
-            resolve(null);
-          })
-        );
+        withProgress({
+          title: "Concise Syntax: calibrated you may close the file",
+          seconds: 10
+        });
         c_busy = false;
       } catch (error) {
         debugger;
@@ -635,6 +625,28 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrate_confirmation_token.consume();
     }
   });
+}
+function withProgress(params) {
+  return vscode__namespace.window.withProgress(
+    {
+      location: vscode__namespace.ProgressLocation.Window,
+      title: params.title,
+      cancellable: true
+    },
+    // prettier-ignore
+    async () => new Promise(async (resolve) => {
+      calibrate_confirmation_token.value = new vscode__namespace.CancellationTokenSource();
+      const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
+        calibrate_confirmation_token.consume();
+        dispose();
+        resolve(null);
+      }).dispose;
+      for (let i = 0; i < params.seconds; i++) {
+        await hold(1e3);
+      }
+      resolve(null);
+    })
+  );
 }
 function checkDisposedCommandContext(next) {
   vscode__namespace.commands.executeCommand(

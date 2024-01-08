@@ -67,6 +67,7 @@ export async function ExtensionState_statusBarItem(
 
       debugger
       disposeConfiguration.consume()
+      calibrate_confirmation_token.consume()
 
       if (
         !(overloads.calibratedThen || calibrationState.read() == state.active)
@@ -107,6 +108,12 @@ export async function ExtensionState_statusBarItem(
 
       // prettier-ignore
       if (typeof cash == 'function') {
+        if (overloads.diff) {
+          withProgress({
+            title: 'Concise Syntax: revalidating...',
+            seconds: 5,
+          })
+        }
         const task = createTask()
         const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
         await cash()
@@ -235,27 +242,10 @@ export async function ExtensionState_statusBarItem(
 
         checkCalibratedCommandContext(state.active)
 
-        const progressSeconds = 10
-        vscode.window.withProgress(
-          {
-            location: vscode.ProgressLocation.Window,
-            title: 'Concise Syntax was calibrated you may close the file',
-            cancellable: true,
-          },
-          // prettier-ignore
-          async () => new Promise(async (resolve) => {
-            calibrate_confirmation_token.value = new vscode.CancellationTokenSource()
-            const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
-              calibrate_confirmation_token.consume()
-              dispose()
-              resolve(null)
-            }).dispose
-            for (let i = 0; i < progressSeconds; i++) {
-              await hold(1_000)
-            }
-            resolve(null)
-          })
-        )
+        withProgress({
+          title: 'Concise Syntax: calibrated you may close the file',
+          seconds: 10,
+        })
 
         c_busy = false
       } catch (error: any) {
@@ -307,6 +297,29 @@ export async function ExtensionState_statusBarItem(
       calibrate_confirmation_token.consume()
     },
   })
+}
+
+function withProgress(params: { title: string; seconds: number }) {
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Window,
+      title: params.title,
+      cancellable: true,
+    },
+    // prettier-ignore
+    async () => new Promise(async (resolve) => {
+			calibrate_confirmation_token.value = new vscode.CancellationTokenSource()
+			const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
+				calibrate_confirmation_token.consume()
+				dispose()
+				resolve(null)
+			}).dispose
+			for (let i = 0; i < params.seconds; i++) {
+				await hold(1_000)
+			}
+			resolve(null)
+		})
+  )
 }
 
 export function checkDisposedCommandContext(next?: State) {
