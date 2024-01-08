@@ -12,7 +12,7 @@ import {
 import { Calibrate, calibrateIcon } from 'src/shared/state'
 import { useState } from './utils'
 import path from 'path'
-import { deltaFn } from 'src/shared/utils'
+import { deltaFn, deltaValue } from 'src/shared/utils'
 
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
@@ -25,10 +25,11 @@ let disposeConfiguration = deltaFn()
 let crashedMessage = ''
 
 let _calibrate: vscode.StatusBarItem | undefined
-let c_state: undefined | boolean = false
 let c_busy = false
 let disposeClosedEditor = deltaFn(true)
-let isCalibrating = deltaFn<() => boolean>(true)
+let calibrate_confirmation_token = deltaValue<vscode.CancellationTokenSource>(
+  (t) => t.dispose()
+)
 
 export async function ExtensionState_statusBarItem(
   context: vscode.ExtensionContext,
@@ -77,15 +78,6 @@ export async function ExtensionState_statusBarItem(
       _item.text = `$(${stateIcon})` + iconText
       _item.tooltip = IState.encode(next)
       await hold()
-      // FIXME: get me out of here
-      if (!cash && isCalibrating.fn?.()) {
-        debugger
-        await tryUpdateCalibrateState('invalidate')
-          .then(() => tryUpdateCalibrateState('idle'))
-          .catch(() => {
-            vscode.window.showErrorMessage('Failed to invalidate calibration')
-          })
-      }
 
       if (next != state.disposed) {
         _item.show()
@@ -151,12 +143,6 @@ export async function ExtensionState_statusBarItem(
           'The extension is disposed. Mount it to use this command.'
         )
       }
-      if (c_state === undefined) {
-        vscode.window.showErrorMessage(
-          'Error: cannot calibrate because there is no valid state'
-        )
-        return
-      }
       if (c_busy || busy) {
         vscode.window.showInformationMessage(
           'The extension is busy. Try again in a few seconds.'
@@ -168,74 +154,71 @@ export async function ExtensionState_statusBarItem(
       try {
         c_busy = true
 
+        calibrate_confirmation_token.consume()
+
         // FIXME: get me out of here
         if (windowState.read() == state.inactive) {
           // makes sense right? because having to activate two times is a bit annoying...
           await REC_nextStateCycle(state.active, state.active)
         }
 
-        // click - state was bootUp or closed
-        if (c_state === false) {
-          c_state = true
+        await tryUpdateCalibrateState('opening')
+        const document = await vscode.workspace.openTextDocument(uriRemote)
+        const editor = await vscode.window.showTextDocument(document, {
+          preview: false,
+          preserveFocus: false,
+        })
 
-          await tryUpdateCalibrateState('opening')
-          const document = await vscode.workspace.openTextDocument(uriRemote)
-          const editor = await vscode.window.showTextDocument(document, {
-            preview: false,
-            preserveFocus: false,
-          })
+        disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
+          if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
+            await consume_close()
+            return true
+          }
+        })
 
-          isCalibrating.fn = () => !!c_state && !editor.document.isClosed
+        await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
+        await tryUpdateCalibrateState('opened', 500)
 
-          disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-            if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
-              c_state = false
-              await consume_close()
-              return true
+        const progressSeconds = 10
+        vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Window,
+            title: 'Concise Syntax was calibrated you may close the file',
+            cancellable: true,
+          },
+          // prettier-ignore
+          async () => new Promise(async (resolve) => {
+            calibrate_confirmation_token.value = new vscode.CancellationTokenSource()
+            const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
+              calibrate_confirmation_token.consume()
+              dispose()
+              resolve(null)
+            }).dispose
+            for (let i = 0; i < progressSeconds; i++) {
+              await hold(1_000)
             }
+            resolve(null)
           })
-
-          await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
-          await tryUpdateCalibrateState('opened')
-          await tryUpdateCalibrateState('idle')
-
-          // click
-        } else if (c_state === true) {
-          c_state = false
-          consume()
-
-          await closeFileIfOpen(uriRemote)
-          await tryUpdateCalibrateState('closed')
-
-          // just be extra safe
-        } else {
-          throw new Error('Invalid state')
-        }
+        )
 
         c_busy = false
       } catch (error: any) {
         debugger
-        c_state = undefined
         await consume_close()
         vscode.window.showErrorMessage(
           `Error: failed to open calibrate file -> ${error?.message}`
         )
       }
-      function consume() {
-        isCalibrating.consume()
-        disposeClosedEditor.consume()
-      }
       function consume_close() {
-        consume()
+        disposeClosedEditor.consume()
         return tryUpdateCalibrateState('closed')
+      }
+      function tryUpdateCalibrateState(state: Calibrate, t = 100) {
+        _calibrate!.tooltip = state
+        return hold(t)
       }
     })
   )
-  function tryUpdateCalibrateState(state: Calibrate) {
-    if (!_calibrate) return Promise.reject('you are messing up')
-    _calibrate.tooltip = state
-    return hold()
-  }
 
   _item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0)
   _item.command = toggleCommand
@@ -256,6 +239,7 @@ export async function ExtensionState_statusBarItem(
     dispose() {
       disposeConfiguration.consume()
       disposeClosedEditor.consume()
+      calibrate_confirmation_token.consume()
     },
   })
 }
@@ -337,6 +321,6 @@ function createTask() {
 }
 
 // hold this thread and allow the dom to render the state
-function hold() {
-  return new Promise((resolve) => setTimeout(resolve, 100))
+function hold(t = 100) {
+  return new Promise((resolve) => setTimeout(resolve, t))
 }

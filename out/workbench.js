@@ -913,8 +913,7 @@ var __publicField = (obj, key, value) => {
         if (label.match(/(\.tsx$)|(\.tsx, )/)) {
           if (language === "typescriptreact") {
             OverlayLineTracker.observe();
-            debugger;
-            bruteForceLayoutShift(() => foundEditor(editorLabel));
+            bruteForceLayoutShift(foundEditor);
           }
           if (oldLabel && label != oldLabel) {
             toastConsole.log("look! this gets executed...", oldLabel);
@@ -959,13 +958,12 @@ var __publicField = (obj, key, value) => {
         ...pre
       });
     }
+    let layoutShift;
     let tries = 0;
     const limit = 5;
-    let layoutShift;
     const lineTracker = (cb) => {
       tries += 1;
       if (tries > limit) {
-        debugger;
         cb();
         clearInterval(layoutShift);
         return;
@@ -982,7 +980,6 @@ var __publicField = (obj, key, value) => {
     }
     EditorLanguageTracker.plug();
     return function dispose() {
-      tries = limit + 2;
       clearInterval(layoutShift);
       if (editorLabel) {
         styles.clear(editorLabel);
@@ -1017,8 +1014,12 @@ var __publicField = (obj, key, value) => {
     function awkwardStack(elements) {
       const { overlay, editor } = elements;
       if (overlay && editor && !editorStack.has(editor)) {
-        const foundEditor = (label) => {
-          _editorObservable.value = label;
+        const foundEditor = () => {
+          if (!watchForRemoval2.contains(editor)) {
+            toastConsole.error("Editor not found _editorObservable");
+            return;
+          }
+          _editorObservable.value = editor.getAttribute("aria-label");
         };
         editorStack.set(
           editor,
@@ -1093,8 +1094,6 @@ var __publicField = (obj, key, value) => {
   const calibrate = {
     opening: "opening",
     opened: "opened",
-    invalidate: "invalidate",
-    idle: "idle",
     closed: "closed",
     error: "error"
   };
@@ -1405,11 +1404,21 @@ var __publicField = (obj, key, value) => {
   function TryRegexToDomToCss(lineEditor) {
     let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx);
     try {
-      debugger;
+      let checkMissingProps = function(obj) {
+        for (const [key, value] of Object.entries(obj)) {
+          if (typeof value === "object") {
+            checkMissingProps(value);
+          } else if (!value) {
+            toastConsole.error(`Missing flag property ${key} and possibly more...`, { obj, key, value });
+            return;
+          }
+        }
+      };
       let session = JSON.parse(window.localStorage.getItem(sessionKey) || "{}");
       if (typeof session !== "object") {
         session = {};
       }
+      checkMissingProps(jsxFlags);
       jsxFlags = mergeDeep(session, jsxFlags);
       window.localStorage.setItem(sessionKey, JSON.stringify(jsxFlags));
     } catch (error) {
@@ -1418,54 +1427,41 @@ var __publicField = (obj, key, value) => {
     }
     return assembleCss(jsxFlags);
   }
-  function sessionCss() {
+  function cacheProc() {
     try {
       let session = JSON.parse(window.localStorage.getItem(sessionKey) || "{}");
       if (typeof session !== "object") {
         throw new Error("session is not an object");
       }
-      return assembleCss(session);
+      const cache = assembleCss(session);
+      if (cache)
+        syntaxStyle.styleIt(cache);
     } catch (error) {
       window.localStorage.removeItem(sessionKey);
     }
   }
   const calibrateStyle = createStyles("calibrate");
   calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
-  const queryEditor = () => document.querySelector(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`);
-  const tryStyleEditor = () => new or_return(
-    queryEditor,
-    () => toastConsole.error("Calibrate Editor not found")
-  ).or_return(
-    TryRegexToDomToCss,
-    () => toastConsole.error("Failed to calibrate editor")
-  ).finally((css) => {
-    requestAnimationFrame(() => syntaxStyle.styleIt(css));
-    if (!highlight.running) {
-      highlight.activate(500);
-    }
-  });
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
-    if (!(value == calibrate.opened || value == calibrate.invalidate))
+    if (value != calibrate.opened)
       return;
-    if (value == calibrate.invalidate && !queryEditor()) {
-      debugger;
-      editorObservable.value = void 0;
-      return createEditorSubscription();
-    }
-    debugger;
-    tryStyleEditor();
+    new or_return(
+      () => document.querySelector(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`),
+      () => toastConsole.error("Calibrate Editor not found")
+    ).or_return(
+      TryRegexToDomToCss,
+      () => toastConsole.error("Failed to calibrate editor")
+    ).finally((css) => {
+      requestAnimationFrame(() => syntaxStyle.styleIt(css));
+      if (!highlight.running) {
+        highlight.activate(500);
+      }
+    });
   });
   const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
     if (!value)
       return;
-    debugger;
-    if (value.includes(calibrationFileName)) {
-      tryStyleEditor();
-    } else {
-      const cache = sessionCss();
-      if (cache)
-        syntaxStyle.styleIt(cache);
-    }
+    cacheProc();
     return "Symbol.dispose";
   });
   const syntaxStyle = createStyles("hide");
@@ -1474,7 +1470,8 @@ var __publicField = (obj, key, value) => {
       if (!calibration.running) {
         calibration.activate(500);
         let unSubscribers = [createCalibrateSubscription()];
-        if (sessionCss() && !highlight.running) {
+        cacheProc();
+        if (!highlight.running) {
           highlight.activate(500);
           unSubscribers.push(createEditorSubscription());
         }

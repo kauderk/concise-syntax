@@ -139,7 +139,7 @@ function createHighlight({ node, selector, add, set, label, color }: Selected) {
 function editorOverlayLifecycle(
   editor: HTMLElement,
   _overlay: HTMLElement,
-  foundEditor: (label: string | undefined) => void
+  foundEditor: () => void
 ) {
   // lookup state
   let editorLabel = editor.getAttribute('aria-label') as string | undefined
@@ -170,8 +170,7 @@ function editorOverlayLifecycle(
       if (label.match(/(\.tsx$)|(\.tsx, )/)) {
         if (language === 'typescriptreact') {
           OverlayLineTracker.observe()
-          debugger
-          bruteForceLayoutShift(() => foundEditor(editorLabel))
+          bruteForceLayoutShift(foundEditor)
         }
         if (oldLabel && label != oldLabel) {
           toastConsole.log('look! this gets executed...', oldLabel)
@@ -223,13 +222,12 @@ function editorOverlayLifecycle(
 
   // FIXME: find a better way to handle selected lines flickering and layout shifts
   // issue: the top style shifts right before the last frame
+  let layoutShift: any
   let tries = 0
   const limit = 5
-  let layoutShift: any
   const lineTracker = (cb: Function) => {
     tries += 1
     if (tries > limit) {
-      debugger
       cb()
       clearInterval(layoutShift)
       return
@@ -245,12 +243,9 @@ function editorOverlayLifecycle(
     layoutShift = setInterval(() => lineTracker(cb), 100)
   }
 
-  // mount()
   EditorLanguageTracker.plug()
-  // bruteForceLayoutShift(() => {})
 
   return function dispose() {
-    tries = limit + 2
     clearInterval(layoutShift)
     if (editorLabel) {
       styles.clear(editorLabel)
@@ -293,8 +288,12 @@ function createStackStructure(
     const { overlay, editor } = elements
     if (overlay && editor && !editorStack.has(editor)) {
       // TODO: get me out of here
-      const foundEditor = (label: string | undefined) => {
-        _editorObservable.value = label
+      const foundEditor = () => {
+        if (!watchForRemoval.contains(editor)) {
+          toastConsole.error('Editor not found _editorObservable')
+          return
+        }
+        _editorObservable.value = editor.getAttribute('aria-label')!
       }
       // toastConsole.log('awkwardStack')
       editorStack.set(

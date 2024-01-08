@@ -20,11 +20,22 @@ const sessionKey = `${extensionId}.sessionFlags.jsx`
 function TryRegexToDomToCss(lineEditor: HTMLElement) {
   let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx)
   try {
-    debugger
     let session = JSON.parse(window.localStorage.getItem(sessionKey) || '{}')
     if (typeof session !== 'object') {
       session = {}
     }
+    function checkMissingProps(obj: object) {
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'object') {
+          checkMissingProps(value)
+        } else if (!value) {
+          // prettier-ignore
+          toastConsole.error(`Missing flag property ${key} and possibly more...`, { obj,key,value })
+          return
+        }
+      }
+    }
+    checkMissingProps(jsxFlags)
     jsxFlags = mergeDeep(session, jsxFlags)
     // TODO: check if there are new flags or new schema then delete the session
     window.localStorage.setItem(sessionKey, JSON.stringify(jsxFlags))
@@ -34,13 +45,14 @@ function TryRegexToDomToCss(lineEditor: HTMLElement) {
   }
   return assembleCss(jsxFlags)
 }
-function sessionCss() {
+function cacheProc() {
   try {
     let session = JSON.parse(window.localStorage.getItem(sessionKey) || '{}')
     if (typeof session !== 'object') {
       throw new Error('session is not an object')
     }
-    return assembleCss(session)
+    const cache = assembleCss(session)
+    if (cache) syntaxStyle.styleIt(cache)
   } catch (error) {
     window.localStorage.removeItem(sessionKey)
   }
@@ -48,50 +60,31 @@ function sessionCss() {
 const calibrateStyle = createStyles('calibrate')
 calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
 
-// prettier-ignore
-const queryEditor = () => document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`)
-// prettier-ignore
-const tryStyleEditor = () => 
-	new or_return(
-		queryEditor,
-		() => toastConsole.error('Calibrate Editor not found')
-	)
-	.or_return(
-		TryRegexToDomToCss, 
-		() => toastConsole.error('Failed to calibrate editor')
-	)
-	.finally(css => {
-		requestAnimationFrame(() => syntaxStyle.styleIt(css))
-
-		if (!highlight.running) {
-			highlight.activate(500) // FIXME: find the moment the css finishes loading
-		}
-	})
 const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((value) => {
-    if (!(value == calibrate.opened || value == calibrate.invalidate)) return
-    if (value == calibrate.invalidate && !queryEditor()) {
-      debugger
-      // Something failed or fall out of sync
-      // let the editorObservable handle the recovery
-      editorObservable.value = undefined
-      return createEditorSubscription()
-    }
+    if (value != calibrate.opened) return
+    // prettier-ignore
+    new or_return(
+      () => document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`),
+      () => toastConsole.error('Calibrate Editor not found')
+    )
+    .or_return(
+      TryRegexToDomToCss, 
+      () => toastConsole.error('Failed to calibrate editor')
+    )
+    .finally(css => {
+      requestAnimationFrame(() => syntaxStyle.styleIt(css))
 
-    debugger
-    tryStyleEditor()
+      if (!highlight.running) {
+        highlight.activate(500) // FIXME: find the moment the css finishes loading
+      }
+    })
   })
 
 const createEditorSubscription = () =>
   editorObservable.$ubscribe((value) => {
     if (!value) return
-    debugger
-    if (value.includes(calibrationFileName)) {
-      tryStyleEditor()
-    } else {
-      const cache = sessionCss()
-      if (cache) syntaxStyle.styleIt(cache)
-    }
+    cacheProc()
     return 'Symbol.dispose'
   })
 
@@ -104,7 +97,8 @@ const createStateSubscription = () =>
         calibration.activate(500)
         let unSubscribers = [createCalibrateSubscription()]
 
-        if (sessionCss() && !highlight.running) {
+        cacheProc()
+        if (!highlight.running) {
           highlight.activate(500) // FIXME: find the moment the css finishes loading
           unSubscribers.push(createEditorSubscription())
         }
@@ -152,12 +146,6 @@ conciseSyntax.activate()
 
 console.log(extensionId, conciseSyntax)
 
-/**
- * TODO
- * there should be a way to update the editor without calibrating
- * there should be a way to hook textMateRules when activating the extension
- * 	for example the case of constant.language.boolean "{true}"
- * */
 /**
  * FIXME
  * handle drastic user changes for example when changing vscode's profile

@@ -390,6 +390,23 @@ function deltaFn(consume = false) {
     }
   };
 }
+function deltaValue(consume) {
+  let delta;
+  return {
+    consume() {
+      if (delta)
+        consume(delta);
+      delta = void 0;
+    },
+    get value() {
+      return delta;
+    },
+    set value(value) {
+      this.consume();
+      delta = value;
+    }
+  };
+}
 let _item;
 const statusIconLoading = "loading~spin";
 const iconText = "";
@@ -397,10 +414,11 @@ let busy;
 let disposeConfiguration = deltaFn();
 let crashedMessage = "";
 let _calibrate;
-let c_state = false;
 let c_busy = false;
 let disposeClosedEditor = deltaFn(true);
-let isCalibrating = deltaFn(true);
+let calibrate_confirmation_token = deltaValue(
+  (t) => t.dispose()
+);
 async function ExtensionState_statusBarItem(context, setState) {
   const extensionState = getStateStore(context);
   const windowState = getWindowState(context);
@@ -437,12 +455,6 @@ async function ExtensionState_statusBarItem(context, setState) {
       _item.text = `$(${stateIcon})` + iconText;
       _item.tooltip = IState.encode(next2);
       await hold();
-      if (!cash && isCalibrating.fn?.()) {
-        debugger;
-        await tryUpdateCalibrateState("invalidate").then(() => tryUpdateCalibrateState("idle")).catch(() => {
-          vscode__namespace.window.showErrorMessage("Failed to invalidate calibration");
-        });
-      }
       if (next2 != state.disposed) {
         _item.show();
       } else {
@@ -500,12 +512,6 @@ async function ExtensionState_statusBarItem(context, setState) {
           "The extension is disposed. Mount it to use this command."
         );
       }
-      if (c_state === void 0) {
-        vscode__namespace.window.showErrorMessage(
-          "Error: cannot calibrate because there is no valid state"
-        );
-        return;
-      }
       if (c_busy || busy) {
         vscode__namespace.window.showInformationMessage(
           "The extension is busy. Try again in a few seconds."
@@ -514,61 +520,63 @@ async function ExtensionState_statusBarItem(context, setState) {
       }
       try {
         c_busy = true;
+        calibrate_confirmation_token.consume();
         if (windowState.read() == state.inactive) {
           await REC_nextStateCycle(state.active, state.active);
         }
-        if (c_state === false) {
-          c_state = true;
-          await tryUpdateCalibrateState("opening");
-          const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
-          const editor = await vscode__namespace.window.showTextDocument(document, {
-            preview: false,
-            preserveFocus: false
-          });
-          isCalibrating.fn = () => !!c_state && !editor.document.isClosed;
-          disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-            if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
-              c_state = false;
-              await consume_close();
-              return true;
+        await tryUpdateCalibrateState("opening");
+        const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
+        const editor = await vscode__namespace.window.showTextDocument(document, {
+          preview: false,
+          preserveFocus: false
+        });
+        disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
+          if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
+            await consume_close();
+            return true;
+          }
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1e3));
+        await tryUpdateCalibrateState("opened", 500);
+        const progressSeconds = 10;
+        vscode__namespace.window.withProgress(
+          {
+            location: vscode__namespace.ProgressLocation.Window,
+            title: "Concise Syntax was calibrated you may close the file",
+            cancellable: true
+          },
+          // prettier-ignore
+          async () => new Promise(async (resolve) => {
+            calibrate_confirmation_token.value = new vscode__namespace.CancellationTokenSource();
+            const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
+              calibrate_confirmation_token.consume();
+              dispose();
+              resolve(null);
+            }).dispose;
+            for (let i = 0; i < progressSeconds; i++) {
+              await hold(1e3);
             }
-          });
-          await new Promise((resolve) => setTimeout(resolve, 1e3));
-          await tryUpdateCalibrateState("opened");
-          await tryUpdateCalibrateState("idle");
-        } else if (c_state === true) {
-          c_state = false;
-          consume();
-          await closeFileIfOpen(uriRemote);
-          await tryUpdateCalibrateState("closed");
-        } else {
-          throw new Error("Invalid state");
-        }
+            resolve(null);
+          })
+        );
         c_busy = false;
       } catch (error) {
         debugger;
-        c_state = void 0;
         await consume_close();
         vscode__namespace.window.showErrorMessage(
           `Error: failed to open calibrate file -> ${error?.message}`
         );
       }
-      function consume() {
-        isCalibrating.consume();
-        disposeClosedEditor.consume();
-      }
       function consume_close() {
-        consume();
+        disposeClosedEditor.consume();
         return tryUpdateCalibrateState("closed");
+      }
+      function tryUpdateCalibrateState(state2, t = 100) {
+        _calibrate.tooltip = state2;
+        return hold(t);
       }
     })
   );
-  function tryUpdateCalibrateState(state2) {
-    if (!_calibrate)
-      return Promise.reject("you are messing up");
-    _calibrate.tooltip = state2;
-    return hold();
-  }
   _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _item.command = toggleCommand;
   _calibrate = vscode__namespace.window.createStatusBarItem(
@@ -585,6 +593,7 @@ async function ExtensionState_statusBarItem(context, setState) {
     dispose() {
       disposeConfiguration.consume();
       disposeClosedEditor.consume();
+      calibrate_confirmation_token.consume();
     }
   });
 }
@@ -607,17 +616,6 @@ function onDidCloseTextDocument(tryClose) {
       }
     }
   }).dispose;
-}
-async function closeFileIfOpen(file) {
-  try {
-    const tabs = vscode__namespace.window.tabGroups.all.map((tg) => tg.tabs).flat();
-    const index = tabs.findIndex((tab) => tab.input instanceof vscode__namespace.TabInputText && tab.input.uri.path === file.path);
-    if (index !== -1) {
-      return await vscode__namespace.window.tabGroups.close(tabs[index]);
-    }
-  } catch (error) {
-    vscode__namespace.commands.executeCommand("workbench.action.closeActiveEditor");
-  }
 }
 function binary(state2) {
   return state2 == "active" ? "active" : "inactive";
@@ -650,8 +648,8 @@ function createTask() {
   });
   return { promise, resolve, reject };
 }
-function hold() {
-  return new Promise((resolve) => setTimeout(resolve, 100));
+function hold(t = 100) {
+  return new Promise((resolve) => setTimeout(resolve, t));
 }
 async function installCycle(context) {
   const res = await read();

@@ -33,8 +33,6 @@ export const calibrationFileName = 'syntax.tsx'
 export const calibrate = {
   opening: 'opening',
   opened: 'opened',
-  invalidate: 'invalidate',
-  idle: 'idle',
   closed: 'closed',
   error: 'error',
 } as const

@@ -15,3 +15,19 @@ export function deltaFn<F extends () => any>(consume: boolean = false) {
     },
   }
 }
+export function deltaValue<T>(consume: (value: T) => void) {
+  let delta: T | undefined
+  return {
+    consume() {
+      if (delta) consume(delta)
+      delta = undefined
+    },
+    get value() {
+      return delta
+    },
+    set value(value) {
+      this.consume()
+      delta = value
+    },
+  }
+}
