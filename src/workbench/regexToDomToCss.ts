@@ -48,7 +48,7 @@ export function jsx_parseStyles(
 
       flags.jsxTag = {
         // find the last </tag> and hide it "tag" which is the second to last child
-        hide: `:has([class="${angleBracket}"]+.${tag}+.${angleBracket}) [class="${angleBracket}"]+.${tag}`,
+        hide: `:has([class="${angleBracket}"]:nth-last-child(3)+.${tag}+.${angleBracket}) :nth-last-child(2)`,
         hover: `.${angleBracket}+.${tag}`,
       }
       flags.vsCodeHiddenTokens = {
@@ -71,7 +71,7 @@ export function jsx_parseStyles(
 
       flags.jsxTagUpperCase = {
         // find the last </Tag> and hide it "tag" which is the second to last child
-        hide: `:has([class="${angleBracket}"]+.${tag}+.${angleBracket}) [class="${angleBracket}"]+.${tag}`,
+        hide: `:has([class="${angleBracket}"]:nth-last-child(3)+.${tag}+.${angleBracket}) :nth-last-child(2)`,
         hover: `.${angleBracket}+.${tag}`,
       }
 
