@@ -369,10 +369,11 @@ const IState = {
   }
 };
 const calibrateIcon = "go-to-file";
+const calibrationFileName = "syntax.tsx";
 function iconSelector(icon) {
   return `[id="${extensionId}"]:has(.codicon-${icon})`;
 }
-function deltaFn() {
+function deltaFn(consume = false) {
   let delta;
   return {
     consume() {
@@ -383,6 +384,8 @@ function deltaFn() {
       return delta;
     },
     set fn(value) {
+      if (consume)
+        this.consume();
       delta = value;
     }
   };
@@ -396,7 +399,8 @@ let crashedMessage = "";
 let _calibrate;
 let c_state = false;
 let c_busy = false;
-let disposeClosedEditor = deltaFn();
+let disposeClosedEditor = deltaFn(true);
+let isCalibrating = deltaFn(true);
 async function ExtensionState_statusBarItem(context, setState) {
   const extensionState = getStateStore(context);
   const windowState = getWindowState(context);
@@ -432,7 +436,13 @@ async function ExtensionState_statusBarItem(context, setState) {
       watcher.dispose();
       _item.text = `$(${stateIcon})` + iconText;
       _item.tooltip = IState.encode(next2);
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await hold();
+      if (!cash && isCalibrating.fn?.()) {
+        debugger;
+        await tryUpdateCalibrateState("invalidate").then(() => tryUpdateCalibrateState("idle")).catch(() => {
+          vscode__namespace.window.showErrorMessage("Failed to invalidate calibration");
+        });
+      }
       if (next2 != state.disposed) {
         _item.show();
       } else {
@@ -476,7 +486,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       await REC_nextStateCycle(next2, next2);
     })
   );
-  const remoteCalibratePath = path.join(__dirname, "syntax.tsx");
+  const remoteCalibratePath = path.join(__dirname, calibrationFileName);
   const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
   const calibrateCommand = packageJson.contributes.commands[3].command;
   context.subscriptions.push(
@@ -509,27 +519,28 @@ async function ExtensionState_statusBarItem(context, setState) {
         }
         if (c_state === false) {
           c_state = true;
-          await updateState("opening");
+          await tryUpdateCalibrateState("opening");
           const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
           const editor = await vscode__namespace.window.showTextDocument(document, {
             preview: false,
             preserveFocus: false
           });
-          disposeClosedEditor.consume();
+          isCalibrating.fn = () => !!c_state && !editor.document.isClosed;
           disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-            if (doc.uri.path === uriRemote.path) {
+            if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
               c_state = false;
               await consume_close();
               return true;
             }
           });
           await new Promise((resolve) => setTimeout(resolve, 1e3));
-          await updateState("opened");
+          await tryUpdateCalibrateState("opened");
+          await tryUpdateCalibrateState("idle");
         } else if (c_state === true) {
           c_state = false;
-          disposeClosedEditor.consume();
+          consume();
           await closeFileIfOpen(uriRemote);
-          await updateState("closed");
+          await tryUpdateCalibrateState("closed");
         } else {
           throw new Error("Invalid state");
         }
@@ -542,16 +553,22 @@ async function ExtensionState_statusBarItem(context, setState) {
           `Error: failed to open calibrate file -> ${error?.message}`
         );
       }
-      async function consume_close() {
+      function consume() {
+        isCalibrating.consume();
         disposeClosedEditor.consume();
-        await updateState("closed");
       }
-      function updateState(state2, t = 1e3) {
-        _calibrate.tooltip = state2;
-        return new Promise((resolve) => setTimeout(resolve, t));
+      function consume_close() {
+        consume();
+        return tryUpdateCalibrateState("closed");
       }
     })
   );
+  function tryUpdateCalibrateState(state2) {
+    if (!_calibrate)
+      return Promise.reject("you are messing up");
+    _calibrate.tooltip = state2;
+    return hold();
+  }
   _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _item.command = toggleCommand;
   _calibrate = vscode__namespace.window.createStatusBarItem(
@@ -632,6 +649,9 @@ function createTask() {
     resolve = _resolve;
   });
   return { promise, resolve, reject };
+}
+function hold() {
+  return new Promise((resolve) => setTimeout(resolve, 100));
 }
 async function installCycle(context) {
   const res = await read();

@@ -329,6 +329,7 @@ export function innerChildrenMutation<T>(options: {
       if (!data) return
       const res = options.added(data)
       if (res) {
+        // FIXME: this might be a .consume() edge case
         cleanUp.fn = res
       }
     },

@@ -139,7 +139,7 @@ function createHighlight({ node, selector, add, set, label, color }: Selected) {
 function editorOverlayLifecycle(
   editor: HTMLElement,
   _overlay: HTMLElement,
-  foundEditor: () => void
+  foundEditor: (label: string | undefined) => void
 ) {
   // lookup state
   let editorLabel = editor.getAttribute('aria-label') as string | undefined
@@ -169,9 +169,9 @@ function editorOverlayLifecycle(
 
       if (label.match(/(\.tsx$)|(\.tsx, )/)) {
         if (language === 'typescriptreact') {
-          foundEditor()
           OverlayLineTracker.observe()
-          bruteForceLayoutShift()
+          debugger
+          bruteForceLayoutShift(() => foundEditor(editorLabel))
         }
         if (oldLabel && label != oldLabel) {
           toastConsole.log('look! this gets executed...', oldLabel)
@@ -226,27 +226,28 @@ function editorOverlayLifecycle(
   let tries = 0
   const limit = 5
   let layoutShift: any
-  const lineTracker = () => {
-    const line = deltaOverlay.querySelector(selectedSelector) as H
-    if (!line || tries > limit) {
+  const lineTracker = (cb: Function) => {
+    tries += 1
+    if (tries > limit) {
+      debugger
+      cb()
       clearInterval(layoutShift)
       return
     }
-    const top = parseTopStyle(line)
-    if (!isNaN(top)) {
-      tries += 1
+    const line = deltaOverlay.querySelector(selectedSelector) as H
+    if (line && !isNaN(parseTopStyle(line))) {
       mount()
     }
   }
-  function bruteForceLayoutShift() {
+  function bruteForceLayoutShift(cb: Function) {
     tries = 0
     clearInterval(layoutShift)
-    layoutShift = setInterval(lineTracker, 100)
+    layoutShift = setInterval(() => lineTracker(cb), 100)
   }
 
-  mount()
+  // mount()
   EditorLanguageTracker.plug()
-  bruteForceLayoutShift()
+  // bruteForceLayoutShift(() => {})
 
   return function dispose() {
     tries = limit + 2
@@ -283,8 +284,7 @@ function createStackStructure(
     for (const stack of [recStack, editorStack, treeStack]) {
       for (const [keyNode] of stack) {
         if (condition && !condition(keyNode)) continue
-        // TODO: get me out of here
-        if (stack === editorStack) _editorObservable.value = false
+
         consumeStack(stack, keyNode)
       }
     }
@@ -293,8 +293,8 @@ function createStackStructure(
     const { overlay, editor } = elements
     if (overlay && editor && !editorStack.has(editor)) {
       // TODO: get me out of here
-      const foundEditor = () => {
-        _editorObservable.value = true
+      const foundEditor = (label: string | undefined) => {
+        _editorObservable.value = label
       }
       // toastConsole.log('awkwardStack')
       editorStack.set(

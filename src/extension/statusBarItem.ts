@@ -2,8 +2,14 @@ import { extensionId } from 'src/shared/write'
 import * as vscode from 'vscode'
 import packageJson from '../../package.json'
 import { key, updateSettingsCycle } from './settings'
-import { IState, State, state, stateIcon } from 'src/shared/state'
-import { calibrateIcon } from 'src/shared/state'
+import {
+  IState,
+  State,
+  calibrationFileName,
+  state,
+  stateIcon,
+} from 'src/shared/state'
+import { Calibrate, calibrateIcon } from 'src/shared/state'
 import { useState } from './utils'
 import path from 'path'
 import { deltaFn } from 'src/shared/utils'
@@ -21,7 +27,8 @@ let crashedMessage = ''
 let _calibrate: vscode.StatusBarItem | undefined
 let c_state: undefined | boolean = false
 let c_busy = false
-let disposeClosedEditor = deltaFn()
+let disposeClosedEditor = deltaFn(true)
+let isCalibrating = deltaFn<() => boolean>(true)
 
 export async function ExtensionState_statusBarItem(
   context: vscode.ExtensionContext,
@@ -69,8 +76,16 @@ export async function ExtensionState_statusBarItem(
       watcher.dispose()
       _item.text = `$(${stateIcon})` + iconText
       _item.tooltip = IState.encode(next)
-      // hold this thread and allow the dom to render the IState
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      await hold()
+      // FIXME: get me out of here
+      if (!cash && isCalibrating.fn?.()) {
+        debugger
+        await tryUpdateCalibrateState('invalidate')
+          .then(() => tryUpdateCalibrateState('idle'))
+          .catch(() => {
+            vscode.window.showErrorMessage('Failed to invalidate calibration')
+          })
+      }
 
       if (next != state.disposed) {
         _item.show()
@@ -121,7 +136,7 @@ export async function ExtensionState_statusBarItem(
     })
   )
 
-  const remoteCalibratePath = path.join(__dirname, 'syntax.tsx')
+  const remoteCalibratePath = path.join(__dirname, calibrationFileName)
   const uriRemote = vscode.Uri.file(remoteCalibratePath)
 
   const calibrateCommand = packageJson.contributes.commands[3].command
@@ -163,16 +178,17 @@ export async function ExtensionState_statusBarItem(
         if (c_state === false) {
           c_state = true
 
-          await updateState('opening')
+          await tryUpdateCalibrateState('opening')
           const document = await vscode.workspace.openTextDocument(uriRemote)
           const editor = await vscode.window.showTextDocument(document, {
             preview: false,
             preserveFocus: false,
           })
 
-          disposeClosedEditor.consume()
+          isCalibrating.fn = () => !!c_state && !editor.document.isClosed
+
           disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-            if (doc.uri.path === uriRemote.path) {
+            if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
               c_state = false
               await consume_close()
               return true
@@ -180,15 +196,16 @@ export async function ExtensionState_statusBarItem(
           })
 
           await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
-          await updateState('opened')
+          await tryUpdateCalibrateState('opened')
+          await tryUpdateCalibrateState('idle')
 
           // click
         } else if (c_state === true) {
           c_state = false
-          disposeClosedEditor.consume()
+          consume()
 
           await closeFileIfOpen(uriRemote)
-          await updateState('closed')
+          await tryUpdateCalibrateState('closed')
 
           // just be extra safe
         } else {
@@ -204,16 +221,21 @@ export async function ExtensionState_statusBarItem(
           `Error: failed to open calibrate file -> ${error?.message}`
         )
       }
-      async function consume_close() {
+      function consume() {
+        isCalibrating.consume()
         disposeClosedEditor.consume()
-        await updateState('closed')
       }
-      function updateState(state: string, t = 1000) {
-        _calibrate!.tooltip = state
-        return new Promise((resolve) => setTimeout(resolve, t))
+      function consume_close() {
+        consume()
+        return tryUpdateCalibrateState('closed')
       }
     })
   )
+  function tryUpdateCalibrateState(state: Calibrate) {
+    if (!_calibrate) return Promise.reject('you are messing up')
+    _calibrate.tooltip = state
+    return hold()
+  }
 
   _item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0)
   _item.command = toggleCommand
@@ -312,4 +334,9 @@ function createTask() {
     resolve = _resolve
   })
   return { promise, resolve, reject }
+}
+
+// hold this thread and allow the dom to render the state
+function hold() {
+  return new Promise((resolve) => setTimeout(resolve, 100))
 }

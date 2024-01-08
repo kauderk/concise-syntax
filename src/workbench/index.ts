@@ -1,7 +1,7 @@
 import { createSyntaxLifecycle } from './syntax'
 import { createHighlightLifeCycle } from './highlight'
 import { extensionId, viewLinesSelector } from './keys'
-import { IState, State, state } from 'src/shared/state'
+import { IState, State, calibrationFileName, state } from 'src/shared/state'
 import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
 import { createStyles, toastConsole } from './shared'
 // prettier-ignore
@@ -12,7 +12,7 @@ import { deltaFn } from 'src/shared/utils'
 import { createTryFunction } from './lifecycle'
 export type { editorObservable, stateObservable, calibrateObservable }
 
-const editorObservable = createObservable<undefined | boolean>(undefined)
+const editorObservable = createObservable<undefined | string>(undefined)
 const stateObservable = createObservable<State | undefined>(undefined)
 const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
@@ -20,6 +20,7 @@ const sessionKey = `${extensionId}.sessionFlags.jsx`
 function TryRegexToDomToCss(lineEditor: HTMLElement) {
   let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx)
   try {
+    debugger
     let session = JSON.parse(window.localStorage.getItem(sessionKey) || '{}')
     if (typeof session !== 'object') {
       session = {}
@@ -47,34 +48,51 @@ function sessionCss() {
 const calibrateStyle = createStyles('calibrate')
 calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
 
+// prettier-ignore
+const queryEditor = () => document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`)
+// prettier-ignore
+const tryStyleEditor = () => 
+	new or_return(
+		queryEditor,
+		() => toastConsole.error('Calibrate Editor not found')
+	)
+	.or_return(
+		TryRegexToDomToCss, 
+		() => toastConsole.error('Failed to calibrate editor')
+	)
+	.finally(css => {
+		requestAnimationFrame(() => syntaxStyle.styleIt(css))
+
+		if (!highlight.running) {
+			highlight.activate(500) // FIXME: find the moment the css finishes loading
+		}
+	})
 const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((value) => {
-    if (value != calibrate.opened) return
-    // prettier-ignore
-    new or_return(
-      () => document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`),
-      () => toastConsole.error('Calibrate Editor not found')
-    )
-		.or_return(
-			TryRegexToDomToCss, 
-			() => toastConsole.error('Failed to calibrate editor')
-		)
-		.finally(css => {
-			requestAnimationFrame(() => syntaxStyle.styleIt(css))
+    if (!(value == calibrate.opened || value == calibrate.invalidate)) return
+    if (value == calibrate.invalidate && !queryEditor()) {
+      debugger
+      // Something failed or fall out of sync
+      // let the editorObservable handle the recovery
+      editorObservable.value = undefined
+      return createEditorSubscription()
+    }
 
-			if (!highlight.running) {
-        highlight.activate(500) // FIXME: find the moment the css finishes loading
-      }
-		})
+    debugger
+    tryStyleEditor()
   })
 
 const createEditorSubscription = () =>
   editorObservable.$ubscribe((value) => {
-    if (value) {
+    if (!value) return
+    debugger
+    if (value.includes(calibrationFileName)) {
+      tryStyleEditor()
+    } else {
       const cache = sessionCss()
       if (cache) syntaxStyle.styleIt(cache)
-      return 'Symbol.dispose'
     }
+    return 'Symbol.dispose'
   })
 
 const syntaxStyle = createStyles('hide')
@@ -136,7 +154,6 @@ console.log(extensionId, conciseSyntax)
 
 /**
  * TODO
- * when updating settings.json and calibrating, the editor should update
  * there should be a way to update the editor without calibrating
  * there should be a way to hook textMateRules when activating the extension
  * 	for example the case of constant.language.boolean "{true}"

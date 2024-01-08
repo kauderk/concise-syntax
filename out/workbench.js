@@ -20,7 +20,7 @@ var __publicField = (obj, key, value) => {
   const selectedSelector = ".selected-text";
   const currentSelector = ".current-line";
   const splitViewContainerSelector = ".split-view-container";
-  function deltaFn() {
+  function deltaFn(consume = false) {
     let delta;
     return {
       consume() {
@@ -31,6 +31,8 @@ var __publicField = (obj, key, value) => {
         return delta;
       },
       set fn(value) {
+        if (consume)
+          this.consume();
         delta = value;
       }
     };
@@ -910,9 +912,9 @@ var __publicField = (obj, key, value) => {
         }
         if (label.match(/(\.tsx$)|(\.tsx, )/)) {
           if (language === "typescriptreact") {
-            foundEditor();
             OverlayLineTracker.observe();
-            bruteForceLayoutShift();
+            debugger;
+            bruteForceLayoutShift(() => foundEditor(editorLabel));
           }
           if (oldLabel && label != oldLabel) {
             toastConsole.log("look! this gets executed...", oldLabel);
@@ -960,26 +962,25 @@ var __publicField = (obj, key, value) => {
     let tries = 0;
     const limit = 5;
     let layoutShift;
-    const lineTracker = () => {
-      const line = deltaOverlay.querySelector(selectedSelector);
-      if (!line || tries > limit) {
+    const lineTracker = (cb) => {
+      tries += 1;
+      if (tries > limit) {
+        debugger;
+        cb();
         clearInterval(layoutShift);
         return;
       }
-      const top = parseTopStyle(line);
-      if (!isNaN(top)) {
-        tries += 1;
+      const line = deltaOverlay.querySelector(selectedSelector);
+      if (line && !isNaN(parseTopStyle(line))) {
         mount();
       }
     };
-    function bruteForceLayoutShift() {
+    function bruteForceLayoutShift(cb) {
       tries = 0;
       clearInterval(layoutShift);
-      layoutShift = setInterval(lineTracker, 100);
+      layoutShift = setInterval(() => lineTracker(cb), 100);
     }
-    mount();
     EditorLanguageTracker.plug();
-    bruteForceLayoutShift();
     return function dispose() {
       tries = limit + 2;
       clearInterval(layoutShift);
@@ -1009,8 +1010,6 @@ var __publicField = (obj, key, value) => {
         for (const [keyNode] of stack) {
           if (condition && !condition(keyNode))
             continue;
-          if (stack === editorStack)
-            _editorObservable.value = false;
           consumeStack(stack, keyNode);
         }
       }
@@ -1018,8 +1017,8 @@ var __publicField = (obj, key, value) => {
     function awkwardStack(elements) {
       const { overlay, editor } = elements;
       if (overlay && editor && !editorStack.has(editor)) {
-        const foundEditor = () => {
-          _editorObservable.value = true;
+        const foundEditor = (label) => {
+          _editorObservable.value = label;
         };
         editorStack.set(
           editor,
@@ -1090,9 +1089,12 @@ var __publicField = (obj, key, value) => {
     }
   };
   const calibrateIcon = "go-to-file";
+  const calibrationFileName = "syntax.tsx";
   const calibrate = {
     opening: "opening",
     opened: "opened",
+    invalidate: "invalidate",
+    idle: "idle",
     closed: "closed",
     error: "error"
   };
@@ -1403,6 +1405,7 @@ var __publicField = (obj, key, value) => {
   function TryRegexToDomToCss(lineEditor) {
     let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx);
     try {
+      debugger;
       let session = JSON.parse(window.localStorage.getItem(sessionKey) || "{}");
       if (typeof session !== "object") {
         session = {};
@@ -1428,29 +1431,42 @@ var __publicField = (obj, key, value) => {
   }
   const calibrateStyle = createStyles("calibrate");
   calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
+  const queryEditor = () => document.querySelector(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`);
+  const tryStyleEditor = () => new or_return(
+    queryEditor,
+    () => toastConsole.error("Calibrate Editor not found")
+  ).or_return(
+    TryRegexToDomToCss,
+    () => toastConsole.error("Failed to calibrate editor")
+  ).finally((css) => {
+    requestAnimationFrame(() => syntaxStyle.styleIt(css));
+    if (!highlight.running) {
+      highlight.activate(500);
+    }
+  });
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
-    if (value != calibrate.opened)
+    if (!(value == calibrate.opened || value == calibrate.invalidate))
       return;
-    new or_return(
-      () => document.querySelector(`[data-uri$="concise-syntax/out/syntax.tsx"] ${viewLinesSelector}`),
-      () => toastConsole.error("Calibrate Editor not found")
-    ).or_return(
-      TryRegexToDomToCss,
-      () => toastConsole.error("Failed to calibrate editor")
-    ).finally((css) => {
-      requestAnimationFrame(() => syntaxStyle.styleIt(css));
-      if (!highlight.running) {
-        highlight.activate(500);
-      }
-    });
+    if (value == calibrate.invalidate && !queryEditor()) {
+      debugger;
+      editorObservable.value = void 0;
+      return createEditorSubscription();
+    }
+    debugger;
+    tryStyleEditor();
   });
   const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
-    if (value) {
+    if (!value)
+      return;
+    debugger;
+    if (value.includes(calibrationFileName)) {
+      tryStyleEditor();
+    } else {
       const cache = sessionCss();
       if (cache)
         syntaxStyle.styleIt(cache);
-      return "Symbol.dispose";
     }
+    return "Symbol.dispose";
   });
   const syntaxStyle = createStyles("hide");
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
