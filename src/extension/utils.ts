@@ -12,9 +12,25 @@ export function useState<T extends string>(
     read() {
       return (this.value = context.workspaceState.get(key) as T | undefined)
     },
-    write(newState: T) {
+    async write(newState: T) {
       this.value = newState
-      context.workspaceState.update(key, newState)
+      await context.workspaceState.update(key, newState)
+      return newState
+    },
+  }
+}
+export function useGlobal<T extends string>(
+  context: vscode.ExtensionContext,
+  key: string
+) {
+  return {
+    value: '' as any,
+    read() {
+      return (this.value = context.globalState.get(key) as T | undefined)
+    },
+    async write(newState: T) {
+      this.value = newState
+      await context.globalState.update(key, newState)
       return newState
     },
   }

@@ -1072,6 +1072,7 @@ var __publicField = (obj, key, value) => {
   const state = {
     active: "active",
     inactive: "inactive",
+    stale: "stale",
     disposed: "disposed",
     error: "error"
   };

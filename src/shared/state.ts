@@ -4,6 +4,7 @@ export const stateIcon = 'symbol-keyword'
 export const state = {
   active: 'active',
   inactive: 'inactive',
+  stale: 'stale',
   disposed: 'disposed',
   error: 'error',
 } as const

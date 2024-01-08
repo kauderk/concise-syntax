@@ -11,7 +11,7 @@ const textMateRules = [
     name: name + 'text',
     scope: ['meta.jsx.children.tsx'],
     settings: {
-      foreground: '#B59E7A',
+      foreground: '#b5a70000',
     },
   },
   {
@@ -52,7 +52,7 @@ const textMateRules = [
     name: name + 'separator',
     scope: ['punctuation.separator.comma.tsx'],
     settings: {
-      foreground: '#d4d4d4f0',
+      foreground: '#b5080000',
     },
   },
 ]
@@ -153,7 +153,7 @@ export async function updateSettingsCycle(
     return true
   }
 
-  await res.write()
+  return res.write
 }
 
 async function tryParseSettings() {

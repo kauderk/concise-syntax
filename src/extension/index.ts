@@ -9,6 +9,7 @@ import {
   ExtensionState_statusBarItem,
   getWindowState,
   binary,
+  checkDisposedCommandContext,
 } from './statusBarItem'
 import { installCycle, read, uninstallCycle } from './extensionCycle'
 import { state } from '../shared/state'
@@ -75,11 +76,8 @@ export async function activate(context: vscode.ExtensionContext) {
   try {
     const previousExtensionState = extensionState.read()
     // FIXME: get me out of here
-    vscode.commands.executeCommand(
-      'setContext',
-      'extension.disposed',
-      previousExtensionState == state.disposed
-    )
+    checkDisposedCommandContext(previousExtensionState)
+
     if (previousExtensionState != state.disposed) {
       const isActive = await installCycle(context)
       await extensionState.write(state.active)

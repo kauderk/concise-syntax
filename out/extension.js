@@ -74,7 +74,7 @@ const contributes = {
       command: "extension.toggle",
       title: "Toggle",
       category: "Concise Syntax",
-      enablement: "!extension.disposed"
+      enablement: "!extension.disposed && extension.calibrated"
     },
     {
       command: "extension.calibrate",
@@ -143,9 +143,22 @@ function useState(context, key2) {
     read() {
       return this.value = context.workspaceState.get(key2);
     },
-    write(newState) {
+    async write(newState) {
       this.value = newState;
-      context.workspaceState.update(key2, newState);
+      await context.workspaceState.update(key2, newState);
+      return newState;
+    }
+  };
+}
+function useGlobal(context, key2) {
+  return {
+    value: "",
+    read() {
+      return this.value = context.globalState.get(key2);
+    },
+    async write(newState) {
+      this.value = newState;
+      await context.globalState.update(key2, newState);
       return newState;
     }
   };
@@ -157,7 +170,7 @@ const textMateRules = [
     name: name + "text",
     scope: ["meta.jsx.children.tsx"],
     settings: {
-      foreground: "#B59E7A"
+      foreground: "#b5a70000"
     }
   },
   {
@@ -198,7 +211,7 @@ const textMateRules = [
     name: name + "separator",
     scope: ["punctuation.separator.comma.tsx"],
     settings: {
-      foreground: "#d4d4d4f0"
+      foreground: "#b5080000"
     }
   }
 ];
@@ -284,7 +297,7 @@ async function updateSettingsCycle(context, operation) {
   if (!diff) {
     return true;
   }
-  await res.write();
+  return res.write;
 }
 async function tryParseSettings() {
   const workspace = vscode__namespace.workspace.workspaceFolders?.[0].uri;
@@ -351,6 +364,7 @@ const stateIcon = "symbol-keyword";
 const state = {
   active: "active",
   inactive: "inactive",
+  stale: "stale",
   disposed: "disposed",
   error: "error"
 };
@@ -422,13 +436,12 @@ let calibrate_confirmation_token = deltaValue(
 async function ExtensionState_statusBarItem(context, setState) {
   const extensionState = getStateStore(context);
   const windowState = getWindowState(context);
+  const globalInvalidation = getGlobalAnyInvalidate(context);
+  const calibrationState = getAnyCalibrate(context);
+  debugger;
   await windowState.write(setState);
-  vscode__namespace.commands.executeCommand(
-    "setContext",
-    "extension.disposed",
-    setState == state.disposed
-  );
-  async function REC_nextStateCycle(next2, settings) {
+  checkDisposedCommandContext(setState);
+  async function REC_nextStateCycle(tryNext, settings, overloads = {}) {
     if (!_item) {
       vscode__namespace.window.showErrorMessage("No status bar item found");
       return;
@@ -440,34 +453,48 @@ async function ExtensionState_statusBarItem(context, setState) {
     }
     try {
       busy = true;
+      debugger;
       disposeConfiguration.consume();
-      _item.text = `$(${statusIconLoading})` + iconText;
-      const task = createTask();
-      const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
-      const cash = await updateSettingsCycle(context, settings);
-      await windowState.write(next2);
-      await Promise.race([
-        task.promise,
-        // either the configuration changes or the timeout
-        new Promise((resolve) => setTimeout(resolve, !cash ? 3e3 : 0))
-      ]);
-      watcher.dispose();
-      _item.text = `$(${stateIcon})` + iconText;
-      _item.tooltip = IState.encode(next2);
-      await hold();
-      if (next2 != state.disposed) {
-        _item.show();
-      } else {
-        _item.hide();
+      if (!(overloads.calibratedThen || calibrationState.read() == state.active)) {
+        await defaultWindowState(_item, state.stale);
+        busy = false;
+        return;
       }
-      disposeConfiguration.fn = vscode__namespace.workspace.onDidChangeConfiguration(async (config) => {
-        if (busy || !config.affectsConfiguration(key))
-          return;
-        const next3 = windowState.read();
-        if (!next3)
-          return;
-        await REC_nextStateCycle(next3, binary(next3));
-      }).dispose;
+      _item.text = `$(${statusIconLoading})` + iconText;
+      const cash = await updateSettingsCycle(context, settings);
+      if (typeof cash == "function" && overloads.diff && tryNext == state.active && globalInvalidation.read() != state.active) {
+        const res = await vscode__namespace.window.showInformationMessage(
+          "The extension settings were invalidated while the extension was running.            Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
+          "Yes and remember",
+          "No and deactivate"
+        );
+        const next2 = res?.includes("Yes") ? state.active : state.inactive;
+        await globalInvalidation.write(next2);
+        await defaultWindowState(_item, next2);
+        busy = false;
+        return;
+      }
+      if (typeof cash == "function") {
+        const task = createTask();
+        const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
+        await cash();
+        await Promise.race([
+          task.promise,
+          // either the configuration changes or the timeout
+          new Promise((resolve) => setTimeout(resolve, 3e3))
+        ]);
+        watcher.dispose();
+      }
+      await defaultWindowState(_item, tryNext);
+      if (tryNext == state.active)
+        disposeConfiguration.fn = vscode__namespace.workspace.onDidChangeConfiguration(async (config) => {
+          if (busy || !config.affectsConfiguration(key))
+            return;
+          const next2 = windowState.read();
+          if (!next2)
+            return;
+          await REC_nextStateCycle(next2, binary(next2), { diff: true });
+        }).dispose;
       busy = false;
     } catch (error) {
       debugger;
@@ -475,6 +502,18 @@ async function ExtensionState_statusBarItem(context, setState) {
       _item.text = `$(error)` + iconText;
       _item.tooltip = IState.encode(state.error);
       _item.show();
+      disposeConfiguration.consume();
+    }
+  }
+  async function defaultWindowState(_item2, next2) {
+    await windowState.write(next2);
+    _item2.text = `$(${stateIcon})` + iconText;
+    _item2.tooltip = IState.encode(next2);
+    await hold();
+    if (next2 == state.disposed || next2 == state.stale) {
+      _item2.hide();
+    } else {
+      _item2.show();
     }
   }
   if (_item) {
@@ -521,8 +560,12 @@ async function ExtensionState_statusBarItem(context, setState) {
       try {
         c_busy = true;
         calibrate_confirmation_token.consume();
-        if (windowState.read() == state.inactive) {
-          await REC_nextStateCycle(state.active, state.active);
+        debugger;
+        const calibratedThen = calibrationState.read() === void 0;
+        if (calibratedThen || windowState.read() == state.inactive) {
+          await REC_nextStateCycle(state.active, state.active, {
+            calibratedThen
+          });
         }
         await tryUpdateCalibrateState("opening");
         const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
@@ -538,6 +581,7 @@ async function ExtensionState_statusBarItem(context, setState) {
         });
         await new Promise((resolve) => setTimeout(resolve, 1e3));
         await tryUpdateCalibrateState("opened", 500);
+        checkCalibratedCommandContext(state.active);
         const progressSeconds = 10;
         vscode__namespace.window.withProgress(
           {
@@ -577,6 +621,14 @@ async function ExtensionState_statusBarItem(context, setState) {
       }
     })
   );
+  async function checkCalibratedCommandContext(next2) {
+    vscode__namespace.commands.executeCommand(
+      "setContext",
+      "extension.calibrated",
+      next2 == state.active
+    );
+    await calibrationState.write(next2);
+  }
   _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _item.command = toggleCommand;
   _calibrate = vscode__namespace.window.createStatusBarItem(
@@ -596,6 +648,13 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrate_confirmation_token.consume();
     }
   });
+}
+function checkDisposedCommandContext(next) {
+  vscode__namespace.commands.executeCommand(
+    "setContext",
+    "extension.disposed",
+    next == state.disposed
+  );
 }
 function onDidCloseTextDocument(tryClose) {
   return vscode__namespace.window.tabGroups?.onDidChangeTabs?.(async (changedEvent) => {
@@ -622,6 +681,12 @@ function binary(state2) {
 }
 function flip(next) {
   return next == "active" ? "inactive" : "active";
+}
+function getAnyCalibrate(context) {
+  return useState(context, extensionId + ".calibrate");
+}
+function getGlobalAnyInvalidate(context) {
+  return useGlobal(context, extensionId + ".global.invalidate");
 }
 function getWindowState(context) {
   return useState(context, extensionId + ".window");
@@ -737,11 +802,7 @@ async function activate(context) {
   );
   try {
     const previousExtensionState = extensionState.read();
-    vscode__namespace.commands.executeCommand(
-      "setContext",
-      "extension.disposed",
-      previousExtensionState == state.disposed
-    );
+    checkDisposedCommandContext(previousExtensionState);
     if (previousExtensionState != state.disposed) {
       const isActive = await installCycle(context);
       await extensionState.write(state.active);

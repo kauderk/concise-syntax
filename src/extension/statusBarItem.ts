@@ -10,7 +10,7 @@ import {
   stateIcon,
 } from 'src/shared/state'
 import { Calibrate, calibrateIcon } from 'src/shared/state'
-import { useState } from './utils'
+import { useGlobal, useState } from './utils'
 import path from 'path'
 import { deltaFn, deltaValue } from 'src/shared/utils'
 
@@ -38,17 +38,19 @@ export async function ExtensionState_statusBarItem(
   // TODO: decouple the update from the status bar item
   const extensionState = getStateStore(context)
   const windowState = getWindowState(context)
+  const globalInvalidation = getGlobalAnyInvalidate(context)
+  const calibrationState = getAnyCalibrate(context)
+  debugger
   await windowState.write(setState)
-
-  vscode.commands.executeCommand(
-    'setContext',
-    'extension.disposed',
-    setState == state.disposed
-  )
+  checkDisposedCommandContext(setState)
 
   async function REC_nextStateCycle(
-    next: State,
-    settings: 'active' | 'inactive'
+    tryNext: State,
+    settings: 'active' | 'inactive',
+    overloads: {
+      diff?: boolean
+      calibratedThen?: boolean
+    } = {}
   ) {
     if (!_item) {
       vscode.window.showErrorMessage('No status bar item found')
@@ -63,35 +65,64 @@ export async function ExtensionState_statusBarItem(
     try {
       busy = true
 
+      debugger
       disposeConfiguration.consume()
 
-      _item.text = `$(${statusIconLoading})` + iconText
-      const task = createTask()
-      const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
-      const cash = await updateSettingsCycle(context, settings)
-      await windowState.write(next)
-      await Promise.race([
-        task.promise, // either the configuration changes or the timeout
-        new Promise((resolve) => setTimeout(resolve, !cash ? 3000 : 0)),
-      ])
-      watcher.dispose()
-      _item.text = `$(${stateIcon})` + iconText
-      _item.tooltip = IState.encode(next)
-      await hold()
+      if (
+        !(overloads.calibratedThen || calibrationState.read() == state.active)
+      ) {
+        await defaultWindowState(_item, state.stale)
+        busy = false
+        return
+      }
 
-      if (next != state.disposed) {
-        _item.show()
-      } else {
-        _item.hide()
+      _item.text = `$(${statusIconLoading})` + iconText
+      const cash = await updateSettingsCycle(context, settings)
+
+      /**
+       * There is a cash waiting to be executed (invalidated)
+       * The recursion/watcher was called
+       * And the extension is active so now it will fall out of sync
+       * Therefor the user deserves to know the settings.json is not up to date
+       * It is rude to change the settings.json without the user's consent
+       */
+      // prettier-ignore
+      if (typeof cash == 'function' && overloads.diff && tryNext == state.active && globalInvalidation.read() != state.active) {
+        const res = await vscode.window.showInformationMessage(
+          "The extension settings were invalidated while the extension was running. \
+           Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
+          'Yes and remember',
+          'No and deactivate',
+        )
+        const next = res?.includes('Yes') ? state.active : state.inactive
+        await globalInvalidation.write(next)
+        await defaultWindowState(_item, next)
+        busy = false
+        return
       }
 
       // prettier-ignore
+      if (typeof cash == 'function') {
+        const task = createTask()
+        const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
+        await cash()
+        await Promise.race([
+          task.promise, // either the configuration changes or the timeout
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ])
+        watcher.dispose()
+      }
+
+      await defaultWindowState(_item, tryNext)
+
+      // prettier-ignore
+      if(tryNext == state.active)
       disposeConfiguration.fn = vscode.workspace.onDidChangeConfiguration(async (config) => {
 				if (busy || !config.affectsConfiguration(key)) return
 				const next = windowState.read()
 				if (!next) return
 				// TODO: add a throttle to be extra safe
-				await REC_nextStateCycle(next, binary(next))
+				await REC_nextStateCycle(next, binary(next), {diff:true})
 			}).dispose
 
       busy = false
@@ -100,6 +131,19 @@ export async function ExtensionState_statusBarItem(
       crashedMessage = error?.message || 'unknown'
       _item.text = `$(error)` + iconText
       _item.tooltip = IState.encode(state.error)
+      _item.show()
+      disposeConfiguration.consume()
+    }
+  }
+  async function defaultWindowState(_item: vscode.StatusBarItem, next: State) {
+    await windowState.write(next)
+    _item.text = `$(${stateIcon})` + iconText
+    _item.tooltip = IState.encode(next)
+    await hold()
+
+    if (next == state.disposed || next == state.stale) {
+      _item.hide()
+    } else {
       _item.show()
     }
   }
@@ -156,10 +200,14 @@ export async function ExtensionState_statusBarItem(
 
         calibrate_confirmation_token.consume()
 
+        debugger
+        const calibratedThen = calibrationState.read() === undefined
         // FIXME: get me out of here
-        if (windowState.read() == state.inactive) {
+        if (calibratedThen || windowState.read() == state.inactive) {
           // makes sense right? because having to activate two times is a bit annoying...
-          await REC_nextStateCycle(state.active, state.active)
+          await REC_nextStateCycle(state.active, state.active, {
+            calibratedThen,
+          })
         }
 
         await tryUpdateCalibrateState('opening')
@@ -178,6 +226,8 @@ export async function ExtensionState_statusBarItem(
 
         await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
         await tryUpdateCalibrateState('opened', 500)
+
+        checkCalibratedCommandContext(state.active)
 
         const progressSeconds = 10
         vscode.window.withProgress(
@@ -219,6 +269,15 @@ export async function ExtensionState_statusBarItem(
       }
     })
   )
+  async function checkCalibratedCommandContext(next: State) {
+    vscode.commands.executeCommand(
+      'setContext',
+      'extension.calibrated',
+      next == state.active
+    )
+    // https://stackoverflow.com/a/74468400
+    await calibrationState.write(next)
+  }
 
   _item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0)
   _item.command = toggleCommand
@@ -242,6 +301,14 @@ export async function ExtensionState_statusBarItem(
       calibrate_confirmation_token.consume()
     },
   })
+}
+
+export function checkDisposedCommandContext(next?: State) {
+  vscode.commands.executeCommand(
+    'setContext',
+    'extension.disposed',
+    next == state.disposed
+  )
 }
 
 function onDidCloseTextDocument(
@@ -294,6 +361,12 @@ function flip(next?: State) {
   return next == 'active' ? 'inactive' : 'active'
 }
 
+export function getAnyCalibrate(context: vscode.ExtensionContext) {
+  return useState<State>(context, extensionId + '.calibrate')
+}
+export function getGlobalAnyInvalidate(context: vscode.ExtensionContext) {
+  return useGlobal<State>(context, extensionId + '.global.invalidate')
+}
 export function getWindowState(context: vscode.ExtensionContext) {
   return useState<State>(context, extensionId + '.window')
 }

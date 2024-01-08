@@ -39,7 +39,7 @@ declare const data: {
         "command": "extension.toggle",
         "title": "Toggle",
         "category": "Concise Syntax",
-        "enablement": "!extension.disposed"
+        "enablement": "!extension.disposed && extension.calibrated"
       },
       {
         "command": "extension.calibrate",
