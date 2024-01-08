@@ -344,28 +344,32 @@ function iconSelector(icon) {
 }
 function _catch(e) {
 }
-function useState(context, key2) {
+function useState(context, key2, type2) {
+  const _key = `${extensionId}.${key2}`;
   return {
-    value: "",
+    key: _key,
+    value: void 0,
     read() {
-      return this.value = context.workspaceState.get(key2);
+      return this.value = context.workspaceState.get(_key);
     },
     async write(newState) {
       this.value = newState;
-      await context.workspaceState.update(key2, newState);
+      await context.workspaceState.update(_key, newState);
       return newState;
     }
   };
 }
-function useGlobal(context, key2) {
+function useGlobal(context, key2, type2) {
+  const _key = `${extensionId}.global.${key2}`;
   return {
-    value: "",
+    key: _key,
+    value: void 0,
     read() {
-      return this.value = context.globalState.get(key2);
+      return this.value = context.globalState.get(_key);
     },
     async write(newState) {
       this.value = newState;
-      await context.globalState.update(key2, newState);
+      await context.globalState.update(_key, newState);
       return newState;
     }
   };
@@ -421,7 +425,6 @@ async function ExtensionState_statusBarItem(context, setState) {
   const windowState = getWindowState(context);
   const globalInvalidation = getGlobalAnyInvalidate(context);
   const calibrationState = getAnyCalibrate(context);
-  debugger;
   await windowState.write(setState);
   checkDisposedCommandContext(setState);
   async function REC_nextStateCycle(tryNext, settings, overloads = {}) {
@@ -436,7 +439,6 @@ async function ExtensionState_statusBarItem(context, setState) {
     }
     try {
       busy = true;
-      debugger;
       disposeConfiguration.consume();
       calibrate_confirmation_token.consume();
       if (!(overloads.calibratedThen || calibrationState.read() == state.active)) {
@@ -554,7 +556,6 @@ async function ExtensionState_statusBarItem(context, setState) {
       try {
         c_busy = true;
         calibrate_confirmation_token.consume();
-        debugger;
         const calibratedThen = calibrationState.read() === void 0;
         if (calibratedThen || windowState.read() == state.inactive) {
           await REC_nextStateCycle(state.active, state.active, {
@@ -682,25 +683,19 @@ function flip(next) {
   return next == "active" ? "inactive" : "active";
 }
 function getAnyCalibrate(context) {
-  return useState(context, extensionId + ".calibrate");
+  return useState(context, "calibrate");
 }
 function getGlobalAnyInvalidate(context) {
-  return useGlobal(context, extensionId + ".global.invalidate");
+  return useGlobal(context, "invalidate");
 }
 function getWindowState(context) {
-  return useState(context, extensionId + ".window");
+  return useState(context, "window");
 }
 function getStateStore(context) {
-  return useState(
-    context,
-    extensionId + ".extension"
-  );
+  return useState(context, "extension");
 }
 function getErrorStore(context) {
-  return useState(
-    context,
-    extensionId + ".error"
-  );
+  return useState(context, "error");
 }
 function createTask() {
   let resolve = (value) => {

@@ -40,7 +40,6 @@ export async function ExtensionState_statusBarItem(
   const windowState = getWindowState(context)
   const globalInvalidation = getGlobalAnyInvalidate(context)
   const calibrationState = getAnyCalibrate(context)
-  debugger
   await windowState.write(setState)
   checkDisposedCommandContext(setState)
 
@@ -65,7 +64,6 @@ export async function ExtensionState_statusBarItem(
     try {
       busy = true
 
-      debugger
       disposeConfiguration.consume()
       calibrate_confirmation_token.consume()
 
@@ -213,7 +211,6 @@ export async function ExtensionState_statusBarItem(
 
         calibrate_confirmation_token.consume()
 
-        debugger
         const calibratedThen = calibrationState.read() === undefined
         // FIXME: get me out of here
         if (calibratedThen || windowState.read() == state.inactive) {
@@ -381,25 +378,19 @@ function flip(next?: State) {
 }
 
 export function getAnyCalibrate(context: vscode.ExtensionContext) {
-  return useState<State>(context, extensionId + '.calibrate')
+  return useState(context, 'calibrate', <State>{})
 }
 export function getGlobalAnyInvalidate(context: vscode.ExtensionContext) {
-  return useGlobal<State>(context, extensionId + '.global.invalidate')
+  return useGlobal(context, 'invalidate', <State>{})
 }
 export function getWindowState(context: vscode.ExtensionContext) {
-  return useState<State>(context, extensionId + '.window')
+  return useState(context, 'window', <State>{})
 }
 export function getStateStore(context: vscode.ExtensionContext) {
-  return useState<'active' | 'inactive' | 'disposed'>(
-    context,
-    extensionId + '.extension'
-  )
+  return useState(context, 'extension', <'active' | 'inactive' | 'disposed'>{})
 }
 export function getErrorStore(context: vscode.ExtensionContext) {
-  return useState<'error' | 'throw' | 'unhandled'>(
-    context,
-    extensionId + '.error'
-  )
+  return useState(context, 'error', <'error' | 'throw' | 'unhandled'>{})
 }
 
 function createTask() {
