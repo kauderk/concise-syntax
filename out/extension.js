@@ -463,6 +463,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       _item.text = `$(${statusIconLoading})` + iconText;
       const cash = await updateSettingsCycle(context, settings);
       if (typeof cash == "function" && overloads.diff && tryNext == state.active && globalInvalidation.read() != state.active) {
+        await defaultWindowState(_item, state.stale);
         const res = await vscode__namespace.window.showInformationMessage(
           "The extension settings were invalidated while the extension was running.            Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
           "Yes and remember",
@@ -470,9 +471,11 @@ async function ExtensionState_statusBarItem(context, setState) {
         );
         const next2 = res?.includes("Yes") ? state.active : state.inactive;
         await globalInvalidation.write(next2);
-        await defaultWindowState(_item, next2);
-        busy = false;
-        return;
+        if (next2 == state.inactive) {
+          await defaultWindowState(_item, next2);
+          busy = false;
+          return;
+        }
       }
       if (typeof cash == "function") {
         const task = createTask();
@@ -509,8 +512,9 @@ async function ExtensionState_statusBarItem(context, setState) {
     await windowState.write(next2);
     _item2.text = `$(${stateIcon})` + iconText;
     _item2.tooltip = IState.encode(next2);
-    await hold();
-    if (next2 == state.disposed || next2 == state.stale) {
+    const failure = next2 == state.disposed || next2 == state.stale || next2 == state.error;
+    await hold(failure ? 1e3 : 100);
+    if (failure) {
       _item2.hide();
     } else {
       _item2.show();

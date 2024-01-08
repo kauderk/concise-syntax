@@ -88,6 +88,7 @@ export async function ExtensionState_statusBarItem(
        */
       // prettier-ignore
       if (typeof cash == 'function' && overloads.diff && tryNext == state.active && globalInvalidation.read() != state.active) {
+				await defaultWindowState(_item, state.stale)
         const res = await vscode.window.showInformationMessage(
           "The extension settings were invalidated while the extension was running. \
            Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
@@ -96,9 +97,12 @@ export async function ExtensionState_statusBarItem(
         )
         const next = res?.includes('Yes') ? state.active : state.inactive
         await globalInvalidation.write(next)
-        await defaultWindowState(_item, next)
-        busy = false
-        return
+
+				if( next == state.inactive){
+					await defaultWindowState(_item, next)
+					busy = false
+					return
+				}
       }
 
       // prettier-ignore
@@ -139,9 +143,11 @@ export async function ExtensionState_statusBarItem(
     await windowState.write(next)
     _item.text = `$(${stateIcon})` + iconText
     _item.tooltip = IState.encode(next)
-    await hold()
+    const failure =
+      next == state.disposed || next == state.stale || next == state.error
+    await hold(failure ? 1000 : 100)
 
-    if (next == state.disposed || next == state.stale) {
+    if (failure) {
       _item.hide()
     } else {
       _item.show()
