@@ -36,130 +36,14 @@ export async function ExtensionState_statusBarItem(
   setState: State
 ) {
   // TODO: decouple the update from the status bar item
-  const extensionState = getStateStore(context)
-  const windowState = getWindowState(context)
-  const globalInvalidation = getGlobalAnyInvalidate(context)
-  const globalCalibration = getGlobalAnyCalibrate(context)
-  const calibrationState = getAnyCalibrate(context)
+  const stores = getStores(context)
+  const { extensionState, windowState } = stores
   await windowState.write(setState)
+  const usingContext = { stores, context }
   checkDisposedCommandContext(setState)
 
-  async function REC_nextStateCycle(
-    tryNext: State,
-    settings: 'active' | 'inactive',
-    overloads: {
-      diff?: boolean
-      // calibratedThen?: boolean
-    } = {}
-  ) {
-    if (!_item) {
-      vscode.window.showErrorMessage('No status bar item found')
-      return
-    } else if (crashedMessage) {
-      vscode.window.showErrorMessage(
-        `The extension crashed when updating .vscode/settings.json with property ${key}.textMateRules with error: ${crashedMessage}`
-      )
-      return
-    }
-
-    try {
-      busy = true
-
-      disposeConfiguration.consume()
-      calibrate_confirmation_token.consume()
-
-      if (calibrationState.read() != state.active) {
-        await defaultWindowState(_item, state.stale)
-        busy = false
-        return
-      }
-
-      _item.text = `$(${statusIconLoading})` + iconText
-      const cash = await updateSettingsCycle(context, settings)
-
-      /**
-       * There is a cash waiting to be executed (invalidated)
-       * The recursion/watcher was called
-       * And the extension is active so now it will fall out of sync
-       * Therefor the user deserves to know the settings.json is not up to date
-       * It is rude to change the settings.json without the user's consent
-       */
-      // prettier-ignore
-      if (typeof cash == 'function' && overloads.diff && tryNext == state.active && globalInvalidation.read() != state.active) {
-				await defaultWindowState(_item, state.stale)
-        const res = await vscode.window.showInformationMessage(
-          "The extension settings were invalidated while the extension was running. \
-           Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
-          'Yes and remember',
-          'No and deactivate',
-        )
-        const next = res?.includes('Yes') ? state.active : state.inactive
-        await globalInvalidation.write(next)
-
-				if( next == state.inactive){
-					await defaultWindowState(_item, next)
-					busy = false
-					return
-				}
-      }
-
-      // prettier-ignore
-      if (typeof cash == 'function') {
-        if (overloads.diff) {
-          withProgress({
-            title: 'Concise Syntax: revalidating...',
-            seconds: 5,
-          })
-        }
-        const task = createTask()
-        const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
-        await cash()
-        await Promise.race([
-          task.promise, // either the configuration changes or the timeout
-          new Promise((resolve) => setTimeout(resolve, 3000)),
-        ])
-        watcher.dispose()
-      }
-
-      await defaultWindowState(_item, tryNext)
-
-      // prettier-ignore
-      if(tryNext == state.active)
-      disposeConfiguration.fn = vscode.workspace.onDidChangeConfiguration(async (config) => {
-				if (busy || !config.affectsConfiguration(key)) return
-				const next = windowState.read()
-				if (!next) return
-				// TODO: add a throttle to be extra safe
-				await REC_nextStateCycle(next, binary(next), {diff:true})
-			}).dispose
-
-      busy = false
-    } catch (error: any) {
-      debugger
-      crashedMessage = error?.message || 'unknown'
-      _item.text = `$(error)` + iconText
-      _item.tooltip = IState.encode(state.error)
-      _item.show()
-      disposeConfiguration.consume()
-    }
-  }
-  async function defaultWindowState(_item: vscode.StatusBarItem, next: State) {
-    await windowState.write(next)
-    _item.text = `$(${stateIcon})` + iconText
-    _item.tooltip = IState.encode(next)
-    const failure =
-      next == state.disposed || next == state.stale || next == state.error
-    await hold(failure ? 1000 : 100)
-
-    if (failure) {
-      _item.hide()
-    } else {
-      _item.show()
-    }
-  }
-
   if (_item) {
-    await REC_nextStateCycle(setState, binary(setState))
+    await REC_nextStateCycle(setState, binary(setState), usingContext)
     return
   }
 
@@ -178,7 +62,7 @@ export async function ExtensionState_statusBarItem(
       }
 
       const next = flip(windowState.read())
-      await REC_nextStateCycle(next, next)
+      await REC_nextStateCycle(next, next, usingContext)
     })
   )
 
@@ -188,105 +72,9 @@ export async function ExtensionState_statusBarItem(
   const calibrateCommand = packageJson.contributes.commands[3].command
   context.subscriptions.push(
     vscode.commands.registerCommand(calibrateCommand, async () => {
-      if (!_calibrate) {
-        vscode.window.showErrorMessage('No status bar item found')
-        return
-      }
-      if (extensionState.read() == 'disposed') {
-        return vscode.window.showInformationMessage(
-          'The extension is disposed. Mount it to use this command.'
-        )
-      }
-      if (c_busy || busy) {
-        // FIXME: if any showInformationMessage you are waiting for is hidden to the notification area
-        // and the user wants to run this command again, the message is unclear...
-        vscode.window.showInformationMessage(
-          'The extension is busy. Try again in a few seconds.'
-        )
-        return
-      }
-
-      // show
-      try {
-        c_busy = true
-
-        calibrate_confirmation_token.consume()
-
-        if (globalCalibration.read() != state.active) {
-          const res = await vscode.window.showInformationMessage(
-            'The Concise Syntax extension will add/remove textMateRules in .vscode/settings.json to sync up with the window state. \
-						Do you want to continue?',
-            'Yes and remember',
-            'No and deactivate'
-          )
-          const next = res?.includes('Yes') ? state.active : state.inactive
-          await globalCalibration.write(next)
-          checkCalibratedCommandContext(next) // where should you put this?
-
-          if (next == state.inactive && windowState.read() != state.active) {
-            c_busy = false
-            return
-          }
-        }
-
-        // FIXME: get me out of here
-        if (windowState.read() != state.active) {
-          checkCalibratedCommandContext(state.active) // where should you put this?
-          // makes sense right? because having to activate two times is a bit annoying...
-          await REC_nextStateCycle(state.active, state.active)
-        }
-
-        await tryUpdateCalibrateState('opening')
-        const document = await vscode.workspace.openTextDocument(uriRemote)
-        const editor = await vscode.window.showTextDocument(document, {
-          preview: false,
-          preserveFocus: false,
-        })
-
-        disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-          if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
-            await consume_close()
-            return true
-          }
-        })
-
-        await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
-        await tryUpdateCalibrateState('opened', 500)
-
-        checkCalibratedCommandContext(state.active) // where should you put this?
-
-        withProgress({
-          title: 'Concise Syntax: calibrated you may close the file',
-          seconds: 10,
-        })
-
-        c_busy = false
-      } catch (error: any) {
-        debugger
-        await consume_close()
-        vscode.window.showErrorMessage(
-          `Error: failed to open calibrate file -> ${error?.message}`
-        )
-      }
-      function consume_close() {
-        disposeClosedEditor.consume()
-        return tryUpdateCalibrateState('closed')
-      }
-      function tryUpdateCalibrateState(state: Calibrate, t = 100) {
-        _calibrate!.tooltip = state
-        return hold(t)
-      }
+      await CalibrateCommand(uriRemote, usingContext)
     })
   )
-  async function checkCalibratedCommandContext(next: State) {
-    vscode.commands.executeCommand(
-      'setContext',
-      'extension.calibrated',
-      next == state.active
-    )
-    // https://stackoverflow.com/a/74468400
-    await calibrationState.write(next)
-  }
 
   _item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0)
   _item.command = toggleCommand
@@ -298,10 +86,11 @@ export async function ExtensionState_statusBarItem(
   _calibrate.command = calibrateCommand
   _calibrate.text = `$(${calibrateIcon})`
   _calibrate.tooltip = 'bootUp'
+  // FIXME: show _calibrate only when the extension is active
   _calibrate.show()
 
   const next = windowState.read() ?? 'active'
-  await REC_nextStateCycle(next, binary(next))
+  await REC_nextStateCycle(next, binary(next), usingContext)
 
   context.subscriptions.push(_item, {
     dispose() {
@@ -311,6 +100,240 @@ export async function ExtensionState_statusBarItem(
     },
   })
 }
+
+async function REC_nextStateCycle(
+  tryNext: State,
+  settings: 'active' | 'inactive',
+  usingContext: { stores: Stores; context: vscode.ExtensionContext },
+  recursiveDiff?: boolean
+) {
+  if (!_item) {
+    vscode.window.showErrorMessage('No status bar item found')
+    return
+  } else if (crashedMessage) {
+    vscode.window.showErrorMessage(
+      `The extension crashed when updating .vscode/settings.json with property ${key}.textMateRules with error: ${crashedMessage}`
+    )
+    return
+  }
+
+  try {
+    busy = true
+
+    disposeConfiguration.consume()
+    calibrate_confirmation_token.consume()
+    const { stores, context } = usingContext
+
+    if (stores.calibrationState.read() != state.active) {
+      await defaultWindowState(_item, state.stale, stores.windowState)
+      busy = false
+      return
+    }
+
+    _item.text = `$(${statusIconLoading})` + iconText
+    const cash = await updateSettingsCycle(context, settings)
+
+    /**
+     * There is a cash waiting to be executed (invalidated)
+     * The recursion/watcher was called
+     * And the extension is active so now it will fall out of sync
+     * Therefor the user deserves to know the settings.json is not up to date
+     * It is rude to change the settings.json without the user's consent
+     */
+    // prettier-ignore
+    if (typeof cash == 'function' && recursiveDiff && tryNext == state.active && stores.globalInvalidation.read() != state.active) {
+			await defaultWindowState(_item, state.stale, stores.windowState)
+			const res = await vscode.window.showInformationMessage(
+				"The extension settings were invalidated while the extension was running. \
+				 Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
+				'Yes and remember',
+				'No and deactivate',
+			)
+			const next = res?.includes('Yes') ? state.active : state.inactive
+			await stores.globalInvalidation.write(next)
+
+			if( next == state.inactive){
+				await defaultWindowState(_item, next, stores.windowState)
+				busy = false
+				return
+			}
+		}
+
+    // prettier-ignore
+    if (typeof cash == 'function') {
+			if (recursiveDiff) {
+				withProgress({
+					title: 'Concise Syntax: revalidating...',
+					seconds: 5,
+				})
+			}
+			const task = createTask()
+			const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
+			await cash()
+			await Promise.race([
+				task.promise, // either the configuration changes or the timeout
+				new Promise((resolve) => setTimeout(resolve, 3000)),
+			])
+			watcher.dispose()
+		}
+
+    await defaultWindowState(_item, tryNext, stores.windowState)
+
+    // prettier-ignore
+    if(tryNext == state.active)
+		disposeConfiguration.fn = vscode.workspace.onDidChangeConfiguration(async (config) => {
+			if (busy || !config.affectsConfiguration(key)) return
+			const next = stores.windowState.read()
+			if (!next) return
+			// TODO: add a throttle to be extra safe
+			await REC_nextStateCycle(next, binary(next), usingContext, recursiveDiff)
+		}).dispose
+
+    busy = false
+  } catch (error: any) {
+    debugger
+    crashedMessage = error?.message || 'unknown'
+    _item.text = `$(error)` + iconText
+    _item.tooltip = IState.encode(state.error)
+    _item.show()
+    disposeConfiguration.consume()
+  }
+}
+async function defaultWindowState(
+  _item: vscode.StatusBarItem,
+  next: State,
+  windowState: Stores['windowState']
+) {
+  await windowState.write(next)
+  _item.text = `$(${stateIcon})` + iconText
+  _item.tooltip = IState.encode(next)
+  const failure =
+    next == state.disposed || next == state.stale || next == state.error
+  await hold(failure ? 1000 : 100)
+
+  if (failure) {
+    _item.hide()
+  } else {
+    _item.show()
+  }
+}
+
+async function CalibrateCommand(
+  uriRemote: vscode.Uri,
+  usingContext: { stores: Stores; context: vscode.ExtensionContext }
+) {
+  const { stores } = usingContext
+  if (!_calibrate) {
+    vscode.window.showErrorMessage('No status bar item found')
+    return
+  }
+  if (stores.extensionState.read() == 'disposed') {
+    return vscode.window.showInformationMessage(
+      'The extension is disposed. Mount it to use this command.'
+    )
+  }
+  if (c_busy || busy) {
+    // FIXME: if any showInformationMessage you are waiting for is hidden to the notification area
+    // and the user wants to run this command again, the message is unclear...
+    vscode.window.showInformationMessage(
+      'The extension is busy. Try again in a few seconds.'
+    )
+    return
+  }
+
+  // show
+  try {
+    c_busy = true
+
+    calibrate_confirmation_token.consume()
+
+    if (stores.globalCalibration.read() != state.active) {
+      const res = await vscode.window.showInformationMessage(
+        'The Concise Syntax extension will add/remove textMateRules in .vscode/settings.json to sync up with the window state. \
+				Do you want to continue?',
+        'Yes and remember',
+        'No and deactivate'
+      )
+      const next = res?.includes('Yes') ? state.active : state.inactive
+      await stores.globalCalibration.write(next)
+      checkCalibratedCommandContext(next, stores.calibrationState) // where should you put this?
+
+      if (next == state.inactive && stores.windowState.read() != state.active) {
+        c_busy = false
+        return
+      }
+    }
+
+    // FIXME: get me out of here
+    if (stores.windowState.read() != state.active) {
+      checkCalibratedCommandContext(state.active, stores.calibrationState) // where should you put this?
+      // makes sense right? because having to activate two times is a bit annoying...
+      await REC_nextStateCycle(state.active, state.active, usingContext)
+    }
+
+    await tryUpdateCalibrateState('opening')
+    const document = await vscode.workspace.openTextDocument(uriRemote)
+    const editor = await vscode.window.showTextDocument(document, {
+      preview: false,
+      preserveFocus: false,
+    })
+
+    disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
+      if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
+        await consume_close()
+        return true
+      }
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
+    await tryUpdateCalibrateState('opened', 500)
+
+    checkCalibratedCommandContext(state.active, stores.calibrationState) // where should you put this?
+
+    withProgress({
+      title: 'Concise Syntax: calibrated you may close the file',
+      seconds: 10,
+    })
+
+    c_busy = false
+  } catch (error: any) {
+    debugger
+    await consume_close()
+    vscode.window.showErrorMessage(
+      `Error: failed to open calibrate file -> ${error?.message}`
+    )
+  }
+  function consume_close() {
+    disposeClosedEditor.consume()
+    return tryUpdateCalibrateState('closed')
+  }
+  function tryUpdateCalibrateState(state: Calibrate, t = 100) {
+    _calibrate!.tooltip = state
+    return hold(t)
+  }
+}
+async function checkCalibratedCommandContext(
+  next: State,
+  calibrationState: Stores['calibrationState']
+) {
+  vscode.commands.executeCommand(
+    'setContext',
+    'extension.calibrated',
+    next == state.active
+  )
+  // https://stackoverflow.com/a/74468400
+  await calibrationState.write(next)
+}
+function getStores(context: vscode.ExtensionContext) {
+  return {
+    extensionState: getStateStore(context),
+    windowState: getWindowState(context),
+    globalInvalidation: getGlobalAnyInvalidate(context),
+    globalCalibration: getGlobalAnyCalibrate(context),
+    calibrationState: getAnyCalibrate(context),
+  }
+}
+type Stores = ReturnType<typeof getStores>
 
 export async function wipeAllState(context: vscode.ExtensionContext) {
   const states = [
