@@ -39,6 +39,7 @@ export async function ExtensionState_statusBarItem(
   const extensionState = getStateStore(context)
   const windowState = getWindowState(context)
   const globalInvalidation = getGlobalAnyInvalidate(context)
+  const globalCalibration = getGlobalAnyCalibrate(context)
   const calibrationState = getAnyCalibrate(context)
   await windowState.write(setState)
   checkDisposedCommandContext(setState)
@@ -48,7 +49,7 @@ export async function ExtensionState_statusBarItem(
     settings: 'active' | 'inactive',
     overloads: {
       diff?: boolean
-      calibratedThen?: boolean
+      // calibratedThen?: boolean
     } = {}
   ) {
     if (!_item) {
@@ -67,9 +68,7 @@ export async function ExtensionState_statusBarItem(
       disposeConfiguration.consume()
       calibrate_confirmation_token.consume()
 
-      if (
-        !(overloads.calibratedThen || calibrationState.read() == state.active)
-      ) {
+      if (calibrationState.read() != state.active) {
         await defaultWindowState(_item, state.stale)
         busy = false
         return
@@ -199,6 +198,8 @@ export async function ExtensionState_statusBarItem(
         )
       }
       if (c_busy || busy) {
+        // FIXME: if any showInformationMessage you are waiting for is hidden to the notification area
+        // and the user wants to run this command again, the message is unclear...
         vscode.window.showInformationMessage(
           'The extension is busy. Try again in a few seconds.'
         )
@@ -211,13 +212,28 @@ export async function ExtensionState_statusBarItem(
 
         calibrate_confirmation_token.consume()
 
-        const calibratedThen = calibrationState.read() === undefined
+        if (globalCalibration.read() != state.active) {
+          const res = await vscode.window.showInformationMessage(
+            'The Concise Syntax extension will add/remove textMateRules in .vscode/settings.json to sync up with the window state. \
+						Do you want to continue?',
+            'Yes and remember',
+            'No and deactivate'
+          )
+          const next = res?.includes('Yes') ? state.active : state.inactive
+          await globalCalibration.write(next)
+          checkCalibratedCommandContext(next) // where should you put this?
+
+          if (next == state.inactive && windowState.read() != state.active) {
+            c_busy = false
+            return
+          }
+        }
+
         // FIXME: get me out of here
-        if (calibratedThen || windowState.read() == state.inactive) {
+        if (windowState.read() != state.active) {
+          checkCalibratedCommandContext(state.active) // where should you put this?
           // makes sense right? because having to activate two times is a bit annoying...
-          await REC_nextStateCycle(state.active, state.active, {
-            calibratedThen,
-          })
+          await REC_nextStateCycle(state.active, state.active)
         }
 
         await tryUpdateCalibrateState('opening')
@@ -237,7 +253,7 @@ export async function ExtensionState_statusBarItem(
         await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
         await tryUpdateCalibrateState('opened', 500)
 
-        checkCalibratedCommandContext(state.active)
+        checkCalibratedCommandContext(state.active) // where should you put this?
 
         withProgress({
           title: 'Concise Syntax: calibrated you may close the file',
@@ -296,6 +312,20 @@ export async function ExtensionState_statusBarItem(
   })
 }
 
+export async function wipeAllState(context: vscode.ExtensionContext) {
+  const states = [
+    getStateStore(context),
+    getWindowState(context),
+    getGlobalAnyInvalidate(context),
+    getGlobalAnyCalibrate(context),
+    getAnyCalibrate(context),
+  ]
+  for (const iterator of states) {
+    await iterator.write(undefined as any)
+  }
+  return context
+}
+
 function withProgress(params: { title: string; seconds: number }) {
   return vscode.window.withProgress(
     {
@@ -324,6 +354,11 @@ export function checkDisposedCommandContext(next?: State) {
     'setContext',
     'extension.disposed',
     next == state.disposed
+  )
+  vscode.commands.executeCommand(
+    'setContext',
+    'extension.running',
+    next == state.active || next == state.inactive
   )
 }
 
@@ -379,6 +414,9 @@ function flip(next?: State) {
 
 export function getAnyCalibrate(context: vscode.ExtensionContext) {
   return useState(context, 'calibrate', <State>{})
+}
+export function getGlobalAnyCalibrate(context: vscode.ExtensionContext) {
+  return useGlobal(context, 'calibrate', <State>{})
 }
 export function getGlobalAnyInvalidate(context: vscode.ExtensionContext) {
   return useGlobal(context, 'invalidate', <State>{})

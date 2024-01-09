@@ -80,7 +80,12 @@ const contributes = {
       command: "extension.calibrate",
       title: "Calibrate",
       category: "Concise Syntax",
-      enablement: "!extension.disposed"
+      enablement: "!extension.disposed && extension.running"
+    },
+    {
+      command: "extension.reset",
+      title: "Reset then reload (dev)",
+      category: "Concise Syntax"
     }
   ]
 };
@@ -345,7 +350,7 @@ function iconSelector(icon) {
 function _catch(e) {
 }
 function useState(context, key2, type2) {
-  const _key = `${extensionId}.${key2}`;
+  const _key = `${extensionId}.workspace.${key2}`;
   return {
     key: _key,
     value: void 0,
@@ -424,6 +429,7 @@ async function ExtensionState_statusBarItem(context, setState) {
   const extensionState = getStateStore(context);
   const windowState = getWindowState(context);
   const globalInvalidation = getGlobalAnyInvalidate(context);
+  const globalCalibration = getGlobalAnyCalibrate(context);
   const calibrationState = getAnyCalibrate(context);
   await windowState.write(setState);
   checkDisposedCommandContext(setState);
@@ -441,7 +447,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       busy = true;
       disposeConfiguration.consume();
       calibrate_confirmation_token.consume();
-      if (!(overloads.calibratedThen || calibrationState.read() == state.active)) {
+      if (calibrationState.read() != state.active) {
         await defaultWindowState(_item, state.stale);
         busy = false;
         return;
@@ -556,11 +562,23 @@ async function ExtensionState_statusBarItem(context, setState) {
       try {
         c_busy = true;
         calibrate_confirmation_token.consume();
-        const calibratedThen = calibrationState.read() === void 0;
-        if (calibratedThen || windowState.read() == state.inactive) {
-          await REC_nextStateCycle(state.active, state.active, {
-            calibratedThen
-          });
+        if (globalCalibration.read() != state.active) {
+          const res = await vscode__namespace.window.showInformationMessage(
+            "The Concise Syntax extension will add/remove textMateRules in .vscode/settings.json to sync up with the window state. 						Do you want to continue?",
+            "Yes and remember",
+            "No and deactivate"
+          );
+          const next2 = res?.includes("Yes") ? state.active : state.inactive;
+          await globalCalibration.write(next2);
+          checkCalibratedCommandContext(next2);
+          if (next2 == state.inactive && windowState.read() != state.active) {
+            c_busy = false;
+            return;
+          }
+        }
+        if (windowState.read() != state.active) {
+          checkCalibratedCommandContext(state.active);
+          await REC_nextStateCycle(state.active, state.active);
         }
         await tryUpdateCalibrateState("opening");
         const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
@@ -627,6 +645,19 @@ async function ExtensionState_statusBarItem(context, setState) {
     }
   });
 }
+async function wipeAllState(context) {
+  const states = [
+    getStateStore(context),
+    getWindowState(context),
+    getGlobalAnyInvalidate(context),
+    getGlobalAnyCalibrate(context),
+    getAnyCalibrate(context)
+  ];
+  for (const iterator of states) {
+    await iterator.write(void 0);
+  }
+  return context;
+}
 function withProgress(params) {
   return vscode__namespace.window.withProgress(
     {
@@ -654,6 +685,11 @@ function checkDisposedCommandContext(next) {
     "setContext",
     "extension.disposed",
     next == state.disposed
+  );
+  vscode__namespace.commands.executeCommand(
+    "setContext",
+    "extension.running",
+    next == state.active || next == state.inactive
   );
 }
 function onDidCloseTextDocument(tryClose) {
@@ -684,6 +720,9 @@ function flip(next) {
 }
 function getAnyCalibrate(context) {
   return useState(context, "calibrate");
+}
+function getGlobalAnyCalibrate(context) {
+  return useGlobal(context, "calibrate");
 }
 function getGlobalAnyInvalidate(context) {
   return useGlobal(context, "invalidate");
@@ -747,6 +786,15 @@ async function read() {
   return await preRead(base);
 }
 async function activate(context) {
+  const resetCommand = packageJson.contributes.commands[4].command;
+  context.subscriptions.push(
+    vscode__namespace.commands.registerCommand(
+      resetCommand,
+      () => wipeAllState(context).then(uninstallCycle).then(
+        () => vscode__namespace.commands.executeCommand("workbench.action.reloadWindow")
+      )
+    )
+  );
   const extensionState = getStateStore(context);
   const { wasActive } = await read();
   const reloadCommand = packageJson.contributes.commands[0].command;

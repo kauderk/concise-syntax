@@ -45,7 +45,12 @@ declare const data: {
         "command": "extension.calibrate",
         "title": "Calibrate",
         "category": "Concise Syntax",
-        "enablement": "!extension.disposed"
+        "enablement": "!extension.disposed && extension.running"
+      },
+      {
+        "command": "extension.reset",
+        "title": "Reset then reload (dev)",
+        "category": "Concise Syntax"
       }
     ]
   },

@@ -10,12 +10,26 @@ import {
   getWindowState,
   binary,
   checkDisposedCommandContext,
+  wipeAllState,
 } from './statusBarItem'
 import { installCycle, read, uninstallCycle } from './extensionCycle'
 import { state } from '../shared/state'
 export { deactivateCycle as deactivate } from './extensionCycle'
 
 export async function activate(context: vscode.ExtensionContext) {
+  // return wipeAllState(context).then(uninstallCycle)
+
+  const resetCommand = packageJson.contributes.commands[4].command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(resetCommand, () =>
+      wipeAllState(context)
+        .then(uninstallCycle)
+        .then(() =>
+          vscode.commands.executeCommand('workbench.action.reloadWindow')
+        )
+    )
+  )
+
   const extensionState = getStateStore(context) // why do I need two active states?
 
   // FIXME: use a better state manager or state machine

@@ -9,7 +9,7 @@ export function useState<S extends string, T extends string>(
   key: S,
   type: T // I don't like weaning my type hat
 ) {
-  const _key = `${extensionId}.${key}` as const
+  const _key = `${extensionId}.workspace.${key}` as const
   return {
     key: _key,
     value: <T | undefined>undefined,
