@@ -427,60 +427,133 @@ let calibrate_confirmation_token = deltaValue(
 );
 async function ExtensionState_statusBarItem(context, setState) {
   const stores = getStores(context);
-  const { extensionState, windowState } = stores;
-  await windowState.write(setState);
+  await stores.windowState.write(setState);
   const usingContext = { stores, context };
   checkDisposedCommandContext(setState);
   if (_item) {
-    await REC_nextStateCycle(setState, binary(setState), usingContext);
-    return;
+    return REC_nextWindowStateCycle(setState, binary(setState), usingContext);
   }
   const toggleCommand = packageJson.contributes.commands[2].command;
-  context.subscriptions.push(
-    vscode__namespace.commands.registerCommand(toggleCommand, async () => {
-      if (extensionState.read() == "disposed") {
-        return vscode__namespace.window.showInformationMessage(
-          "The extension is disposed. Mount it to use this command."
-        );
-      }
-      if (busy) {
-        return vscode__namespace.window.showInformationMessage(
-          "The extension is busy. Try again in a few seconds."
-        );
-      }
-      const next2 = flip(windowState.read());
-      await REC_nextStateCycle(next2, next2, usingContext);
-    })
-  );
+  _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
+  _item.command = toggleCommand;
   const remoteCalibratePath = path.join(__dirname, calibrationFileName);
   const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
   const calibrateCommand = packageJson.contributes.commands[3].command;
-  context.subscriptions.push(
-    vscode__namespace.commands.registerCommand(calibrateCommand, async () => {
-      await CalibrateCommand(uriRemote, usingContext);
-    })
-  );
-  _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
-  _item.command = toggleCommand;
-  _calibrate = vscode__namespace.window.createStatusBarItem(
-    vscode__namespace.StatusBarAlignment.Right,
-    0
-  );
+  _calibrate = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _calibrate.command = calibrateCommand;
-  _calibrate.text = `$(${calibrateIcon})`;
-  _calibrate.tooltip = "bootUp";
-  _calibrate.show();
-  const next = windowState.read() ?? "active";
-  await REC_nextStateCycle(next, binary(next), usingContext);
-  context.subscriptions.push(_item, {
-    dispose() {
-      disposeConfiguration.consume();
-      disposeClosedEditor.consume();
-      calibrate_confirmation_token.consume();
+  defaultCalibrate(_calibrate);
+  const next = setState ?? "active";
+  await REC_nextWindowStateCycle(next, binary(next), usingContext);
+  context.subscriptions.push(
+    _item,
+    vscode__namespace.commands.registerCommand(
+      toggleCommand,
+      () => toggleCommandCycle(usingContext)
+    ),
+    _calibrate,
+    vscode__namespace.commands.registerCommand(
+      calibrateCommand,
+      () => calibrateCommandCycle(uriRemote, usingContext)
+    ),
+    {
+      dispose() {
+        disposeConfiguration.consume();
+        disposeClosedEditor.consume();
+        calibrate_confirmation_token.consume();
+      }
+    }
+  );
+}
+async function REC_windowStateSandbox(tryNext, settings, usingContext, recursiveDiff) {
+  const { stores, context, _item: _item2 } = usingContext;
+  if (stores.calibrationState.read() != state.active) {
+    await defaultWindowState(_item2, state.stale, stores.windowState);
+    return;
+  }
+  _item2.text = `$(${statusIconLoading})` + iconText;
+  const cash = await updateSettingsCycle(context, settings);
+  if (typeof cash == "function" && recursiveDiff && tryNext == state.active && stores.globalInvalidation.read() != state.active) {
+    await defaultWindowState(_item2, state.stale, stores.windowState);
+    const res = await vscode__namespace.window.showInformationMessage(
+      "The extension settings were invalidated while the extension was running.         Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
+      "Yes and remember",
+      "No and deactivate"
+    );
+    const next = res?.includes("Yes") ? state.active : state.inactive;
+    await stores.globalInvalidation.write(next);
+    if (next == state.inactive) {
+      await defaultWindowState(_item2, next, stores.windowState);
+      return;
+    }
+  }
+  if (typeof cash == "function") {
+    if (recursiveDiff) {
+      withProgress({
+        title: "Concise Syntax: revalidating...",
+        seconds: 5
+      });
+    }
+    const task = createTask();
+    const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
+    await cash();
+    await Promise.race([
+      task.promise,
+      // either the configuration changes or the timeout
+      new Promise((resolve) => setTimeout(resolve, 3e3))
+    ]);
+    watcher.dispose();
+  }
+  await defaultWindowState(_item2, tryNext, stores.windowState);
+  if (tryNext == state.active)
+    disposeConfiguration.fn = vscode__namespace.workspace.onDidChangeConfiguration(async (config) => {
+      if (busy || !config.affectsConfiguration(key))
+        return;
+      const next = stores.windowState.read();
+      if (!next)
+        return;
+      await REC_nextWindowStateCycle(next, binary(next), usingContext, recursiveDiff);
+    }).dispose;
+}
+async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
+  const { stores } = usingContext;
+  if (stores.globalCalibration.read() != state.active) {
+    const res = await vscode__namespace.window.showInformationMessage(
+      "The Concise Syntax extension will add/remove textMateRules in .vscode/settings.json to sync up with the window state.       Do you want to continue?",
+      "Yes and remember",
+      "No and deactivate"
+    );
+    const next = res?.includes("Yes") ? state.active : state.inactive;
+    await stores.globalCalibration.write(next);
+    checkCalibratedCommandContext(next, stores.calibrationState);
+    if (next == state.inactive && stores.windowState.read() != state.active) {
+      return;
+    }
+  }
+  if (stores.windowState.read() != state.active) {
+    checkCalibratedCommandContext(state.active, stores.calibrationState);
+    await REC_nextWindowStateCycle(state.active, state.active, usingContext);
+  }
+  await tryUpdateCalibrateState("opening", _calibrate2);
+  const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
+  const editor = await vscode__namespace.window.showTextDocument(document, {
+    preview: false,
+    preserveFocus: false
+  });
+  disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
+    if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
+      await consume_close(_calibrate2);
+      return true;
     }
   });
+  await new Promise((resolve) => setTimeout(resolve, 1e3));
+  await tryUpdateCalibrateState("opened", _calibrate2, 500);
+  checkCalibratedCommandContext(state.active, stores.calibrationState);
+  withProgress({
+    title: "Concise Syntax: calibrated you may close the file",
+    seconds: 10
+  });
 }
-async function REC_nextStateCycle(tryNext, settings, usingContext, recursiveDiff) {
+async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursiveDiff) {
   if (!_item) {
     vscode__namespace.window.showErrorMessage("No status bar item found");
     return;
@@ -494,56 +567,12 @@ async function REC_nextStateCycle(tryNext, settings, usingContext, recursiveDiff
     busy = true;
     disposeConfiguration.consume();
     calibrate_confirmation_token.consume();
-    const { stores, context } = usingContext;
-    if (stores.calibrationState.read() != state.active) {
-      await defaultWindowState(_item, state.stale, stores.windowState);
-      busy = false;
-      return;
-    }
-    _item.text = `$(${statusIconLoading})` + iconText;
-    const cash = await updateSettingsCycle(context, settings);
-    if (typeof cash == "function" && recursiveDiff && tryNext == state.active && stores.globalInvalidation.read() != state.active) {
-      await defaultWindowState(_item, state.stale, stores.windowState);
-      const res = await vscode__namespace.window.showInformationMessage(
-        "The extension settings were invalidated while the extension was running. 				 Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
-        "Yes and remember",
-        "No and deactivate"
-      );
-      const next = res?.includes("Yes") ? state.active : state.inactive;
-      await stores.globalInvalidation.write(next);
-      if (next == state.inactive) {
-        await defaultWindowState(_item, next, stores.windowState);
-        busy = false;
-        return;
-      }
-    }
-    if (typeof cash == "function") {
-      if (recursiveDiff) {
-        withProgress({
-          title: "Concise Syntax: revalidating...",
-          seconds: 5
-        });
-      }
-      const task = createTask();
-      const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
-      await cash();
-      await Promise.race([
-        task.promise,
-        // either the configuration changes or the timeout
-        new Promise((resolve) => setTimeout(resolve, 3e3))
-      ]);
-      watcher.dispose();
-    }
-    await defaultWindowState(_item, tryNext, stores.windowState);
-    if (tryNext == state.active)
-      disposeConfiguration.fn = vscode__namespace.workspace.onDidChangeConfiguration(async (config) => {
-        if (busy || !config.affectsConfiguration(key))
-          return;
-        const next = stores.windowState.read();
-        if (!next)
-          return;
-        await REC_nextStateCycle(next, binary(next), usingContext, recursiveDiff);
-      }).dispose;
+    await REC_windowStateSandbox(
+      tryNext,
+      settings,
+      Object.assign(usingContext, { _item }),
+      recursiveDiff
+    );
     busy = false;
   } catch (error) {
     debugger;
@@ -566,16 +595,17 @@ async function defaultWindowState(_item2, next, windowState) {
     _item2.show();
   }
 }
-async function CalibrateCommand(uriRemote, usingContext) {
+async function calibrateCommandCycle(uriRemote, usingContext) {
   const { stores } = usingContext;
   if (!_calibrate) {
     vscode__namespace.window.showErrorMessage("No status bar item found");
     return;
   }
   if (stores.extensionState.read() == "disposed") {
-    return vscode__namespace.window.showInformationMessage(
+    vscode__namespace.window.showInformationMessage(
       "The extension is disposed. Mount it to use this command."
     );
+    return;
   }
   if (c_busy || busy) {
     vscode__namespace.window.showInformationMessage(
@@ -586,59 +616,45 @@ async function CalibrateCommand(uriRemote, usingContext) {
   try {
     c_busy = true;
     calibrate_confirmation_token.consume();
-    if (stores.globalCalibration.read() != state.active) {
-      const res = await vscode__namespace.window.showInformationMessage(
-        "The Concise Syntax extension will add/remove textMateRules in .vscode/settings.json to sync up with the window state. 				Do you want to continue?",
-        "Yes and remember",
-        "No and deactivate"
-      );
-      const next = res?.includes("Yes") ? state.active : state.inactive;
-      await stores.globalCalibration.write(next);
-      checkCalibratedCommandContext(next, stores.calibrationState);
-      if (next == state.inactive && stores.windowState.read() != state.active) {
-        c_busy = false;
-        return;
-      }
-    }
-    if (stores.windowState.read() != state.active) {
-      checkCalibratedCommandContext(state.active, stores.calibrationState);
-      await REC_nextStateCycle(state.active, state.active, usingContext);
-    }
-    await tryUpdateCalibrateState("opening");
-    const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
-    const editor = await vscode__namespace.window.showTextDocument(document, {
-      preview: false,
-      preserveFocus: false
-    });
-    disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-      if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
-        await consume_close();
-        return true;
-      }
-    });
-    await new Promise((resolve) => setTimeout(resolve, 1e3));
-    await tryUpdateCalibrateState("opened", 500);
-    checkCalibratedCommandContext(state.active, stores.calibrationState);
-    withProgress({
-      title: "Concise Syntax: calibrated you may close the file",
-      seconds: 10
-    });
+    await calibrateStateSandbox(uriRemote, usingContext, _calibrate);
     c_busy = false;
   } catch (error) {
     debugger;
-    await consume_close();
+    await consume_close(_calibrate);
     vscode__namespace.window.showErrorMessage(
       `Error: failed to open calibrate file -> ${error?.message}`
     );
   }
-  function consume_close() {
-    disposeClosedEditor.consume();
-    return tryUpdateCalibrateState("closed");
+}
+async function toggleCommandCycle(usingContext) {
+  const { stores } = usingContext;
+  if (stores.extensionState.read() == "disposed") {
+    vscode__namespace.window.showInformationMessage(
+      "The extension is disposed. Mount it to use this command."
+    );
+    return;
   }
-  function tryUpdateCalibrateState(state2, t = 100) {
-    _calibrate.tooltip = state2;
-    return hold(t);
+  if (busy) {
+    vscode__namespace.window.showInformationMessage(
+      "The extension is busy. Try again in a few seconds."
+    );
+    return;
   }
+  const next = flip(stores.windowState.read());
+  await REC_nextWindowStateCycle(next, next, usingContext);
+}
+function defaultCalibrate(_calibrate2) {
+  _calibrate2.text = `$(${calibrateIcon})`;
+  _calibrate2.tooltip = "bootUp";
+  _calibrate2.show();
+}
+function consume_close(_calibrate2) {
+  disposeClosedEditor.consume();
+  return tryUpdateCalibrateState("closed", _calibrate2);
+}
+function tryUpdateCalibrateState(state2, _calibrate2, t = 100) {
+  _calibrate2.tooltip = state2;
+  return hold(t);
 }
 async function checkCalibratedCommandContext(next, calibrationState) {
   vscode__namespace.commands.executeCommand(
@@ -658,14 +674,8 @@ function getStores(context) {
   };
 }
 async function wipeAllState(context) {
-  const states = [
-    getStateStore(context),
-    getWindowState(context),
-    getGlobalAnyInvalidate(context),
-    getGlobalAnyCalibrate(context),
-    getAnyCalibrate(context)
-  ];
-  for (const iterator of states) {
+  const states = getStores(context);
+  for (const iterator of Object.values(states)) {
     await iterator.write(void 0);
   }
   return context;
