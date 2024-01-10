@@ -20,63 +20,58 @@ export const editorFlags = {
   },
 }
 
-type Condition = (payload: {
-  siblings: HTMLSpanElement[]
-  current: HTMLSpanElement
-}) => boolean | undefined
-type SymbolClass = {
+type SymbolClass<Payload> = {
   [key: string]:
     | {
         match: RegExp | string
       }
     | ({
         match: RegExp | string
-      } & Partial<{ [condition: string]: Condition }>)
+      } & Partial<{
+        [condition: string]: (payload: Payload) => HTMLElement | undefined
+      }>)
 }
 const symbolTable = {
   openTag: {
     match: /<|<\//,
     lowerCase({ siblings, current }) {
       const tag = siblings[siblings.indexOf(current) + 1]
-      if (tag.textContent?.toLowerCase() === tag.textContent) return true
+      if (tag.textContent?.toLowerCase() === tag.textContent) {
+        return tag
+      }
     },
     upperCase({ siblings, current }) {
       const tag = siblings[siblings.indexOf(current) + 1]
-      if (tag.textContent?.match(/^[A-Z]/)) return true
+      if (tag.textContent?.match(/^[A-Z]/)) {
+        return tag
+      }
     },
   },
-  closeTag: { match: />|\/>/ },
 
-  anyQuote: {
+  anySpace: { match: /\s+/ },
+
+  quotes: {
     match: /"|'|`/,
     empty({ siblings, current }) {
       const empty = current?.textContent?.match(/""|''|``/)
       if (empty?.[0]) {
-        const emptyQuote = Array.from(current.classList).join('.')
-        return true
+        return current
       }
     },
     string({ siblings, current }) {
+      const beginQuote = current.textContent
+      const string = siblings[siblings.indexOf(current) + 1]
       const end = siblings[siblings.indexOf(current) + 2]
-
-      const currentQuote = current.textContent
-      const nextQuote = end?.textContent?.match(this.match)
-      if (currentQuote?.length == 1 && currentQuote === nextQuote?.[0]) {
-        const beginQuote = Array.from(current.classList).join('.')
-        const endQuote = Array.from(end.classList).join('.')
-        return true
+      const endQuote = end?.textContent?.match(this.match)?.[0]
+      if (
+        beginQuote?.length == 1 &&
+        string?.textContent?.length &&
+        beginQuote === endQuote
+      ) {
+        return string
       }
     },
   },
-
-  coma: {
-    match: /,/,
-    lastComa({ siblings, current }) {
-      const next = siblings[siblings.indexOf(current) + 1]
-      if (!next) return true
-    },
-  },
-  anySpace: { match: /^\s*$/ },
 
   // openBracket:/{/, // overloads...
   // tag:/li/, // derived
@@ -85,7 +80,33 @@ const symbolTable = {
   colon: { match: /:/ },
   nul: { match: /null/ },
   // undefine: { match: /undefined/ },
-} satisfies SymbolClass
+} satisfies SymbolClass<{
+  siblings: HTMLSpanElement[]
+  current: HTMLSpanElement
+}>
+
+const symbolLineTable = {
+  closeTag: {
+    match: /(>|\/>)$/,
+    capture({ siblings }) {
+      return siblings[siblings.length - 1]
+    },
+  },
+  lastComa: {
+    match: /,$/,
+    capture({ siblings }) {
+      return siblings[siblings.length - 1]
+    },
+  },
+  indentation: {
+    match: /}$/, // FIXME: this is bet that if it is closing brace, then there must be indentation
+    capture({ siblings }) {
+      return siblings[0]
+    },
+  },
+} satisfies SymbolClass<{
+  siblings: HTMLSpanElement[]
+}>
 
 function parseSymbolColors(lineEditor: HTMLElement) {
   debugger
@@ -102,59 +123,91 @@ function parseSymbolColors(lineEditor: HTMLElement) {
   const lines = Array.from(lineEditor.querySelectorAll('div>span'))
 
   let table: any = structuredClone(symbolTable)
-  let result: any = {}
+  let tableResult: any = {}
+
+  let lineTable: any = structuredClone(symbolLineTable)
+  let lineTableResult: any = {}
+
+  // typescript...
+  type Table = typeof symbolTable
+  type TableKeyUnions = { [K in keyof Table]: { [K2 in keyof Table[K]]: any } }
+  type AllKeys<T> = T extends any ? keyof T : never
+  type TableKeys = AllKeys<TableKeyUnions>
+  type conditionKeys = AllKeys<TableKeyUnions[keyof Table]>
 
   parser: for (const line of lines) {
-    log.line++
+    // log.line++
     const text = line.textContent
     if (!text) continue
-    let anyFlag = false
 
     const siblings = Array.from(line.children) as HTMLElement[]
 
     for (let current of siblings) {
-      log.siblings++
+      // log.siblings++
       const content = current.textContent
 
       for (let key in table) {
-        log.table++
+        // log.table++
 
         const match = content?.match(table[key].match)
         if (!match) continue
-        log.match++
+        // log.match++
 
-        result[key] ??= {}
+        tableResult[key] ??= {}
 
         for (let conditionKey in table[key]) {
-          log.condition++
+          // log.condition++
 
           if (typeof table[key][conditionKey] === 'function') {
-            log.check++
+            // log.check++
 
-            const evaluation = table[key][conditionKey]({ siblings, current })
+            const evaluation = table[key][conditionKey]({
+              siblings,
+              current,
+            }) as HTMLElement | undefined
 
-            if (evaluation === true) {
-              log.color++
-
-              const color = getColor(current)
-              result[key][conditionKey] = color
+            if (evaluation) {
+              // log.color++
+              tableResult[key][conditionKey] = getColor(evaluation)
 
               delete table[key][conditionKey]
             }
           }
         }
         if (Object.keys(table[key]).length === 1) {
-          log.splice++
-          result[key].match = match[0]
+          // log.splice++
+          tableResult[key].match = getColor(current)
           delete table[key]
         }
       }
+    }
+    for (let key in lineTable) {
+      // log.table++
+
+      const match = text?.match(lineTable[key].match)
+      if (!match) continue
+      // log.match++
+
+      lineTableResult[key] ??= {}
+
+      const capture = lineTable[key]['capture']({
+        siblings,
+      }) as HTMLElement | undefined
+
+      if (!capture) {
+        continue
+      }
+      // log.color++
+      lineTableResult[key]['match'] = getColor(capture)
+
+      delete lineTable[key]
     }
   }
   console.log(log)
 }
 function getColor(span: HTMLElement) {
-  return span.computedStyleMap().get('color')?.toString()
+  const color = span.computedStyleMap().get('color')?.toString()
+  return { color, span, classList: span.classList }
 }
 
 export function jsx_parseStyles(
