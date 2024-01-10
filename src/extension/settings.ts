@@ -11,7 +11,7 @@ const textMateRules = [
     name: name + 'text',
     scope: ['meta.jsx.children.tsx'],
     settings: {
-      foreground: '#b5a70000',
+      foreground: '#B59E7A',
     },
   },
   {

@@ -20,6 +20,143 @@ export const editorFlags = {
   },
 }
 
+type Condition = (payload: {
+  siblings: HTMLSpanElement[]
+  current: HTMLSpanElement
+}) => boolean | undefined
+type SymbolClass = {
+  [key: string]:
+    | {
+        match: RegExp | string
+      }
+    | ({
+        match: RegExp | string
+      } & Partial<{ [condition: string]: Condition }>)
+}
+const symbolTable = {
+  openTag: {
+    match: /<|<\//,
+    lowerCase({ siblings, current }) {
+      const tag = siblings[siblings.indexOf(current) + 1]
+      if (tag.textContent?.toLowerCase() === tag.textContent) return true
+    },
+    upperCase({ siblings, current }) {
+      const tag = siblings[siblings.indexOf(current) + 1]
+      if (tag.textContent?.match(/^[A-Z]/)) return true
+    },
+  },
+  closeTag: { match: />|\/>/ },
+
+  anyQuote: {
+    match: /"|'|`/,
+    empty({ siblings, current }) {
+      const empty = current?.textContent?.match(/""|''|``/)
+      if (empty?.[0]) {
+        const emptyQuote = Array.from(current.classList).join('.')
+        return true
+      }
+    },
+    string({ siblings, current }) {
+      const end = siblings[siblings.indexOf(current) + 2]
+
+      const currentQuote = current.textContent
+      const nextQuote = end?.textContent?.match(this.match)
+      if (currentQuote?.length == 1 && currentQuote === nextQuote?.[0]) {
+        const beginQuote = Array.from(current.classList).join('.')
+        const endQuote = Array.from(end.classList).join('.')
+        return true
+      }
+    },
+  },
+
+  coma: {
+    match: /,/,
+    lastComa({ siblings, current }) {
+      const next = siblings[siblings.indexOf(current) + 1]
+      if (!next) return true
+    },
+  },
+  anySpace: { match: /^\s*$/ },
+
+  // openBracket:/{/, // overloads...
+  // tag:/li/, // derived
+
+  openBrace: { match: /\(/ }, // single operation + overloads
+  colon: { match: /:/ },
+  nul: { match: /null/ },
+  // undefine: { match: /undefined/ },
+} satisfies SymbolClass
+
+function parseSymbolColors(lineEditor: HTMLElement) {
+  debugger
+  let log = {
+    line: 0,
+    siblings: 0,
+    table: 0,
+    match: 0,
+    condition: 0,
+    check: 0,
+    color: 0,
+    splice: 0,
+  }
+  const lines = Array.from(lineEditor.querySelectorAll('div>span'))
+
+  let table: any = structuredClone(symbolTable)
+  let result: any = {}
+
+  parser: for (const line of lines) {
+    log.line++
+    const text = line.textContent
+    if (!text) continue
+    let anyFlag = false
+
+    const siblings = Array.from(line.children) as HTMLElement[]
+
+    for (let current of siblings) {
+      log.siblings++
+      const content = current.textContent
+
+      for (let key in table) {
+        log.table++
+
+        const match = content?.match(table[key].match)
+        if (!match) continue
+        log.match++
+
+        result[key] ??= {}
+
+        for (let conditionKey in table[key]) {
+          log.condition++
+
+          if (typeof table[key][conditionKey] === 'function') {
+            log.check++
+
+            const evaluation = table[key][conditionKey]({ siblings, current })
+
+            if (evaluation === true) {
+              log.color++
+
+              const color = getColor(current)
+              result[key][conditionKey] = color
+
+              delete table[key][conditionKey]
+            }
+          }
+        }
+        if (Object.keys(table[key]).length === 1) {
+          log.splice++
+          result[key].match = match[0]
+          delete table[key]
+        }
+      }
+    }
+  }
+  console.log(log)
+}
+function getColor(span: HTMLElement) {
+  return span.computedStyleMap().get('color')?.toString()
+}
+
 export function jsx_parseStyles(
   lineEditor: HTMLElement,
   _editorFlag: EditorFlags
