@@ -24,7 +24,7 @@ type Condition = (payload: {
   siblings: HTMLSpanElement[]
   current: HTMLSpanElement
 }) => HTMLElement | undefined
-type SymbolClass = {
+type SymbolClass<C = Condition> = {
   [key: string]:
     | {
         match: RegExp | string
@@ -33,10 +33,10 @@ type SymbolClass = {
     | ({
         match: RegExp | string
       } & Partial<{
-        [condition: string]: Condition
+        [condition: string]: C
       }>)
 }
-const capture: Condition = ({ current }) => current
+
 const symbolTable = {
   openTag: {
     match: /<|<\//,
@@ -54,31 +54,14 @@ const symbolTable = {
     },
   },
 
-  anySpace: { match: /\s+/ },
+  anySpace: { match: /^\s+$/ },
 
-  quotes: {
-    match: /"|'|`/,
-    empty({ siblings, current }) {
-      const empty = current?.textContent?.match(/""|''|``/)
-      if (empty?.[0]) {
-        return current
-      }
-    },
-    string({ siblings, current }) {
-      const beginQuote = current.textContent
-      const string = siblings[siblings.indexOf(current) + 1]
-      const end = siblings[siblings.indexOf(current) + 2]
-      const endQuote = end?.textContent
-      if (
-        beginQuote?.length == 1 &&
-        string?.textContent?.length &&
-        beginQuote === endQuote
-      ) {
-        return string
-      }
-    },
-  },
+  colon: { match: /:/ },
+  nul: { match: /null/ },
+  // undefine: { match: /undefined/ },
+} satisfies SymbolClass
 
+const lastSymbolTable = {
   closeTag: {
     match: /(>|\/>)$/,
     capture({ siblings }) {
@@ -97,101 +80,146 @@ const symbolTable = {
       return siblings[0]
     },
   },
-
-  // openBracket:/{/, // overloads...
-  // tag:/li/, // derived
-
-  openBrace: { match: /\(/ }, // single operation + overloads
-  colon: { match: /:/ },
-  nul: { match: /null/ },
-  // undefine: { match: /undefined/ },
 } satisfies SymbolClass
+
+const bracketSymbolTable = {
+  brackets: { match: /{/ },
+  braces: { match: /\(/ },
+} satisfies SymbolClass
+
+const multipleSymbolTale = {
+  quotes: {
+    match: /"|'|`/,
+    empty({ siblings, current }) {
+      const empty = current?.textContent?.match(/^(""|''|``)$/)
+      if (empty?.[0]) {
+        return [current]
+      }
+    },
+    string({ siblings, current }) {
+      const beginQuote = current.textContent
+      const string = siblings[siblings.indexOf(current) + 1]
+      const end = siblings[siblings.indexOf(current) + 2]
+      const endQuote = end?.textContent
+      if (
+        beginQuote?.length == 1 &&
+        string?.textContent?.length &&
+        beginQuote === endQuote
+      ) {
+        return [current, string, end]
+      } else if (beginQuote?.length! > 2 && beginQuote?.match(/("|'|`)$/)) {
+        return [current]
+      }
+    },
+  },
+} satisfies SymbolClass<
+  (payload: {
+    siblings: HTMLSpanElement[]
+    current: HTMLSpanElement
+  }) => HTMLElement[] | undefined
+>
 
 function parseSymbolColors(lineEditor: HTMLElement) {
   debugger
-  let log = {
-    line: 0,
-    siblings: 0,
-    table: 0,
-    match: 0,
-    condition: 0,
-    check: 0,
-    color: 0,
-    splice: 0,
-    loop: 0,
-  }
+
   const lines = Array.from(lineEditor.querySelectorAll('div>span'))
 
   let table: any = structuredClone(symbolTable)
-  let tableResult: any = {}
-
-  // typescript...
-  type Table = typeof symbolTable
-  type TableKeyUnions = { [K in keyof Table]: { [K2 in keyof Table[K]]: any } }
-  type AllKeys<T> = T extends any ? keyof T : never
-  type TableKeys = AllKeys<TableKeyUnions>
-  type conditionKeys = AllKeys<TableKeyUnions[keyof Table]>
+  let lastTable: any = structuredClone(lastSymbolTable)
+  let bracketTable: any = structuredClone(bracketSymbolTable)
+  let multipleTable: any = structuredClone(multipleSymbolTale)
+  let output: any = {}
 
   parser: for (const line of lines) {
-    // log.line++
     const text = line.textContent
     if (!text) continue
-
     const siblings = Array.from(line.children) as HTMLElement[]
 
     line: for (let current of siblings) {
-      // log.siblings++
       const content = current.textContent
 
       for (let key in table) {
-        // log.table++
-
         const regex = table[key].match
-
         const match = content?.match(regex)
         if (!match) continue
-        // log.match++
-
-        tableResult[key] ??= {}
-
+        output[key] ??= {}
         delete table[key].match
 
         for (let conditionKey in table[key]) {
-          // log.condition++
-
           const evaluation = table[key][conditionKey]({
             siblings,
             current,
           })
-
           if (evaluation) {
-            // log.color++
-            tableResult[key][conditionKey] = getColor(evaluation)
-
+            output[key][conditionKey] = getColor(evaluation, match[0])
             delete table[key][conditionKey]
           }
         }
         if (Object.keys(table[key]).length === 0) {
-          // log.splice++
-          tableResult[key].capture ??= getColor(current)
-          tableResult[key].match = match[0]
+          output[key].capture ??= getColor(current, match[0])
           delete table[key]
-          if (Object.keys(table).length === 0) {
-            break parser
-          }
-          break line // make a bet, if you found something, then it is probably the only thing in the line
         } else {
-          // log.loop++
           table[key].match = regex
         }
       }
+
+      for (let key in bracketTable) {
+        const regex = bracketTable[key].match
+        const match = content?.match(regex)
+        if (!match) continue
+
+        output[key] ??= []
+        if (output[key].every((m: any) => m.className !== current.className)) {
+          output[key].push(getColor(current, match[0]))
+        }
+      }
+
+      for (let key in multipleTable) {
+        const regex = multipleTable[key].match
+        const match = content?.match(regex)
+        if (!match) continue
+        output[key] ??= {}
+        delete multipleTable[key].match
+
+        for (let conditionKey in multipleTable[key]) {
+          const evaluations = multipleTable[key][conditionKey]({
+            siblings,
+            current,
+          })
+          if (evaluations) {
+            output[key][conditionKey] = evaluations.map(getColor)
+            delete multipleTable[key][conditionKey]
+          }
+        }
+        if (Object.keys(multipleTable[key]).length === 0) {
+          output[key].capture ??= getColor(current, match[0])
+          delete multipleTable[key]
+        } else {
+          multipleTable[key].match = regex
+        }
+      }
+    }
+
+    for (let key in lastTable) {
+      const regex = lastTable[key].match
+      const match = text?.match(regex)
+      if (!match) continue
+      output[key] ??= {}
+
+      const evaluation = lastTable[key].capture({
+        siblings,
+      })
+      if (evaluation) {
+        output[key].capture = getColor(evaluation, match[0])
+        delete lastTable[key]
+      }
     }
   }
-  console.log(log)
+  console.log(output)
 }
-function getColor(span: HTMLElement) {
+function getColor(span: HTMLElement, match: string) {
   const color = span.computedStyleMap().get('color')?.toString()
-  return { color, span, classList: span.classList }
+  return { color, span, match, className: span.className }
 }
 
 export function jsx_parseStyles(
