@@ -280,7 +280,6 @@ function parseSymbolColors(lineEditor: HTMLElement) {
     ternaryOtherWiseSelector = `.${blank0}+.${closeBrace}+.${colonBlank}+.${nullIsh}+.${closeBracket}:last-child`
   }
 
-  const quoteColor = color(stringEl)
   const jsxBracketSelector =
     '.' + process.jsxBracket.capture.className.split(' ').shift()
 
@@ -310,31 +309,30 @@ function parseSymbolColors(lineEditor: HTMLElement) {
       selector: lastChildSelector(process.lastSemicolon.capture),
       color: color(process.lastSemicolon.capture),
     },
-    // branches
-    singleQuotes: {
-      selector: `:is([class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote})`,
-      color: quoteColor,
-    },
     beginQuote: {
       selector: '.' + beginQuote,
-      color: quoteColor,
+      color: color(stringEl),
     },
     endQuote: {
       selector: '.' + endQuote,
       color: color(endQuoteEl),
     },
   }
-  // other selectors affect the these selector, just remove it to avoid complexity
+  // other selectors affect these selectors: remove them to avoid complexity
   const selectorOnly = {
+    singleQuotes: {
+      selector: `:is([class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote})`,
+      color: color(process.quotes.string[1] ?? stringEl),
+    },
     jsxBracket: {
       selector: jsxBracketSelector,
-      colorForGuidance: color(process.jsxBracket.capture),
+      color: color(process.jsxBracket.capture),
     },
     ternaryClosingBrace: {
       selector: `${jsxBracketSelector}~${classSelector(
         process.ternaryOperator.capture
       )}~[class*="bracket-highlighting-"]:last-child`,
-      colorForGuidance: color(process.ternaryOperator.capture), // FIXME: can't find the color
+      color: color(process.ternaryOperator.capture), // FIXME: can't find the color
     },
   }
   const ternaryOtherwise = {
@@ -360,7 +358,8 @@ function parseSymbolColors(lineEditor: HTMLElement) {
 		.view-lines {
 			--r: 0;
 		}
-		.view-lines > div:hover {
+		.view-lines > div:hover,
+		${root}>${selectorOnly.singleQuotes.selector} {
 			--r: 1;
 		}
 		.view-lines:has(:is(${toUnion},${_tagSelector}):hover),

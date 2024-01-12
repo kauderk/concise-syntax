@@ -135,8 +135,8 @@
 			
 			{"scope":["punctuation.definition.string.begin.tsx",],"settings":{"foreground": "#ffb300" }},
 			{"scope":["punctuation.definition.string.template.begin.tsx"],"settings":{"foreground": "#ffb300" }},
-			{"scope":["punctuation.definition.string.end.tsx",],"settings":{"foreground": "#ffb300" }},
-			{"scope":["punctuation.definition.string.template.end.tsx"],"settings":{"foreground": "#ffb300" }},
+			{"scope":["punctuation.definition.string.end.tsx",],"settings":{"foreground": "#f2ff00" }},
+			{"scope":["punctuation.definition.string.template.end.tsx"],"settings":{"foreground": "#f2ff00" }},
 			
 			{"scope":["punctuation.separator.comma.tsx"],"settings":{"foreground": "#686868" }},
 			//*/
