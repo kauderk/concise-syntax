@@ -22,7 +22,7 @@ function Syntax(props) {
         >
           <For each={[]}>
             {(item, _index) => {
-              const i = _index()
+              const i = _index();
               return <li key={i}>Test</li>
             }}
           </For>

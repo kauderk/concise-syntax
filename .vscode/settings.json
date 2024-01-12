@@ -120,20 +120,22 @@
       },*/
 
 			// prettier-ignore
-			/*
+			//*
 			{"scope":["meta.jsx.children.tsx"],"settings":{"foreground": "#FF0000" }},
 			{"scope":["punctuation.definition.tag.begin.tsx",],"settings":{"foreground": "#59ff00" }},
 			{"scope":["punctuation.definition.tag.end.tsx",],"settings":{"foreground": "#59ff00" }},
 			
 			{"scope":["punctuation.section.embedded.begin.tsx",],"settings":{"foreground": "#0037ff" }},
 			{"scope":["punctuation.section.embedded.end.tsx",],"settings":{"foreground": "#0037ff" }},
+			{"scope":["punctuation.definition.block.tsx",],"settings":{"foreground": "#00ff91" }},
 			
 			{"scope":["punctuation.terminator.statement.tsx",],"settings":{"foreground": "#ff00ee" }},
+			{"scope":["keyword.operator.ternary.tsx",],"settings":{"foreground": "#ae00ff" }},
 			
 			{"scope":["punctuation.definition.string.begin.tsx",],"settings":{"foreground": "#ffb300" }},
 			{"scope":["punctuation.definition.string.template.begin.tsx"],"settings":{"foreground": "#ffb300" }},
-			{"scope":["punctuation.definition.string.end.tsx",],"settings":{"foreground": "#9d53b8" }},
-			{"scope":["punctuation.definition.string.template.end.tsx"],"settings":{"foreground": "#9d53b8" }},
+			{"scope":["punctuation.definition.string.end.tsx",],"settings":{"foreground": "#ffb300" }},
+			{"scope":["punctuation.definition.string.template.end.tsx"],"settings":{"foreground": "#ffb300" }},
 			
 			{"scope":["punctuation.separator.comma.tsx"],"settings":{"foreground": "#686868" }},
 			//*/

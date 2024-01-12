@@ -55,9 +55,11 @@ const symbolTable = {
   },
 
   anySpace: { match: /^\s+$/ },
+  text: { match: /Hello\sConcise\sSyntax!/ },
 
-  colon: { match: /:/ },
-  nul: { match: /null/ },
+  // colon: { match: /:/ },
+  ternaryOperator: { match: /\?/ },
+  // nul: { match: /null/ },
   // undefine: { match: /undefined/ },
 } satisfies SymbolClass
 
@@ -68,10 +70,29 @@ const lastSymbolTable = {
       return siblings[siblings.length - 1]
     },
   },
+  lastSemicolon: {
+    match: /;$/,
+    capture({ siblings }) {
+      return siblings[siblings.length - 1]
+    },
+  },
   lastComa: {
     match: /,$/,
     capture({ siblings }) {
       return siblings[siblings.length - 1]
+    },
+  },
+  jsxBracket: {
+    match: /={{$/,
+    capture({ siblings }) {
+      return siblings[siblings.length - 2]
+    },
+  },
+  ternaryOtherwise: {
+    match: /\).+?:.+\}/,
+    // FIXME: any
+    capture({ siblings, current }) {
+      return siblings as any
     },
   },
   indentation: {
@@ -151,12 +172,12 @@ function parseSymbolColors(lineEditor: HTMLElement) {
             current,
           })
           if (evaluation) {
-            output[key][conditionKey] = getColor(evaluation, match[0])
+            output[key][conditionKey] = getProcess(evaluation, match[0])
             delete table[key][conditionKey]
           }
         }
         if (Object.keys(table[key]).length === 0) {
-          output[key].capture ??= getColor(current, match[0])
+          output[key].capture ??= getProcess(current, match[0])
           delete table[key]
         } else {
           table[key].match = regex
@@ -170,7 +191,7 @@ function parseSymbolColors(lineEditor: HTMLElement) {
 
         output[key] ??= []
         if (output[key].every((m: any) => m.className !== current.className)) {
-          output[key].push(getColor(current, match[0]))
+          output[key].push(getProcess(current, match[0]))
         }
       }
 
@@ -187,12 +208,12 @@ function parseSymbolColors(lineEditor: HTMLElement) {
             current,
           })
           if (evaluations) {
-            output[key][conditionKey] = evaluations.map(getColor)
+            output[key][conditionKey] = evaluations.map(getProcess)
             delete multipleTable[key][conditionKey]
           }
         }
         if (Object.keys(multipleTable[key]).length === 0) {
-          output[key].capture ??= getColor(current, match[0])
+          output[key].capture ??= getProcess(current, match[0])
           delete multipleTable[key]
         } else {
           multipleTable[key].match = regex
@@ -210,16 +231,126 @@ function parseSymbolColors(lineEditor: HTMLElement) {
         siblings,
       })
       if (evaluation) {
-        output[key].capture = getColor(evaluation, match[0])
+        output[key].capture = getProcess(evaluation, match[0])
         delete lastTable[key]
       }
     }
   }
+
+  // typescript...
+  type Table = typeof symbolTable
+  type TableKeyUnions<T> = { [K in keyof T]: { [K2 in keyof T[K]]: any } }
+  type AllKeys<T> = T extends any ? keyof T : never
+  type TableKeys =
+    | AllKeys<TableKeyUnions<typeof symbolTable>>
+    | AllKeys<TableKeyUnions<typeof lastSymbolTable>>
+    | AllKeys<TableKeyUnions<typeof bracketSymbolTable>>
+    | AllKeys<TableKeyUnions<typeof multipleSymbolTale>>
+  type conditionKeys = AllKeys<TableKeyUnions<Table>[keyof Table]>
+
+  debugger
+  const process = output as Record<TableKeys, any>
+
+  const angleBracketSelector = setToSelector(
+    process.openTag.capture,
+    process.closeTag.capture
+  )
+  const tagSelector = setToSelector(
+    process.openTag.lowerCase,
+    process.openTag.upperCase
+  )
+
+  const beginQuote = process.quotes.string[0].className
+  const endQuote = process.quotes.string[2].className
+
+  let otherWiseSelector: string
+  const closing7 = SliceClassListC(process.ternaryOtherwise.capture, -7)
+  if (closing7.okLength) {
+    // prettier-ignore
+    const [blank0, closeBrace, blank, colon, blank2, nullIsh,closeBracket] = toFlatClassList(closing7)
+    otherWiseSelector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`
+  } else {
+    // FIXME: be more resilient to other cases
+    const closing5 = SliceClassListC(process.ternaryOtherwise.capture, -5)
+    // FIXME: if (!closing5.okLength) continue
+    // prettier-ignore
+    const [blank0, closeBrace,               colonBlank, nullIsh, closeBracket] = toFlatClassList(closing5)
+    otherWiseSelector = `.${blank0}+.${closeBrace}+.${colonBlank}+.${nullIsh}+.${closeBracket}:last-child`
+  }
+
+  // flags.jsxTernaryOtherwise = {
+  // 	// find ") : null}" then hide it all
+  // 	hide: `:has(${otherWiseSelector}) *`,
+  // 	hover: otherWiseSelector,
+  // }
+  // // FIXME: find a better way to do this
+  // customFlags.jsxTernaryOtherwiseHover = `.view-lines:has(.view-line span:hover ${otherWiseSelector}) {
+  // 	--r: red;
+  // }`
+
+  const selectors = {
+    angleBrackets: {
+      hide: angleBracketSelector,
+    },
+    closingJsxElement: {
+      hide: `${angleBracketSelector}+${tagSelector}:has(+${angleBracketSelector}:last-child)`,
+    },
+    jsxBracket: {
+      hide: '.' + process.jsxBracket.capture.className.split(' ').shift(),
+    },
+    singleQuotes: `[class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote} {
+			--r: gray;
+		}`,
+    beginQuote: {
+      hide: `>.${beginQuote}`,
+      hover: `.${beginQuote}`,
+    },
+    endQuote: {
+      hide: `>.${endQuote}`,
+      hover: `.${endQuote}`,
+    },
+    lastComa: {
+      hide: lastChildSelector(process.lastComa.capture),
+    },
+    lastSemicolon: {
+      hide: lastChildSelector(process.lastSemicolon.capture),
+    },
+    ternaryClosingBrace: {
+      hide: `${angleBracketSelector}~${classSelector(
+        process.ternaryOperator.capture
+      )}~[class*="bracket-highlighting-"]:last-child`,
+    },
+    ternaryOtherwise: {
+      hide: `:has(${otherWiseSelector}) *`,
+    },
+  }
+
   console.log(output)
 }
-function getColor(span: HTMLElement, match: string) {
+function classSelector(element: HTMLElement) {
+  return `.${Array.from(element.classList).join('.')}`
+}
+function lastChildSelector(element: HTMLElement) {
+  return `${classSelector(element)}:last-child`
+}
+function setToSelector(...elements: HTMLElement[]) {
+  const c = [...new Set(elements.map(classSelector))]
+  if (c.length === 1) {
+    return c[0]
+  } else {
+    return `:is(${c.join(', ')})`
+  }
+}
+function SliceClassListC(siblings: Element[], slice: number) {
+  const sliced = siblings.slice(slice).map((c) => Array.from(c.classList))
+  return Object.assign(sliced, { okLength: sliced.length == slice * -1 })
+}
+function color(element: HTMLElement) {
+  return element.computedStyleMap().get('color')?.toString()
+}
+function getProcess(span: HTMLElement, match: string) {
   const color = span.computedStyleMap().get('color')?.toString()
-  return { color, span, match, className: span.className }
+  return span
 }
 
 export function jsx_parseStyles(
