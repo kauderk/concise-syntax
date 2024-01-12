@@ -124,6 +124,7 @@
 			{"scope":["meta.jsx.children.tsx"],"settings":{"foreground": "#FF0000" }},
 			{"scope":["punctuation.definition.tag.begin.tsx",],"settings":{"foreground": "#59ff00" }},
 			{"scope":["punctuation.definition.tag.end.tsx",],"settings":{"foreground": "#59ff00" }},
+			{"scope":["support.class.component.tsx",],"settings":{"foreground": "#ff9900" }},
 			
 			{"scope":["punctuation.section.embedded.begin.tsx",],"settings":{"foreground": "#0037ff" }},
 			{"scope":["punctuation.section.embedded.end.tsx",],"settings":{"foreground": "#0037ff" }},

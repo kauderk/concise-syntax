@@ -260,25 +260,27 @@ function parseSymbolColors(lineEditor: HTMLElement) {
     process.openTag.upperCase
   )
 
-  const beginQuote = process.quotes.string[0].className
-  const endQuote = process.quotes.string[2].className
+  const stringEl = process.quotes.string[0]
+  const beginQuote = stringEl.className
+  const endQuoteEl = process.quotes.string[2] ?? stringEl
+  const endQuote = endQuoteEl.className
 
-  let otherWiseSelector: string
+  let ternaryOtherWiseSelector: string
   const closing7 = SliceClassListC(process.ternaryOtherwise.capture, -7)
   if (closing7.okLength) {
     // prettier-ignore
     const [blank0, closeBrace, blank, colon, blank2, nullIsh,closeBracket] = toFlatClassList(closing7)
-    otherWiseSelector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`
+    ternaryOtherWiseSelector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`
   } else {
     // FIXME: be more resilient to other cases
     const closing5 = SliceClassListC(process.ternaryOtherwise.capture, -5)
     // FIXME: if (!closing5.okLength) continue
     // prettier-ignore
     const [blank0, closeBrace,               colonBlank, nullIsh, closeBracket] = toFlatClassList(closing5)
-    otherWiseSelector = `.${blank0}+.${closeBrace}+.${colonBlank}+.${nullIsh}+.${closeBracket}:last-child`
+    ternaryOtherWiseSelector = `.${blank0}+.${closeBrace}+.${colonBlank}+.${nullIsh}+.${closeBracket}:last-child`
   }
 
-  const quoteColor = color(process.quotes.string[0])
+  const quoteColor = color(stringEl)
   const jsxBracketSelector =
     '.' + process.jsxBracket.capture.className.split(' ').shift()
 
@@ -288,13 +290,17 @@ function parseSymbolColors(lineEditor: HTMLElement) {
       selector: angleBracketSelector,
       color: color(process.openTag.capture),
     },
-    closingJsxElement: {
-      selector: `${_tagSelector}:has(+${angleBracketSelector}:last-child)`,
-      color: color(process.closeTag.capture),
+    closingJsxElementLowerCase: {
+      selector: `${angleBracketSelector}+${classSelector(
+        process.openTag.lowerCase
+      )}:has(+${angleBracketSelector}:last-child)`,
+      color: color(process.openTag.lowerCase),
     },
-    jsxBracket: {
-      selector: jsxBracketSelector,
-      color: color(process.jsxBracket.capture),
+    closingJsxElementUpperCase: {
+      selector: `${angleBracketSelector}+${classSelector(
+        process.openTag.upperCase
+      )}:has(+${angleBracketSelector}:last-child)`,
+      color: color(process.openTag.upperCase),
     },
     lastComa: {
       selector: lastChildSelector(process.lastComa.capture),
@@ -303,12 +309,6 @@ function parseSymbolColors(lineEditor: HTMLElement) {
     lastSemicolon: {
       selector: lastChildSelector(process.lastSemicolon.capture),
       color: color(process.lastSemicolon.capture),
-    },
-    ternaryClosingBrace: {
-      selector: `${jsxBracketSelector}~${classSelector(
-        process.ternaryOperator.capture
-      )}~[class*="bracket-highlighting-"]:last-child`,
-      color: color(process.ternaryOperator.capture), // FIXME: can't find the color
     },
     // branches
     singleQuotes: {
@@ -321,24 +321,36 @@ function parseSymbolColors(lineEditor: HTMLElement) {
     },
     endQuote: {
       selector: '.' + endQuote,
-      color: quoteColor,
+      color: color(endQuoteEl),
+    },
+  }
+  // other selectors affect the these selector, just remove it to avoid complexity
+  const selectorOnly = {
+    jsxBracket: {
+      selector: jsxBracketSelector,
+      colorForGuidance: color(process.jsxBracket.capture),
+    },
+    ternaryClosingBrace: {
+      selector: `${jsxBracketSelector}~${classSelector(
+        process.ternaryOperator.capture
+      )}~[class*="bracket-highlighting-"]:last-child`,
+      colorForGuidance: color(process.ternaryOperator.capture), // FIXME: can't find the color
     },
   }
   const ternaryOtherwise = {
-    scope: `:has(${otherWiseSelector})`,
+    scope: `:has(${ternaryOtherWiseSelector})`,
     color: color(process.ternaryOtherwise.capture[0]),
   }
 
   const line = 'div>span'
   const root = `${linesSelector}>${line}`
-
   const opacityValues = Object.values(opacitySelectors)
-  const toUnion = opacityValues.map((f) => f.selector).join(',')
 
-  const { beginQuote: _beginQuote, endQuote: _endQuote } = opacitySelectors
-  const colorSelectorsValues = Object.values({ _beginQuote, _endQuote })
-  const toColorValue = colorSelectorsValues.map(
-    (f) => `${root}:is(${f.selector}) {
+  const selectorValues = [...opacityValues, ...Object.values(selectorOnly)]
+  const toUnion = selectorValues.map((f) => f.selector).join(',')
+
+  const toColorValue = opacityValues.map(
+    (f) => `${root} ${f.selector} {
 							color: ${f.color};
 						}`
   )
@@ -352,7 +364,7 @@ function parseSymbolColors(lineEditor: HTMLElement) {
 			--r: 1;
 		}
 		.view-lines:has(:is(${toUnion},${_tagSelector}):hover),
-		.view-lines:has(${line}:hover ${otherWiseSelector}) {
+		.view-lines:has(${line}:hover ${ternaryOtherWiseSelector}) {
 			--r: .5;
 		}
 		${root} :is(${toUnion}),
@@ -360,8 +372,10 @@ function parseSymbolColors(lineEditor: HTMLElement) {
 			opacity: var(--r);
 		}
 		
-		${toColorValue}
+		${toColorValue.join('\n')}
 		`
+    .replace(/\r|\n/g, '')
+    .replaceAll(/\t+/g, '\n')
 }
 function classSelector(element: HTMLElement) {
   return `.${Array.from(element.classList).join('.')}`
