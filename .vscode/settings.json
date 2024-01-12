@@ -128,7 +128,7 @@
 			
 			{"scope":["punctuation.section.embedded.begin.tsx",],"settings":{"foreground": "#0037ff" }},
 			{"scope":["punctuation.section.embedded.end.tsx",],"settings":{"foreground": "#0037ff" }},
-			{"scope":["punctuation.definition.block.tsx",],"settings":{"foreground": "#00ff91" }},
+			//{"scope":["punctuation.definition.block.tsx",],"settings":{"foreground": "#ffffff" }},
 			
 			{"scope":["punctuation.terminator.statement.tsx",],"settings":{"foreground": "#ff00ee" }},
 			{"scope":["keyword.operator.ternary.tsx",],"settings":{"foreground": "#ae00ff" }},
@@ -139,6 +139,7 @@
 			{"scope":["punctuation.definition.string.template.end.tsx"],"settings":{"foreground": "#f2ff00" }},
 			
 			{"scope":["punctuation.separator.comma.tsx"],"settings":{"foreground": "#686868" }},
+			{"scope":["punctuation.separator.parameter.tsx"],"settings":{"foreground": "#82a4a6" }},
 			//*/
     ]
   },

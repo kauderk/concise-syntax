@@ -54,8 +54,16 @@ const symbolTable = {
     },
   },
 
-  anySpace: { match: /^\s+$/ },
   text: { match: /Hello\sConcise\sSyntax!/ },
+  comaSeparator: {
+    match: /,/,
+    capture({ siblings, current }) {
+      const next = siblings[siblings.indexOf(current) + 1]
+      if (next) {
+        return current
+      }
+    },
+  },
 
   // colon: { match: /:/ },
   ternaryOperator: { match: /\?/ },
@@ -95,28 +103,11 @@ const lastSymbolTable = {
       return siblings as any
     },
   },
-  indentation: {
-    match: /}$/, // FIXME: this is bet that if it is closing brace, then there must be indentation
-    capture({ siblings }) {
-      return siblings[0]
-    },
-  },
-} satisfies SymbolClass
-
-const bracketSymbolTable = {
-  brackets: { match: /{/ },
-  braces: { match: /\(/ },
 } satisfies SymbolClass
 
 const multipleSymbolTale = {
   quotes: {
     match: /"|'|`/,
-    empty({ siblings, current }) {
-      const empty = current?.textContent?.match(/^(""|''|``)$/)
-      if (empty?.[0]) {
-        return [current]
-      }
-    },
     string({ siblings, current }) {
       const beginQuote = current.textContent
       const string = siblings[siblings.indexOf(current) + 1]
@@ -147,7 +138,6 @@ function parseSymbolColors(lineEditor: HTMLElement) {
 
   let table: any = structuredClone(symbolTable)
   let lastTable: any = structuredClone(lastSymbolTable)
-  let bracketTable: any = structuredClone(bracketSymbolTable)
   let multipleTable: any = structuredClone(multipleSymbolTale)
   let output: any = {}
 
@@ -181,17 +171,6 @@ function parseSymbolColors(lineEditor: HTMLElement) {
           delete table[key]
         } else {
           table[key].match = regex
-        }
-      }
-
-      for (let key in bracketTable) {
-        const regex = bracketTable[key].match
-        const match = content?.match(regex)
-        if (!match) continue
-
-        output[key] ??= []
-        if (output[key].every((m: any) => m.className !== current.className)) {
-          output[key].push(getProcess(current, match[0]))
         }
       }
 
@@ -244,7 +223,6 @@ function parseSymbolColors(lineEditor: HTMLElement) {
   type TableKeys =
     | AllKeys<TableKeyUnions<typeof symbolTable>>
     | AllKeys<TableKeyUnions<typeof lastSymbolTable>>
-    | AllKeys<TableKeyUnions<typeof bracketSymbolTable>>
     | AllKeys<TableKeyUnions<typeof multipleSymbolTale>>
   type conditionKeys = AllKeys<TableKeyUnions<Table>[keyof Table]>
 
@@ -335,6 +313,12 @@ function parseSymbolColors(lineEditor: HTMLElement) {
       color: color(process.ternaryOperator.capture), // FIXME: can't find the color
     },
   }
+  const colorOnly = {
+    commaSeparator: {
+      selector: classSelector(process.comaSeparator.capture),
+      color: color(process.comaSeparator.capture),
+    },
+  }
   const ternaryOtherwise = {
     scope: `:has(${ternaryOtherWiseSelector})`,
     color: color(process.ternaryOtherwise.capture[0]),
@@ -347,7 +331,7 @@ function parseSymbolColors(lineEditor: HTMLElement) {
   const selectorValues = [...opacityValues, ...Object.values(selectorOnly)]
   const toUnion = selectorValues.map((f) => f.selector).join(',')
 
-  const toColorValue = opacityValues.map(
+  const toColorValue = [...opacityValues, ...Object.values(colorOnly)].map(
     (f) => `${root} ${f.selector} {
 							color: ${f.color};
 						}`
