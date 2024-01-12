@@ -278,54 +278,90 @@ function parseSymbolColors(lineEditor: HTMLElement) {
     otherWiseSelector = `.${blank0}+.${closeBrace}+.${colonBlank}+.${nullIsh}+.${closeBracket}:last-child`
   }
 
-  // flags.jsxTernaryOtherwise = {
-  // 	// find ") : null}" then hide it all
-  // 	hide: `:has(${otherWiseSelector}) *`,
-  // 	hover: otherWiseSelector,
-  // }
-  // // FIXME: find a better way to do this
-  // customFlags.jsxTernaryOtherwiseHover = `.view-lines:has(.view-line span:hover ${otherWiseSelector}) {
-  // 	--r: red;
-  // }`
+  const quoteColor = color(process.quotes.string[0])
+  const jsxBracketSelector =
+    '.' + process.jsxBracket.capture.className.split(' ').shift()
 
-  const selectors = {
+  const _tagSelector = `${angleBracketSelector}+${tagSelector}`
+  const opacitySelectors = {
     angleBrackets: {
-      hide: angleBracketSelector,
+      selector: angleBracketSelector,
+      color: color(process.openTag.capture),
     },
     closingJsxElement: {
-      hide: `${angleBracketSelector}+${tagSelector}:has(+${angleBracketSelector}:last-child)`,
+      selector: `${_tagSelector}:has(+${angleBracketSelector}:last-child)`,
+      color: color(process.closeTag.capture),
     },
     jsxBracket: {
-      hide: '.' + process.jsxBracket.capture.className.split(' ').shift(),
-    },
-    singleQuotes: `[class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote} {
-			--r: gray;
-		}`,
-    beginQuote: {
-      hide: `>.${beginQuote}`,
-      hover: `.${beginQuote}`,
-    },
-    endQuote: {
-      hide: `>.${endQuote}`,
-      hover: `.${endQuote}`,
+      selector: jsxBracketSelector,
+      color: color(process.jsxBracket.capture),
     },
     lastComa: {
-      hide: lastChildSelector(process.lastComa.capture),
+      selector: lastChildSelector(process.lastComa.capture),
+      color: color(process.lastComa.capture),
     },
     lastSemicolon: {
-      hide: lastChildSelector(process.lastSemicolon.capture),
+      selector: lastChildSelector(process.lastSemicolon.capture),
+      color: color(process.lastSemicolon.capture),
     },
     ternaryClosingBrace: {
-      hide: `${angleBracketSelector}~${classSelector(
+      selector: `${jsxBracketSelector}~${classSelector(
         process.ternaryOperator.capture
       )}~[class*="bracket-highlighting-"]:last-child`,
+      color: color(process.ternaryOperator.capture), // FIXME: can't find the color
     },
-    ternaryOtherwise: {
-      hide: `:has(${otherWiseSelector}) *`,
+    // branches
+    singleQuotes: {
+      selector: `:is([class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote})`,
+      color: quoteColor,
+    },
+    beginQuote: {
+      selector: '.' + beginQuote,
+      color: quoteColor,
+    },
+    endQuote: {
+      selector: '.' + endQuote,
+      color: quoteColor,
     },
   }
+  const ternaryOtherwise = {
+    scope: `:has(${otherWiseSelector})`,
+    color: color(process.ternaryOtherwise.capture[0]),
+  }
 
-  console.log(output)
+  const line = 'div>span'
+  const root = `${linesSelector}>${line}`
+
+  const opacityValues = Object.values(opacitySelectors)
+  const toUnion = opacityValues.map((f) => f.selector).join(',')
+
+  const { beginQuote: _beginQuote, endQuote: _endQuote } = opacitySelectors
+  const colorSelectorsValues = Object.values({ _beginQuote, _endQuote })
+  const toColorValue = colorSelectorsValues.map(
+    (f) => `${root}:is(${f.selector}) {
+							color: ${f.color};
+						}`
+  )
+
+  debugger
+  return `
+		.view-lines {
+			--r: 0;
+		}
+		.view-lines > div:hover {
+			--r: 1;
+		}
+		.view-lines:has(:is(${toUnion},${_tagSelector}):hover),
+		.view-lines:has(${line}:hover ${otherWiseSelector}) {
+			--r: .5;
+		}
+		${root} :is(${toUnion}),
+		${root}:is(${ternaryOtherwise.scope}) {
+			opacity: var(--r);
+		}
+		
+		${toColorValue}
+		`
 }
 function classSelector(element: HTMLElement) {
   return `.${Array.from(element.classList).join('.')}`
