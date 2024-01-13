@@ -4,7 +4,6 @@ const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
 const JSONC = require("comment-json");
-require("child_process");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -485,7 +484,6 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrateCommand,
       () => calibrateCommandCycle(uriRemote, usingContext)
     ),
-    registerWithProgressCommand(),
     {
       dispose() {
         disposeConfiguration.consume();
@@ -518,12 +516,6 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, recursive
     }
   }
   if (typeof cash == "function") {
-    if (recursiveDiff) {
-      await withProgress({
-        title: "revalidating...",
-        seconds: 5
-      });
-    }
     const task = createTask();
     const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
     await cash();
@@ -564,7 +556,7 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   }
   await withProgress({
     title: "calibrating...",
-    seconds: 10
+    seconds: 5
   });
   testShortCircuitWindowState = true;
   await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
@@ -605,7 +597,6 @@ async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursi
   try {
     busy = true;
     disposeConfiguration.consume();
-    calibrate_confirmation_token.consume();
     await REC_windowStateSandbox(
       tryNext,
       settings,
@@ -657,7 +648,6 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
   }
   try {
     c_busy = true;
-    calibrate_confirmation_token.consume();
     await calibrateStateSandbox(uriRemote, usingContext, _calibrate);
     c_busy = false;
   } catch (error) {
@@ -724,65 +714,40 @@ async function wipeAllState(context) {
   return context;
 }
 async function withProgress(params) {
-  let _progress;
   vscode__namespace.window.withProgress(
     {
       location: vscode__namespace.ProgressLocation.Window,
-      title: "Concise Syntax: ",
-      cancellable: true
+      title: packageJson.displayName
     },
     // prettier-ignore
-    async (progress, token) => new Promise(async (resolve) => {
-      _progress = progress;
+    (progress, token) => {
       if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
-        resolve(null);
-        return;
+        return Promise.resolve();
+      }
+      const task = createTask();
+      progress.report({ message: params.title });
+      let loopCounter = 0;
+      const interval = setInterval(() => {
+        loopCounter++;
+        if (loopCounter > params.seconds) {
+          stop();
+          return;
+        } else {
+          progress.report({ message: params.title });
+        }
+      }, 1e3);
+      function stop() {
+        calibrate_confirmation_token.consume();
+        clearInterval(interval);
+        dispose();
+        task.resolve();
       }
       calibrate_confirmation_token.value = new vscode__namespace.CancellationTokenSource();
-      const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
-        calibrate_confirmation_token.consume();
-        dispose();
-        resolve(null);
-      }).dispose;
-      for (let i = 0; i < params.seconds; i++) {
-        await hold(1e3);
-      }
-      resolve(null);
-    })
-  );
-  await hold(500);
-  _progress.report({ message: params.title });
-}
-function registerWithProgressCommand() {
-  return vscode__namespace.commands.registerCommand(
-    "extension.withProgress",
-    async (title, seconds, cancellable = true) => {
-      return vscode__namespace.window.withProgress(
-        {
-          location: vscode__namespace.ProgressLocation.Window,
-          title,
-          cancellable: true
-        },
-        // prettier-ignore
-        async (progress, token) => new Promise(async (resolve) => {
-          if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
-            resolve(null);
-            return;
-          }
-          calibrate_confirmation_token.value = new vscode__namespace.CancellationTokenSource();
-          const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
-            calibrate_confirmation_token.consume();
-            dispose();
-            resolve(null);
-          }).dispose;
-          for (let i = 0; i < seconds; i++) {
-            await hold(1e3);
-          }
-          resolve(null);
-        })
-      );
+      const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(stop).dispose;
+      return task.promise;
     }
   );
+  await hold(500);
 }
 function checkDisposedCommandContext(next) {
   vscode__namespace.commands.executeCommand(
