@@ -130,10 +130,10 @@ async function REC_windowStateSandbox(
 
   if (typeof cash == 'function') {
     if (recursiveDiff) {
-      // await withProgress({
-      //   title: 'revalidating...',
-      //   seconds: 5,
-      // })
+      await withProgress({
+        title: 'revalidating...',
+        seconds: 5,
+      })
     }
     const task = createTask()
     const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
@@ -154,7 +154,7 @@ async function REC_windowStateSandbox(
     const next = stores.windowState.read()
     if (!next) return
     // TODO: add a throttle to be extra safe
-    await REC_nextWindowStateCycle(next, binary(next), usingContext, recursiveDiff)
+    await REC_nextWindowStateCycle(next, binary(next), usingContext, true)
   }).dispose
 }
 
@@ -415,37 +415,23 @@ async function withProgress(params: {
       title: packageJson.displayName,
     },
     // prettier-ignore
-    (progress, token) => {
+    async (progress, token) => {
       if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
-        return Promise.resolve()
-      }
-      const task = createTask()
-      progress.report({ message: params.title });
-      
-      let loopCounter = 0
-      const interval = setInterval(() => {
-        loopCounter++;
-        if (loopCounter > params.seconds) { 
-          stop()
-          return
-        }  else{
-          progress.report({ message: params.title });
-        }
-      }, 1_000);
-      function stop() {
-        calibrate_confirmation_token.consume()
-        clearInterval(interval)
-        dispose()
-        task.resolve()
+        return
       }
       calibrate_confirmation_token.value = new vscode.CancellationTokenSource()
       const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(stop).dispose
-      
-      return task.promise
+      function stop() {
+        calibrate_confirmation_token.consume()
+        dispose()
+      }
+      for (let i = 0; i < params.seconds; i++) {
+        progress.report({ message: params.title });
+        await hold(1_000)
+      }
+      stop()
     }
   )
-
-  await hold(500)
 }
 
 export function checkDisposedCommandContext(next?: State) {
