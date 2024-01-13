@@ -129,7 +129,7 @@ function createHighlight({ node, selector, add, set, label, color }: Selected) {
   styleIt(
     styles.getOrCreateLabeledStyle(label, selector),
     `[aria-label="${label}"]${linesSelector} :is(${lines}) {
-				--r: ${color};
+				--r: .7;
 		}`
   )
 

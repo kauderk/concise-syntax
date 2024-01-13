@@ -872,7 +872,7 @@ var __publicField = (obj, key, value) => {
       }
     });
   }
-  function createHighlight({ node, selector, add, set, label, color }) {
+  function createHighlight({ node, selector, add, set, label, color: color2 }) {
     if (!e(node) || !node.querySelector(selector))
       return;
     const top = parseTopStyle(node);
@@ -887,7 +887,7 @@ var __publicField = (obj, key, value) => {
     styleIt(
       styles.getOrCreateLabeledStyle(label, selector),
       `[aria-label="${label}"]${linesSelector} :is(${lines}) {
-				--r: ${color};
+				--r: .7;
 		}`
     );
     return true;
@@ -1096,6 +1096,7 @@ var __publicField = (obj, key, value) => {
     opening: "opening",
     opened: "opened",
     closed: "closed",
+    idle: "idle",
     error: "error"
   };
   const ICalibrate = {
@@ -1115,187 +1116,316 @@ var __publicField = (obj, key, value) => {
   function iconSelector(icon) {
     return `[id="${extensionId}"]:has(.codicon-${icon})`;
   }
-  const editorFlags = {
-    jsx: {
-      flags: {
-        jsxTag: null,
-        jsxTagUpperCase: null,
-        jsxTernaryBrace: null,
-        jsxTernaryOtherwise: null,
-        vsCodeHiddenTokens: null,
-        separator: null,
-        beginQuote: null,
-        endQuote: null
+  const symbolTable = {
+    openTag: {
+      match: /<|<\//,
+      lowerCase({ siblings, current }) {
+        var _a;
+        const tag = siblings[siblings.indexOf(current) + 1];
+        if (((_a = tag.textContent) == null ? void 0 : _a.toLowerCase()) === tag.textContent) {
+          return tag;
+        }
       },
-      customFlags: {
-        singleQuotes: null,
-        jsxTernaryOtherwiseHover: null
+      upperCase({ siblings, current }) {
+        var _a;
+        const tag = siblings[siblings.indexOf(current) + 1];
+        if ((_a = tag.textContent) == null ? void 0 : _a.match(/^[A-Z]/)) {
+          return tag;
+        }
+      }
+    },
+    text: { match: /Hello\sConcise\sSyntax!/ },
+    comaSeparator: {
+      match: /,/,
+      capture({ siblings, current }) {
+        const next = siblings[siblings.indexOf(current) + 1];
+        if (next) {
+          return current;
+        }
+      }
+    },
+    ternaryOperator: { match: /\?/ }
+  };
+  const lastSymbolTable = {
+    closeTag: {
+      match: /(>|\/>)$/,
+      capture({ siblings }) {
+        return siblings[siblings.length - 1];
+      }
+    },
+    lastSemicolon: {
+      match: /;$/,
+      capture({ siblings }) {
+        return siblings[siblings.length - 1];
+      }
+    },
+    lastComa: {
+      match: /,$/,
+      capture({ siblings }) {
+        return siblings[siblings.length - 1];
+      }
+    },
+    jsxBracket: {
+      match: /={{$/,
+      capture({ siblings }) {
+        return siblings[siblings.length - 2];
+      }
+    },
+    ternaryOtherwise: {
+      match: /\).+?:.+\}/,
+      // FIXME: any
+      capture({ siblings, current }) {
+        return siblings;
       }
     }
   };
-  function jsx_parseStyles(lineEditor, _editorFlag) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
-    const editorFlag = structuredClone(_editorFlag);
-    const flags = editorFlag.flags;
-    const customFlags = editorFlag.customFlags;
-    if (isDone())
-      return editorFlag;
-    const lines = Array.from(lineEditor.querySelectorAll("div>span"));
-    parser:
-      for (const line of lines) {
-        const text = line.textContent;
-        if (!text)
-          continue;
-        let anyFlag = false;
-        if (!flags.jsxTag && ((_b = (_a = text.match(/.+(<\/(?<jsxTag>.*)?>)$/)) == null ? void 0 : _a.groups) == null ? void 0 : _b.jsxTag)) {
-          const closing = SliceClassList(line, -3);
-          if (!closing.okLength)
-            continue;
-          const [angleBracket, tag, right] = closing.flat();
-          if (angleBracket !== right)
-            continue;
-          flags.jsxTag = {
-            // find the last </tag> and hide it "tag" which is the second to last child
-            hide: `:has([class="${angleBracket}"]:nth-last-child(3)+.${tag}+.${angleBracket}) :nth-last-child(2)`,
-            hover: `.${angleBracket}+.${tag}`
-          };
-          flags.vsCodeHiddenTokens = {
-            // this is the most common case, you could derive it from other flags
-            hide: `>.${angleBracket}`,
-            hover: `.${angleBracket}`
-          };
-          anyFlag = true;
-        } else if (
-          // TODO: better abstraction to implement overloads
-          !flags.jsxTagUpperCase && ((_d = (_c = text.match(/.+(<\/(?<jsxTagUpperCase>[A-Z].*)?>)$/)) == null ? void 0 : _c.groups) == null ? void 0 : _d.jsxTagUpperCase)
-        ) {
-          const closing = SliceClassList(line, -3);
-          if (!closing.okLength)
-            continue;
-          const [angleBracket, tag, right] = closing.flat();
-          if (angleBracket !== right)
-            continue;
-          flags.jsxTagUpperCase = {
-            // find the last </Tag> and hide it "tag" which is the second to last child
-            hide: `:has([class="${angleBracket}"]:nth-last-child(3)+.${tag}+.${angleBracket}) :nth-last-child(2)`,
-            hover: `.${angleBracket}+.${tag}`
-          };
-          anyFlag = true;
-        } else if (
-          // TODO: find out what else could be affected through experimentation
-          !flags.separator && ((_f = (_e = text.match(/(?<separator>,$)/)) == null ? void 0 : _e.groups) == null ? void 0 : _f.separator)
-        ) {
-          const closing = SliceClassList(line, -1);
-          if (!closing.okLength)
-            continue;
-          const [terminator] = closing.flat();
-          flags.separator = {
-            // find the last , and hide it
-            hide: `>.${terminator}:last-child`,
-            hover: `.${terminator}`
-          };
-          anyFlag = true;
-        } else if (!flags.jsxTernaryBrace && ((_h = (_g = text.match(/(\{).+\?.+?(?<jsxTernaryBrace>\()$/)) == null ? void 0 : _g.groups) == null ? void 0 : _h.jsxTernaryBrace)) {
-          const closing = SliceClassList(line, -4);
-          if (!closing.okLength)
-            continue;
-          const [blank, questionMark, blank2, openBrace] = toFlatClassList(closing);
-          const selector = `.${blank}+.${questionMark}+.${blank}+.${openBrace}:last-child`;
-          flags.jsxTernaryBrace = {
-            // find the last open brace in " ? ("
-            hide: `:has(${selector}) :last-child`,
-            hover: selector
-          };
-          anyFlag = true;
-        } else if (!flags.jsxTernaryOtherwise && ((_j = (_i = text.match(/(?<jsxTernaryOtherwise>\).+?:.+\})/)) == null ? void 0 : _i.groups) == null ? void 0 : _j.jsxTernaryOtherwise)) {
-          let selector;
-          const closing7 = SliceClassList(line, -7);
-          if (closing7.okLength) {
-            const [blank0, closeBrace, blank, colon, blank2, nullIsh, closeBracket] = toFlatClassList(closing7);
-            selector = `.${blank0}+.${closeBrace}+.${blank}+.${colon}+.${blank2}+.${nullIsh}+.${closeBracket}:last-child`;
-          } else {
-            const closing5 = SliceClassList(line, -5);
-            if (!closing5.okLength)
-              continue;
-            const [blank0, closeBrace, colonBlank, nullIsh, closeBracket] = toFlatClassList(closing5);
-            selector = `.${blank0}+.${closeBrace}+.${colonBlank}+.${nullIsh}+.${closeBracket}:last-child`;
-          }
-          flags.jsxTernaryOtherwise = {
-            // find ") : null}" then hide it all
-            hide: `:has(${selector}) *`,
-            hover: selector
-          };
-          customFlags.jsxTernaryOtherwiseHover = `.view-lines:has(.view-line span:hover ${selector}) {
-				--r: red;
-			}`;
-          anyFlag = true;
-        } else if (!customFlags.singleQuotes && ((_l = (_k = text.match(/(?<singleQuotes>""|''|``)/)) == null ? void 0 : _k.groups) == null ? void 0 : _l.singleQuotes)) {
-          const array = Array.from(line.children);
-          const quote = /"|'|`/;
-          singleQuotes:
-            for (let i = 0; i < array.length; i++) {
-              const child = array[i];
-              const current = (_m = child.textContent) == null ? void 0 : _m.match(quote);
-              const next = (_o = (_n = array[i + 1]) == null ? void 0 : _n.textContent) == null ? void 0 : _o.match(quote);
-              if ((current == null ? void 0 : current[0].length) == 1 && current[0] === (next == null ? void 0 : next[0])) {
-                const beginQuote = Array.from(child.classList).join(".");
-                const endQuote = Array.from(array[i + 1].classList).join(".");
-                customFlags.singleQuotes = `[class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote} {
-							--r: gray;
-						}`;
-                flags.beginQuote = {
-                  // this is the most common case, you could derive it from other flags
-                  hide: `>.${beginQuote}`,
-                  hover: `.${beginQuote}`
-                };
-                flags.endQuote = {
-                  // this is the most common case, you could derive it from other flags
-                  hide: `>.${endQuote}`,
-                  hover: `.${endQuote}`
-                };
-                anyFlag = true;
-                break singleQuotes;
-              }
-            }
-        }
-        if (anyFlag && isDone()) {
-          break parser;
+  const multipleSymbolTale = {
+    quotes: {
+      match: /"|'|`/,
+      string({ siblings, current }) {
+        var _a;
+        const beginQuote = current.textContent;
+        const string = siblings[siblings.indexOf(current) + 1];
+        const end = siblings[siblings.indexOf(current) + 2];
+        const endQuote = end == null ? void 0 : end.textContent;
+        if ((beginQuote == null ? void 0 : beginQuote.length) == 1 && ((_a = string == null ? void 0 : string.textContent) == null ? void 0 : _a.length) && beginQuote === endQuote) {
+          return [current, string, end];
+        } else if ((beginQuote == null ? void 0 : beginQuote.length) > 2 && (beginQuote == null ? void 0 : beginQuote.match(/("|'|`)$/))) {
+          return [current];
         }
       }
-    function isDone() {
-      return Object.values(flags).every((f) => !!f) && Object.values(customFlags).every((f) => !!f);
     }
-    return { flags, customFlags };
-  }
-  function assembleCss(editorFlags2) {
-    var _a;
-    const root = `${linesSelector}>div>span`;
-    const { flags, customFlags } = editorFlags2;
-    const validFlags = Object.values(flags).filter(
-      (f) => !!((f == null ? void 0 : f.hide) && f.hover)
+  };
+  function parseSymbolColors(lineEditor) {
+    var _a, _b;
+    debugger;
+    const lines = Array.from(lineEditor.querySelectorAll("div>span"));
+    let table = Clone(symbolTable);
+    let lastTable = Clone(lastSymbolTable);
+    let multipleTable = Clone(multipleSymbolTale);
+    let output = {};
+    for (const line2 of lines) {
+      const text = line2.textContent;
+      if (!text)
+        continue;
+      const siblings = Array.from(line2.children);
+      for (let current of siblings) {
+        const content = current.textContent;
+        for (let key in table) {
+          const regex = table[key].match;
+          const match = content == null ? void 0 : content.match(regex);
+          if (!match)
+            continue;
+          output[key] ?? (output[key] = {});
+          delete table[key].match;
+          for (let conditionKey in table[key]) {
+            const evaluation = table[key][conditionKey]({
+              siblings,
+              current
+            });
+            if (evaluation) {
+              output[key][conditionKey] = getProcess(evaluation, match[0]);
+              delete table[key][conditionKey];
+            }
+          }
+          if (Object.keys(table[key]).length === 0) {
+            (_a = output[key]).capture ?? (_a.capture = getProcess(current, match[0]));
+            delete table[key];
+          } else {
+            table[key].match = regex;
+          }
+        }
+        for (let key in multipleTable) {
+          const regex = multipleTable[key].match;
+          const match = content == null ? void 0 : content.match(regex);
+          if (!match)
+            continue;
+          output[key] ?? (output[key] = {});
+          delete multipleTable[key].match;
+          for (let conditionKey in multipleTable[key]) {
+            const evaluations = multipleTable[key][conditionKey]({
+              siblings,
+              current
+            });
+            if (evaluations) {
+              output[key][conditionKey] = evaluations.map(getProcess);
+              delete multipleTable[key][conditionKey];
+            }
+          }
+          if (Object.keys(multipleTable[key]).length === 0) {
+            (_b = output[key]).capture ?? (_b.capture = getProcess(current, match[0]));
+            delete multipleTable[key];
+          } else {
+            multipleTable[key].match = regex;
+          }
+        }
+      }
+      for (let key in lastTable) {
+        const regex = lastTable[key].match;
+        const match = text == null ? void 0 : text.match(regex);
+        if (!match)
+          continue;
+        output[key] ?? (output[key] = {});
+        const evaluation = lastTable[key].capture({
+          siblings
+        });
+        if (evaluation) {
+          output[key].capture = getProcess(evaluation, match[0]);
+          delete lastTable[key];
+        }
+      }
+    }
+    const process = output;
+    const angleBracketSelector = setToSelector(
+      process.openTag.capture,
+      process.closeTag.capture
     );
-    if (!validFlags.length || !((_a = flags.vsCodeHiddenTokens) == null ? void 0 : _a.hover)) {
-      console.warn("Fail to find common case");
-      return;
+    const tagSelector = setToSelector(
+      process.openTag.lowerCase,
+      process.openTag.upperCase
+    );
+    const _tagSelector = `${angleBracketSelector}+${tagSelector}`;
+    const jsxBracketSelector = "." + process.jsxBracket.capture.className.split(" ").shift();
+    const stringEl = process.quotes.string[0];
+    const beginQuote = stringEl.className;
+    const endQuoteEl = process.quotes.string[2] ?? stringEl;
+    const endQuote = endQuoteEl.className;
+    let ternaryOtherWiseSelector;
+    const closing7 = SliceClassListC(process.ternaryOtherwise.capture, -7);
+    const joinLastChild = (c) => c.reduce((acc, val) => acc + "." + val + "+", "").slice(0, -1) + ":last-child";
+    if (closing7.okLength) {
+      ternaryOtherWiseSelector = joinLastChild(toFlatClassList(closing7));
+    } else {
+      const closing5 = SliceClassListC(process.ternaryOtherwise.capture, -5);
+      ternaryOtherWiseSelector = joinLastChild(toFlatClassList(closing5));
     }
-    const toHover = validFlags.map((f) => f.hover).join(",");
-    const toHidden = validFlags.map((f) => root + f.hide).join(",");
-    const toCustom = Object.values(customFlags).filter((f) => !!f).join("\n");
-    return `
-		.view-lines {
-			--r: transparent;
-		}
-		.view-lines > div:hover {
-			--r: yellow;
-		}
-		.view-lines:has(:is(${toHover}):hover) {
-			--r: red;
-		}
-		${toHidden} {
-			color: var(--r);
-		}
-		${toCustom}
-		`;
+    const opacitySelectors = {
+      angleBrackets: {
+        selector: angleBracketSelector,
+        color: color(process.openTag.capture)
+      },
+      closingJsxElementLowerCase: {
+        selector: `${angleBracketSelector}+${classSelector(
+          process.openTag.lowerCase
+        )}:has(+${angleBracketSelector}:last-child)`,
+        color: color(process.openTag.lowerCase)
+      },
+      closingJsxElementUpperCase: {
+        selector: `${angleBracketSelector}+${classSelector(
+          process.openTag.upperCase
+        )}:has(+${angleBracketSelector}:last-child)`,
+        color: color(process.openTag.upperCase)
+      },
+      lastComa: {
+        selector: lastChildSelector(process.lastComa.capture),
+        color: color(process.lastComa.capture)
+      },
+      lastSemicolon: {
+        selector: lastChildSelector(process.lastSemicolon.capture),
+        color: color(process.lastSemicolon.capture)
+      },
+      beginQuote: {
+        selector: "." + beginQuote,
+        color: color(stringEl)
+      },
+      endQuote: {
+        selector: "." + endQuote,
+        color: color(endQuoteEl)
+      }
+    };
+    const selectorOnly = {
+      singleQuotes: {
+        selector: `:is([class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote})`
+        // color: color(process.quotes.string[1] ?? stringEl),
+      },
+      jsxBracket: {
+        selector: jsxBracketSelector
+        // color: color(process.jsxBracket.capture),
+      },
+      ternaryClosingBrace: {
+        selector: `${jsxBracketSelector}~${classSelector(
+          process.ternaryOperator.capture
+        )}~[class*="bracket-highlighting-"]:last-child`
+        // color: color(process.ternaryOperator.capture), // FIXME: can't find the color
+      }
+    };
+    const colorOnly = {
+      commaSeparator: {
+        selector: classSelector(process.comaSeparator.capture),
+        color: color(process.comaSeparator.capture)
+      }
+    };
+    const ternaryOtherwise = {
+      scope: `:has(${ternaryOtherWiseSelector})`
+      // color: color(process.ternaryOtherwise.capture[0]),
+    };
+    const line = "div>span";
+    const root = `${linesSelector}>${line}`;
+    const payload = { opacitySelectors, selectorOnly, colorOnly };
+    return {
+      payload,
+      process(_payload) {
+        for (let key in payload) {
+          for (let key2 in payload[key]) {
+            if (_payload[key][key2]) {
+              payload[key][key2].color = _payload[key][key2].color;
+            }
+          }
+        }
+        const { opacitySelectors: opacitySelectors2, selectorOnly: selectorOnly2, colorOnly: colorOnly2 } = payload;
+        const opacityValues = Object.values(opacitySelectors2);
+        const selectorValues = [...opacityValues, ...Object.values(selectorOnly2)];
+        const toUnion = selectorValues.map((f) => f.selector).join(",");
+        const toColorValue = [...opacityValues, ...Object.values(colorOnly2)].map(
+          (f) => `${root} ${f.selector} {
+							color: ${f.color};
+						}`
+        );
+        return `
+			.view-lines {
+				--r: 0;
+			}
+			.view-lines > div:hover,
+			${root}>${selectorOnly2.singleQuotes.selector} {
+				--r: 1;
+			}
+			.view-lines:has(:is(${toUnion},${_tagSelector}):hover),
+			.view-lines:has(${line}:hover ${ternaryOtherWiseSelector}) {
+				--r: .5;
+			}
+			${root} :is(${toUnion}),
+			${root}:is(${ternaryOtherwise.scope}) {
+				opacity: var(--r);
+			}
+			${toColorValue.join("\n")}
+			`;
+      }
+    };
+  }
+  function classSelector(element) {
+    return `.${Array.from(element.classList).join(".")}`;
+  }
+  function lastChildSelector(element) {
+    return `${classSelector(element)}:last-child`;
+  }
+  function setToSelector(...elements) {
+    const c = [...new Set(elements.map(classSelector))];
+    if (c.length === 1) {
+      return c[0];
+    } else {
+      return `:is(${c.join(", ")})`;
+    }
+  }
+  function SliceClassListC(siblings, slice) {
+    const sliced = siblings.slice(slice).map((c) => Array.from(c.classList));
+    return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
+  }
+  function color(element) {
+    var _a;
+    return (_a = element.computedStyleMap().get("color")) == null ? void 0 : _a.toString();
+  }
+  function getProcess(span, match) {
+    return span;
   }
   function toFlatClassList(Array2) {
     return Array2.reduce(
@@ -1303,26 +1433,70 @@ var __publicField = (obj, key, value) => {
       []
     );
   }
-  function SliceClassList(line, slice) {
-    const sliced = Array.from(line.children).slice(slice).map((c) => Array.from(c.classList));
-    return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
-  }
-  function mergeDeep(...objects) {
-    const isObject = (obj) => obj && typeof obj === "object";
-    return objects.reduce((prev, obj) => {
-      Object.keys(obj).forEach((key) => {
-        const pVal = prev[key];
-        const oVal = obj[key];
-        if (Array.isArray(pVal) && Array.isArray(oVal)) {
-          prev[key] = pVal.concat(...oVal);
-        } else if (isObject(pVal) && isObject(oVal)) {
-          prev[key] = mergeDeep(pVal, oVal);
-        } else {
-          prev[key] = oVal;
-        }
-      });
-      return prev;
-    }, {});
+  function Clone(o, m) {
+    if ("object" !== typeof o)
+      return o;
+    if ("object" !== typeof m || null === m)
+      m = /* @__PURE__ */ new WeakMap();
+    let n = m.get(o);
+    if ("undefined" !== typeof n)
+      return n;
+    let c = Object.getPrototypeOf(o).constructor;
+    switch (c) {
+      case Boolean:
+      case Error:
+      case Function:
+      case Number:
+      case Promise:
+      case String:
+      case Symbol:
+      case WeakMap:
+      case WeakSet:
+        n = o;
+        break;
+      case Array:
+        m.set(o, n = o.slice(0));
+        n.forEach(function(v, i) {
+          if ("object" === typeof v)
+            n[i] = Clone(v, m);
+        });
+        break;
+      case ArrayBuffer:
+        m.set(o, n = o.slice(0));
+        break;
+      case DataView:
+        m.set(
+          o,
+          // @ts-ignore
+          n = new c(Clone(o.buffer, m), o.byteOffset, o.byteLength)
+        );
+        break;
+      case Map:
+      case Set:
+        m.set(o, n = new c(Clone(Array.from(o.entries()), m)));
+        break;
+      case Int8Array:
+      case Uint8Array:
+      case Uint8ClampedArray:
+      case Int16Array:
+      case Uint16Array:
+      case Int32Array:
+      case Uint32Array:
+      case Float32Array:
+      case Float64Array:
+        m.set(o, n = new c(Clone(o.buffer, m), o.byteOffset, o.length));
+        break;
+      case Date:
+      case RegExp:
+        m.set(o, n = new c(o));
+        break;
+      default:
+        m.set(o, n = Object.assign(new c(), o));
+        for (c in n)
+          if ("object" === typeof n[c])
+            n[c] = Clone(n[c], m);
+    }
+    return n;
   }
   function createObservable(initialValue) {
     let _value = initialValue;
@@ -1365,99 +1539,54 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
-  class or_return {
-    constructor(fn, onError) {
-      this.fn = fn;
-      this.onError = onError;
-      this.fn = fn;
-      this.onError = onError;
-    }
-    finally(fn) {
-      try {
-        const value = this.fn();
-        if (value) {
-          return fn(value);
-        } else {
-          this.onError();
-        }
-      } catch (error) {
-        this.onError();
-      }
-    }
-    or_return(fn, onError) {
-      try {
-        const value = this.fn();
-        if (value) {
-          return new or_return(() => fn(value), onError);
-        } else {
-          this.onError();
-        }
-      } catch (error) {
-        this.onError();
-      }
-      return new or_return(console.log, console.error);
-    }
-  }
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
   const calibrateObservable = createObservable(void 0);
-  const sessionKey = `${extensionId}.sessionFlags.jsx`;
-  function TryRegexToDomToCss(lineEditor) {
-    let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx);
-    try {
-      let checkMissingProps = function(obj) {
-        for (const [key, value] of Object.entries(obj)) {
-          if (typeof value === "object") {
-            checkMissingProps(value);
-          } else if (!value) {
-            toastConsole.error(`Missing flag property ${key} and possibly more...`, { obj, key, value });
-            return;
-          }
-        }
-      };
-      let session = JSON.parse(window.localStorage.getItem(sessionKey) || "{}");
-      if (typeof session !== "object") {
-        session = {};
-      }
-      checkMissingProps(jsxFlags);
-      jsxFlags = mergeDeep(session, jsxFlags);
-      window.localStorage.setItem(sessionKey, JSON.stringify(jsxFlags));
-    } catch (error) {
-      window.localStorage.removeItem(sessionKey);
-      toastConsole.error(`Failed to store jsx flags: ${error.message}`, { error });
-    }
-    return assembleCss(jsxFlags);
-  }
+  const sessionKey = `${extensionId}.session.styles`;
   function cacheProc() {
     try {
-      let session = JSON.parse(window.localStorage.getItem(sessionKey) || "{}");
-      if (typeof session !== "object") {
-        throw new Error("session is not an object");
-      }
-      const cache = assembleCss(session);
+      const cache = window.localStorage.getItem(sessionKey);
       if (cache)
         syntaxStyle.styleIt(cache);
+      else
+        throw new Error("cache is empty");
     } catch (error) {
       window.localStorage.removeItem(sessionKey);
     }
   }
   const calibrateStyle = createStyles("calibrate");
   calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
-  const createCalibrateSubscription = () => calibrateObservable.$ubscribe((value) => {
-    if (value != calibrate.opened)
+  let previousPayload;
+  const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
+    if (!(state2 == calibrate.opened || state2 == calibrate.idle))
       return;
-    new or_return(
-      () => document.querySelector(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`),
-      () => toastConsole.error("Calibrate Editor not found")
-    ).or_return(
-      TryRegexToDomToCss,
-      () => toastConsole.error("Failed to calibrate editor")
-    ).finally((css) => {
-      requestAnimationFrame(() => syntaxStyle.styleIt(css));
-      if (!highlight.running) {
-        highlight.activate(500);
+    const lineEditor = document.querySelector(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`);
+    if (!lineEditor) {
+      return toastConsole.error("Calibrate Editor not found");
+    }
+    try {
+      debugger;
+      if (state2 == calibrate.opened) {
+        const res = parseSymbolColors(lineEditor);
+        previousPayload = res.payload;
+        return;
       }
-    });
+      if (!previousPayload) {
+        throw new Error("previousPayload is undefined");
+      } else if (state2 == calibrate.idle) {
+        const res = parseSymbolColors(lineEditor);
+        const css = res.process(previousPayload);
+        window.localStorage.setItem(sessionKey, css);
+        if (css) {
+          requestAnimationFrame(() => syntaxStyle.styleIt(css));
+          if (!highlight.running) {
+            highlight.activate(500);
+          }
+        }
+      }
+    } catch (error) {
+      toastConsole.error("Failed to calibrate editor");
+    }
   });
   const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
     if (!value)

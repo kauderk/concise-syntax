@@ -35,6 +35,7 @@ export const calibrate = {
   opening: 'opening',
   opened: 'opened',
   closed: 'closed',
+  idle: 'idle',
   error: 'error',
 } as const
 /**

@@ -4,6 +4,7 @@ import { key, updateSettingsCycle } from './settings'
 import {
   IState,
   State,
+  calibrate,
   calibrationFileName,
   state,
   stateIcon,
@@ -89,6 +90,7 @@ async function REC_windowStateSandbox(
   usingContext: UsingContext & { _item: vscode.StatusBarItem },
   recursiveDiff?: boolean
 ) {
+  debugger
   const { stores, context, _item } = usingContext
 
   if (stores.calibrationState.read() != state.active) {
@@ -170,21 +172,33 @@ async function calibrateStateSandbox(
     )
     const next = res?.includes('Yes') ? state.active : state.inactive
     await stores.globalCalibration.write(next)
-    checkCalibratedCommandContext(next, stores.calibrationState) // where should you put this?
+    checkCalibratedCommandContext(next, stores.calibrationState)
 
     if (next == state.inactive && stores.windowState.read() != state.active) {
       return
     }
+  } else {
+    // seems dumb but if "globalCalibration" is active, then "calibrationState" should be active too
+    checkCalibratedCommandContext(state.active, stores.calibrationState)
   }
+  debugger
+
+  withProgress({
+    title: 'Concise Syntax: calibrating...',
+    seconds: 10,
+  })
 
   // FIXME: get me out of here
-  if (stores.windowState.read() != state.active) {
-    checkCalibratedCommandContext(state.active, stores.calibrationState) // where should you put this?
-    // makes sense right? because having to activate two times is a bit annoying...
-    await REC_nextWindowStateCycle(state.active, state.active, usingContext)
+  testShortCircuitWindowState = true
+  // update the settings before showing the calibration file and risking the user to close it while the procedure is waiting
+  await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext)
+  testShortCircuitWindowState = false
+  if (stores.windowState.read() != state.active && _item) {
+    // this would be a cold start or a restart...
+    await defaultWindowState(_item, 'active', stores.windowState)
   }
 
-  await tryUpdateCalibrateState('opening', _calibrate)
+  await tryUpdateCalibrateState(calibrate.opening, _calibrate)
   const document = await vscode.workspace.openTextDocument(uriRemote)
   const editor = await vscode.window.showTextDocument(document, {
     preview: false,
@@ -192,20 +206,24 @@ async function calibrateStateSandbox(
   })
 
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-    if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
+    if (doc.uri.path === uriRemote.path || editor.document.isClosed) {
       await consume_close(_calibrate)
       return true
     }
   })
 
-  await new Promise((resolve) => setTimeout(resolve, 1000)) // FIXME: find the perfect time to notify the dom
-  await tryUpdateCalibrateState('opened', _calibrate, 500)
+  await tryUpdateCalibrateState(calibrate.opened, _calibrate, 1500)
 
-  checkCalibratedCommandContext(state.active, stores.calibrationState) // where should you put this?
+  // then update the settings with the extension's textMateRules
+  await REC_nextWindowStateCycle(state.active, state.active, usingContext)
+
+  // then notify the window the calibration is done
+  // FIXME: the window should trigger this event
+  await tryUpdateCalibrateState(calibrate.idle, _calibrate, 500)
 
   withProgress({
     title: 'Concise Syntax: calibrated you may close the file',
-    seconds: 10,
+    seconds: 5,
   })
 }
 
@@ -250,12 +268,14 @@ async function REC_nextWindowStateCycle(
     disposeConfiguration.consume()
   }
 }
-
+let testShortCircuitWindowState = false
 async function defaultWindowState(
   _item: vscode.StatusBarItem,
   next: State,
   windowState: Stores['windowState']
 ) {
+  if (testShortCircuitWindowState) return
+
   await windowState.write(next)
   _item.text = `$(${stateIcon})` + iconText
   _item.tooltip = IState.encode(next)
@@ -305,6 +325,7 @@ async function calibrateCommandCycle(
     c_busy = false
   } catch (error: any) {
     debugger
+    testShortCircuitWindowState = false
     await consume_close(_calibrate)
     vscode.window.showErrorMessage(
       `Error: failed to open calibrate file -> ${error?.message}`
@@ -343,7 +364,7 @@ function defaultCalibrate(_calibrate: vscode.StatusBarItem) {
 
 function consume_close(_calibrate: vscode.StatusBarItem) {
   disposeClosedEditor.consume()
-  return tryUpdateCalibrateState('closed', _calibrate)
+  return tryUpdateCalibrateState(calibrate.closed, _calibrate)
 }
 function tryUpdateCalibrateState(
   state: Calibrate,

@@ -8,54 +8,75 @@ export const key = 'editor.tokenColorCustomizations'
 const name = `${extensionId}.`
 const textMateRules = [
   {
-    name: name + 'text',
+    name: name + 'text.editable',
     scope: ['meta.jsx.children.tsx'],
-    settings: {
-      foreground: '#B59E7A',
-    },
+    settings: { foreground: '#FF0000' },
   },
   {
-    name: name + 'redundant',
-    scope: [
-      'punctuation.definition.tag.begin.tsx',
-      'punctuation.definition.tag.end.tsx',
-      'punctuation.section.embedded.begin.tsx',
-      'punctuation.section.embedded.end.tsx',
-      'punctuation.terminator.statement.tsx',
-      'concise.redundant-syntax',
-    ],
-    settings: {
-      foreground: '#00b51b00',
-    },
+    name: name + 'tag.begin',
+    scope: ['punctuation.definition.tag.begin.tsx'],
+    settings: { foreground: '#59ff00' },
   },
   {
-    name: name + 'quote.begin',
+    name: name + 'tag.end',
+    scope: ['punctuation.definition.tag.end.tsx'],
+    settings: { foreground: '#59ff00' },
+  },
+  {
+    name: name + 'tag.component',
+    scope: ['support.class.component.tsx'],
+    settings: { foreground: '#ff9900' },
+  },
+
+  {
+    name: name + 'bracket.begin',
+    scope: ['punctuation.section.embedded.begin.tsx'],
+    settings: { foreground: '#0037ff' },
+  },
+  {
+    name: name + 'bracket.end',
+    scope: ['punctuation.section.embedded.end.tsx'],
+    settings: { foreground: '#0037ff' },
+  },
+  {
+    name: name + 'string.begin',
     scope: [
       'punctuation.definition.string.begin.tsx',
       'punctuation.definition.string.template.begin.tsx',
     ],
-    settings: {
-      foreground: '#b5a90000',
-    },
+    settings: { foreground: '#ffb300' },
   },
   {
-    name: name + 'quote.end',
+    name: name + 'string.end',
     scope: [
       'punctuation.definition.string.end.tsx',
       'punctuation.definition.string.template.end.tsx',
     ],
-    settings: {
-      foreground: '#b5030000',
-    },
+    settings: { foreground: '#f2ff00' },
   },
   {
-    name: name + 'separator',
+    name: name + 'comma',
+    scope: ['punctuation.separator.parameter.tsx'],
+    settings: { foreground: '#82a4a6' },
+  },
+  {
+    name: name + 'lastComma',
     scope: ['punctuation.separator.comma.tsx'],
-    settings: {
-      foreground: '#b5080000',
-    },
+    settings: { foreground: '#686868' },
+  },
+  //{"scope":["punctuation.definition.block.tsx",],"settings":{"foreground": "#ffffff" }},
+  {
+    name: name + 'terminator',
+    scope: ['punctuation.terminator.statement.tsx'],
+    settings: { foreground: '#ff00ee' },
+  },
+  {
+    name: name + 'ternary',
+    scope: ['keyword.operator.ternary.tsx'],
+    settings: { foreground: '#ae00ff' },
   },
 ]
+
 const settingsJsonPath = '.vscode/settings.json'
 const remoteSettingsJsonPath = 'remote.settings.jsonc'
 

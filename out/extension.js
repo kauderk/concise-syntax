@@ -144,52 +144,71 @@ const key = "editor.tokenColorCustomizations";
 const name = `${extensionId}.`;
 const textMateRules = [
   {
-    name: name + "text",
+    name: name + "text.editable",
     scope: ["meta.jsx.children.tsx"],
-    settings: {
-      foreground: "#B59E7A"
-    }
+    settings: { foreground: "#FF0000" }
   },
   {
-    name: name + "redundant",
-    scope: [
-      "punctuation.definition.tag.begin.tsx",
-      "punctuation.definition.tag.end.tsx",
-      "punctuation.section.embedded.begin.tsx",
-      "punctuation.section.embedded.end.tsx",
-      "punctuation.terminator.statement.tsx",
-      "concise.redundant-syntax"
-    ],
-    settings: {
-      foreground: "#00b51b00"
-    }
+    name: name + "tag.begin",
+    scope: ["punctuation.definition.tag.begin.tsx"],
+    settings: { foreground: "#59ff00" }
   },
   {
-    name: name + "quote.begin",
+    name: name + "tag.end",
+    scope: ["punctuation.definition.tag.end.tsx"],
+    settings: { foreground: "#59ff00" }
+  },
+  {
+    name: name + "tag.component",
+    scope: ["support.class.component.tsx"],
+    settings: { foreground: "#ff9900" }
+  },
+  {
+    name: name + "bracket.begin",
+    scope: ["punctuation.section.embedded.begin.tsx"],
+    settings: { foreground: "#0037ff" }
+  },
+  {
+    name: name + "bracket.end",
+    scope: ["punctuation.section.embedded.end.tsx"],
+    settings: { foreground: "#0037ff" }
+  },
+  {
+    name: name + "string.begin",
     scope: [
       "punctuation.definition.string.begin.tsx",
       "punctuation.definition.string.template.begin.tsx"
     ],
-    settings: {
-      foreground: "#b5a90000"
-    }
+    settings: { foreground: "#ffb300" }
   },
   {
-    name: name + "quote.end",
+    name: name + "string.end",
     scope: [
       "punctuation.definition.string.end.tsx",
       "punctuation.definition.string.template.end.tsx"
     ],
-    settings: {
-      foreground: "#b5030000"
-    }
+    settings: { foreground: "#f2ff00" }
   },
   {
-    name: name + "separator",
+    name: name + "comma",
+    scope: ["punctuation.separator.parameter.tsx"],
+    settings: { foreground: "#82a4a6" }
+  },
+  {
+    name: name + "lastComma",
     scope: ["punctuation.separator.comma.tsx"],
-    settings: {
-      foreground: "#b5080000"
-    }
+    settings: { foreground: "#686868" }
+  },
+  //{"scope":["punctuation.definition.block.tsx",],"settings":{"foreground": "#ffffff" }},
+  {
+    name: name + "terminator",
+    scope: ["punctuation.terminator.statement.tsx"],
+    settings: { foreground: "#ff00ee" }
+  },
+  {
+    name: name + "ternary",
+    scope: ["keyword.operator.ternary.tsx"],
+    settings: { foreground: "#ae00ff" }
   }
 ];
 const settingsJsonPath = ".vscode/settings.json";
@@ -344,6 +363,13 @@ const IState = {
 };
 const calibrateIcon = "go-to-file";
 const calibrationFileName = "syntax.tsx";
+const calibrate = {
+  opening: "opening",
+  opened: "opened",
+  closed: "closed",
+  idle: "idle",
+  error: "error"
+};
 function iconSelector(icon) {
   return `[id="${extensionId}"]:has(.codicon-${icon})`;
 }
@@ -465,6 +491,7 @@ async function ExtensionState_statusBarItem(context, setState) {
   );
 }
 async function REC_windowStateSandbox(tryNext, settings, usingContext, recursiveDiff) {
+  debugger;
   const { stores, context, _item: _item2 } = usingContext;
   if (stores.calibrationState.read() != state.active) {
     await defaultWindowState(_item2, state.stale, stores.windowState);
@@ -528,29 +555,38 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
     if (next == state.inactive && stores.windowState.read() != state.active) {
       return;
     }
-  }
-  if (stores.windowState.read() != state.active) {
+  } else {
     checkCalibratedCommandContext(state.active, stores.calibrationState);
-    await REC_nextWindowStateCycle(state.active, state.active, usingContext);
   }
-  await tryUpdateCalibrateState("opening", _calibrate2);
+  debugger;
+  withProgress({
+    title: "Concise Syntax: calibrating...",
+    seconds: 10
+  });
+  testShortCircuitWindowState = true;
+  await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
+  testShortCircuitWindowState = false;
+  if (stores.windowState.read() != state.active && _item) {
+    await defaultWindowState(_item, "active", stores.windowState);
+  }
+  await tryUpdateCalibrateState(calibrate.opening, _calibrate2);
   const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
   const editor = await vscode__namespace.window.showTextDocument(document, {
     preview: false,
     preserveFocus: false
   });
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-    if (doc.uri.path === uriRemote.path && editor.document.isClosed) {
+    if (doc.uri.path === uriRemote.path || editor.document.isClosed) {
       await consume_close(_calibrate2);
       return true;
     }
   });
-  await new Promise((resolve) => setTimeout(resolve, 1e3));
-  await tryUpdateCalibrateState("opened", _calibrate2, 500);
-  checkCalibratedCommandContext(state.active, stores.calibrationState);
+  await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
+  await REC_nextWindowStateCycle(state.active, state.active, usingContext);
+  await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
   withProgress({
     title: "Concise Syntax: calibrated you may close the file",
-    seconds: 10
+    seconds: 5
   });
 }
 async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursiveDiff) {
@@ -583,7 +619,10 @@ async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursi
     disposeConfiguration.consume();
   }
 }
+let testShortCircuitWindowState = false;
 async function defaultWindowState(_item2, next, windowState) {
+  if (testShortCircuitWindowState)
+    return;
   await windowState.write(next);
   _item2.text = `$(${stateIcon})` + iconText;
   _item2.tooltip = IState.encode(next);
@@ -620,6 +659,7 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
     c_busy = false;
   } catch (error) {
     debugger;
+    testShortCircuitWindowState = false;
     await consume_close(_calibrate);
     vscode__namespace.window.showErrorMessage(
       `Error: failed to open calibrate file -> ${error?.message}`
@@ -650,7 +690,7 @@ function defaultCalibrate(_calibrate2) {
 }
 function consume_close(_calibrate2) {
   disposeClosedEditor.consume();
-  return tryUpdateCalibrateState("closed", _calibrate2);
+  return tryUpdateCalibrateState(calibrate.closed, _calibrate2);
 }
 function tryUpdateCalibrateState(state2, _calibrate2, t = 100) {
   _calibrate2.tooltip = state2;

@@ -4,8 +4,7 @@ import { extensionId, viewLinesSelector } from './keys'
 import { IState, State, calibrationFileName, state } from 'src/shared/state'
 import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
 import { createStyles, toastConsole } from './shared'
-// prettier-ignore
-import { assembleCss, editorFlags, jsx_parseStyles, mergeDeep } from './regexToDomToCss'
+import { parseSymbolColors } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 import { or_return } from '../shared/or_return'
 import { deltaFn } from 'src/shared/utils'
@@ -16,43 +15,13 @@ const editorObservable = createObservable<undefined | string>(undefined)
 const stateObservable = createObservable<State | undefined>(undefined)
 const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
-const sessionKey = `${extensionId}.sessionFlags.jsx`
-function TryRegexToDomToCss(lineEditor: HTMLElement) {
-  let jsxFlags = jsx_parseStyles(lineEditor, editorFlags.jsx)
-  try {
-    let session = JSON.parse(window.localStorage.getItem(sessionKey) || '{}')
-    if (typeof session !== 'object') {
-      session = {}
-    }
-    function checkMissingProps(obj: object) {
-      for (const [key, value] of Object.entries(obj)) {
-        if (typeof value === 'object') {
-          checkMissingProps(value)
-        } else if (!value) {
-          // prettier-ignore
-          toastConsole.error(`Missing flag property ${key} and possibly more...`, { obj,key,value })
-          return
-        }
-      }
-    }
-    checkMissingProps(jsxFlags)
-    jsxFlags = mergeDeep(session, jsxFlags)
-    // TODO: check if there are new flags or new schema then delete the session
-    window.localStorage.setItem(sessionKey, JSON.stringify(jsxFlags))
-  } catch (error: any) {
-    window.localStorage.removeItem(sessionKey)
-    toastConsole.error(`Failed to store jsx flags: ${error.message}`, { error })
-  }
-  return assembleCss(jsxFlags)
-}
+const sessionKey = `${extensionId}.session.styles`
+
 function cacheProc() {
   try {
-    let session = JSON.parse(window.localStorage.getItem(sessionKey) || '{}')
-    if (typeof session !== 'object') {
-      throw new Error('session is not an object')
-    }
-    const cache = assembleCss(session)
+    const cache = window.localStorage.getItem(sessionKey)
     if (cache) syntaxStyle.styleIt(cache)
+    else throw new Error('cache is empty')
   } catch (error) {
     window.localStorage.removeItem(sessionKey)
   }
@@ -60,25 +29,41 @@ function cacheProc() {
 const calibrateStyle = createStyles('calibrate')
 calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
 
+let previousPayload: any
 const createCalibrateSubscription = () =>
-  calibrateObservable.$ubscribe((value) => {
-    if (value != calibrate.opened) return
-    // prettier-ignore
-    new or_return(
-      () => document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`),
-      () => toastConsole.error('Calibrate Editor not found')
-    )
-    .or_return(
-      TryRegexToDomToCss, 
-      () => toastConsole.error('Failed to calibrate editor')
-    )
-    .finally(css => {
-      requestAnimationFrame(() => syntaxStyle.styleIt(css))
+  calibrateObservable.$ubscribe((state) => {
+    if (!(state == calibrate.opened || state == calibrate.idle)) return
 
-      if (!highlight.running) {
-        highlight.activate(500) // FIXME: find the moment the css finishes loading
+    // prettier-ignore
+    const lineEditor = document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`)
+    if (!lineEditor) {
+      return toastConsole.error('Calibrate Editor not found')
+    }
+    try {
+      debugger
+      if (state == calibrate.opened) {
+        const res = parseSymbolColors(lineEditor)
+        previousPayload = res.payload
+        // FIXME: here is where the window should send a message to extension to go to the next state
+        return
       }
-    })
+      if (!previousPayload) {
+        throw new Error('previousPayload is undefined')
+      } else if (state == calibrate.idle) {
+        const res = parseSymbolColors(lineEditor)
+        const css = res.process(previousPayload)
+        window.localStorage.setItem(sessionKey, css)
+
+        if (css) {
+          requestAnimationFrame(() => syntaxStyle.styleIt(css))
+          if (!highlight.running) {
+            highlight.activate(500) // FIXME: find the moment the css finishes loading
+          }
+        }
+      }
+    } catch (error) {
+      toastConsole.error('Failed to calibrate editor')
+    }
   })
 
 const createEditorSubscription = () =>
