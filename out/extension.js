@@ -4,6 +4,7 @@ const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
 const JSONC = require("comment-json");
+require("child_process");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -449,7 +450,10 @@ let _calibrate;
 let c_busy = false;
 let disposeClosedEditor = deltaFn(true);
 let calibrate_confirmation_token = deltaValue(
-  (t) => t.dispose()
+  (t) => {
+    t.cancel();
+    t.dispose();
+  }
 );
 async function ExtensionState_statusBarItem(context, setState) {
   const stores = getStores(context);
@@ -481,6 +485,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrateCommand,
       () => calibrateCommandCycle(uriRemote, usingContext)
     ),
+    registerWithProgressCommand(),
     {
       dispose() {
         disposeConfiguration.consume();
@@ -514,8 +519,8 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, recursive
   }
   if (typeof cash == "function") {
     if (recursiveDiff) {
-      withProgress({
-        title: "Concise Syntax: revalidating...",
+      await withProgress({
+        title: "revalidating...",
         seconds: 5
       });
     }
@@ -557,8 +562,8 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   } else {
     checkCalibratedCommandContext(state.active, stores.calibrationState);
   }
-  withProgress({
-    title: "Concise Syntax: calibrating...",
+  await withProgress({
+    title: "calibrating...",
     seconds: 10
   });
   testShortCircuitWindowState = true;
@@ -582,8 +587,8 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
   await REC_nextWindowStateCycle(state.active, state.active, usingContext);
   await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
-  withProgress({
-    title: "Concise Syntax: calibrated you may close the file",
+  await withProgress({
+    title: "calibrated you may close the file",
     seconds: 5
   });
 }
@@ -718,15 +723,21 @@ async function wipeAllState(context) {
   }
   return context;
 }
-function withProgress(params) {
-  return vscode__namespace.window.withProgress(
+async function withProgress(params) {
+  let _progress;
+  vscode__namespace.window.withProgress(
     {
       location: vscode__namespace.ProgressLocation.Window,
-      title: params.title,
+      title: "Concise Syntax: ",
       cancellable: true
     },
     // prettier-ignore
-    async () => new Promise(async (resolve) => {
+    async (progress, token) => new Promise(async (resolve) => {
+      _progress = progress;
+      if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
+        resolve(null);
+        return;
+      }
       calibrate_confirmation_token.value = new vscode__namespace.CancellationTokenSource();
       const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
         calibrate_confirmation_token.consume();
@@ -738,6 +749,39 @@ function withProgress(params) {
       }
       resolve(null);
     })
+  );
+  await hold(500);
+  _progress.report({ message: params.title });
+}
+function registerWithProgressCommand() {
+  return vscode__namespace.commands.registerCommand(
+    "extension.withProgress",
+    async (title, seconds, cancellable = true) => {
+      return vscode__namespace.window.withProgress(
+        {
+          location: vscode__namespace.ProgressLocation.Window,
+          title,
+          cancellable: true
+        },
+        // prettier-ignore
+        async (progress, token) => new Promise(async (resolve) => {
+          if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
+            resolve(null);
+            return;
+          }
+          calibrate_confirmation_token.value = new vscode__namespace.CancellationTokenSource();
+          const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
+            calibrate_confirmation_token.consume();
+            dispose();
+            resolve(null);
+          }).dispose;
+          for (let i = 0; i < seconds; i++) {
+            await hold(1e3);
+          }
+          resolve(null);
+        })
+      );
+    }
   );
 }
 function checkDisposedCommandContext(next) {

@@ -28,7 +28,10 @@ let _calibrate: vscode.StatusBarItem | undefined
 let c_busy = false
 let disposeClosedEditor = deltaFn(true)
 let calibrate_confirmation_token = deltaValue<vscode.CancellationTokenSource>(
-  (t) => t.dispose()
+  (t) => {
+    t.cancel()
+    t.dispose()
+  }
 )
 
 type UsingContext = { stores: Stores; context: vscode.ExtensionContext }
@@ -74,6 +77,7 @@ export async function ExtensionState_statusBarItem(
     vscode.commands.registerCommand(calibrateCommand, () =>
       calibrateCommandCycle(uriRemote, usingContext)
     ),
+    registerWithProgressCommand(),
     {
       dispose() {
         disposeConfiguration.consume()
@@ -127,8 +131,8 @@ async function REC_windowStateSandbox(
 
   if (typeof cash == 'function') {
     if (recursiveDiff) {
-      withProgress({
-        title: 'Concise Syntax: revalidating...',
+      await withProgress({
+        title: 'revalidating...',
         seconds: 5,
       })
     }
@@ -181,8 +185,8 @@ async function calibrateStateSandbox(
     checkCalibratedCommandContext(state.active, stores.calibrationState)
   }
 
-  withProgress({
-    title: 'Concise Syntax: calibrating...',
+  await withProgress({
+    title: 'calibrating...',
     seconds: 10,
   })
 
@@ -219,8 +223,8 @@ async function calibrateStateSandbox(
   // FIXME: the window should trigger this event
   await tryUpdateCalibrateState(calibrate.idle, _calibrate, 500)
 
-  withProgress({
-    title: 'Concise Syntax: calibrated you may close the file',
+  await withProgress({
+    title: 'calibrated you may close the file',
     seconds: 5,
   })
 }
@@ -404,27 +408,112 @@ export async function wipeAllState(context: vscode.ExtensionContext) {
   return context
 }
 
-function withProgress(params: { title: string; seconds: number }) {
-  return vscode.window.withProgress(
+async function withProgress(params: {
+  title: string
+  seconds: number
+  cancellable?: boolean
+}) {
+  let _progress: any
+  vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Window,
-      title: params.title,
+      title: 'Concise Syntax: ',
       cancellable: true,
     },
     // prettier-ignore
-    async () => new Promise(async (resolve) => {
-      calibrate_confirmation_token.value = new vscode.CancellationTokenSource()
-      const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
-        calibrate_confirmation_token.consume()
-        dispose()
-        resolve(null)
-      }).dispose
-      for (let i = 0; i < params.seconds; i++) {
-        await hold(1_000)
-      }
-      resolve(null)
-    })
+    async (progress,token) => new Promise(async (resolve) => {
+			_progress = progress
+			
+			if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
+				resolve(null)
+				return
+			}
+			calibrate_confirmation_token.value = new vscode.CancellationTokenSource()
+			const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
+				calibrate_confirmation_token.consume()
+				dispose()
+				resolve(null)
+			}).dispose
+			for (let i = 0; i < params.seconds; i++) {
+				await hold(1_000)
+			}
+			resolve(null)
+			// return spawnSomethingAsync(progress, token)
+		})
   )
+  await hold(500)
+  _progress.report({ message: params.title })
+}
+
+export function registerWithProgressCommand() {
+  return vscode.commands.registerCommand(
+    'extension.withProgress',
+    async (title: string, seconds: number, cancellable = true) => {
+      return vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Window,
+          title: title,
+          cancellable: true,
+        },
+        // prettier-ignore
+        async (progress,token) => new Promise(async (resolve) => {
+					// progress.report({ message: 'YOOOOOOOOOOOOOOOOOOOOOOOO' })
+					
+					if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
+						resolve(null)
+						return
+					}
+					calibrate_confirmation_token.value = new vscode.CancellationTokenSource()
+					const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(() => {
+						calibrate_confirmation_token.consume()
+						dispose()
+						resolve(null)
+					}).dispose
+					for (let i = 0; i < seconds; i++) {
+						await hold(1_000)
+					}
+					resolve(null)
+					// return spawnSomethingAsync(progress, token)
+				})
+      )
+    }
+  )
+}
+import { spawn } from 'child_process'
+/**
+ * Asynchronous approach
+ * @param token cancellation token (triggered by the cancel button on the UI)
+ */
+// prettier-ignore
+function spawnSomethingAsync(progress: vscode.Progress<{ message?: string; increment?: number }>, token: vscode.CancellationToken): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+			if (token.isCancellationRequested) {
+					return;
+			}
+
+			var progressUpdate = 'Starting up...';
+			const interval = setInterval(() => progress.report({ message: progressUpdate }), 500);
+
+			let childProcess = spawn('cmd', ['/c', 'dir', '/S'], { cwd: 'c:\\' })
+					.on("close", (code, signal) => {
+							console.log(`Closed: ${code} ${signal}`);
+							if (childProcess.killed) { console.log('KILLED'); }
+							resolve();
+							clearInterval(interval);
+					})
+					.on("error", err => {
+							reject(err);
+					});
+
+			childProcess.stdout
+					.on("data", (chunk: string | Buffer) => {
+							// YOUR CODE GOES HERE
+							console.log(`stdout: ${chunk}`);
+							progressUpdate = chunk.toString('utf8', 0, 50).replace(/[\r\n]/g, '');
+					});
+
+			token.onCancellationRequested(() => childProcess.kill());
+	});
 }
 
 export function checkDisposedCommandContext(next?: State) {
