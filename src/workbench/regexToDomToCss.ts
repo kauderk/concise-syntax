@@ -235,17 +235,18 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
   const endQuoteEl = process.quotes.string[2] ?? stringEl
   const endQuote = endQuoteEl.className
 
-  let ternaryOtherWiseSelector: string
-  const closing7 = SliceClassListC(process.ternaryOtherwise.capture, -7)
-  // prettier-ignore
-  const joinLastChild = (c: string[]) => c.reduce((acc, val) => acc + '.' + val + '+', '').slice(0, -1) + ':last-child'
-  if (closing7.okLength) {
-    ternaryOtherWiseSelector = joinLastChild(toFlatClassList(closing7))
-  } else {
-    const closing5 = SliceClassListC(process.ternaryOtherwise.capture, -5)
-    // FIXME: honestly, just crash if you can't find the selector
-    ternaryOtherWiseSelector = joinLastChild(toFlatClassList(closing5))
-  }
+  // why is this so bloated?
+  const ternaryOtherwiseSelector: string =
+    Array.from(process.ternaryOtherwise.capture as HTMLElement[])
+      .map((c) => Array.from(c.classList))
+      .reduce((acc, val) => acc.concat(val.join('.')), [])
+      .reduce((acc, val) => acc + '.' + val + '+', '')
+      .replaceAll(
+        /\.bracket-highlighting-\d/g,
+        '[class*="bracket-highlighting"]'
+      )
+      .slice(0, -1) + ':last-child'
+
   //#endregion
 
   //#region map pre selectors to selectors with colors
@@ -310,7 +311,7 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
     },
   }
   const ternaryOtherwise = {
-    scope: `:has(${ternaryOtherWiseSelector})`,
+    scope: `:has(${ternaryOtherwiseSelector})`,
   }
   //#endregion
 
@@ -351,7 +352,7 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 				--r: 1;
 			}
 			.view-lines:has(:is(${toUnion},${anyTagSelector}):hover),
-			.view-lines:has(${line}:hover ${ternaryOtherWiseSelector}) {
+			.view-lines:has(${line}:hover ${ternaryOtherwiseSelector}) {
 				--r: .5;
 			}
 			${root} :is(${toUnion}),
@@ -362,18 +363,6 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 			`
     },
   }
-}
-
-function mergeColor<Table extends { [key: string]: { color?: string } }>(
-  base: Table,
-  override: Table
-) {
-  for (let key in base) {
-    if (override[key].color) {
-      base[key].color = override[key].color
-    }
-  }
-  return base
 }
 
 //#region utils
@@ -391,23 +380,11 @@ function setToSelector(...elements: HTMLElement[]) {
     return `:is(${c.join(', ')})`
   }
 }
-function SliceClassListC(siblings: Element[], slice: number) {
-  const sliced = siblings.slice(slice).map((c) => Array.from(c.classList))
-  return Object.assign(sliced, { okLength: sliced.length == slice * -1 })
-}
 function color(element: HTMLElement) {
   return element.computedStyleMap().get('color')?.toString()
 }
 function getProcess(span: HTMLElement, match: string) {
   return span
-}
-function toFlatClassList<T extends { join: (to?: string) => string }>(
-  Array: T[]
-) {
-  return Array.reduce(
-    (acc, val) => acc.concat(val.join('.')),
-    <string[]>[]
-  ) as string[] // FIXME: avoid casting
 }
 function Clone<T extends object>(o: T, m?: any): T {
   // return non object values

@@ -1296,15 +1296,10 @@ var __publicField = (obj, key, value) => {
     const beginQuote = stringEl.className;
     const endQuoteEl = process.quotes.string[2] ?? stringEl;
     const endQuote = endQuoteEl.className;
-    let ternaryOtherWiseSelector;
-    const closing7 = SliceClassListC(process.ternaryOtherwise.capture, -7);
-    const joinLastChild = (c) => c.reduce((acc, val) => acc + "." + val + "+", "").slice(0, -1) + ":last-child";
-    if (closing7.okLength) {
-      ternaryOtherWiseSelector = joinLastChild(toFlatClassList(closing7));
-    } else {
-      const closing5 = SliceClassListC(process.ternaryOtherwise.capture, -5);
-      ternaryOtherWiseSelector = joinLastChild(toFlatClassList(closing5));
-    }
+    const ternaryOtherwiseSelector = Array.from(process.ternaryOtherwise.capture).map((c) => Array.from(c.classList)).reduce((acc, val) => acc.concat(val.join(".")), []).reduce((acc, val) => acc + "." + val + "+", "").replaceAll(
+      /\.bracket-highlighting-\d/g,
+      '[class*="bracket-highlighting"]'
+    ).slice(0, -1) + ":last-child";
     const opacitySelectors = {
       angleBrackets: {
         selector: angleBracketSelector,
@@ -1365,7 +1360,7 @@ var __publicField = (obj, key, value) => {
       }
     };
     const ternaryOtherwise = {
-      scope: `:has(${ternaryOtherWiseSelector})`
+      scope: `:has(${ternaryOtherwiseSelector})`
     };
     const line = "div>span";
     const root = `${linesSelector}>${line}`;
@@ -1398,7 +1393,7 @@ var __publicField = (obj, key, value) => {
 				--r: 1;
 			}
 			.view-lines:has(:is(${toUnion},${anyTagSelector}):hover),
-			.view-lines:has(${line}:hover ${ternaryOtherWiseSelector}) {
+			.view-lines:has(${line}:hover ${ternaryOtherwiseSelector}) {
 				--r: .5;
 			}
 			${root} :is(${toUnion}),
@@ -1424,22 +1419,12 @@ var __publicField = (obj, key, value) => {
       return `:is(${c.join(", ")})`;
     }
   }
-  function SliceClassListC(siblings, slice) {
-    const sliced = siblings.slice(slice).map((c) => Array.from(c.classList));
-    return Object.assign(sliced, { okLength: sliced.length == slice * -1 });
-  }
   function color(element) {
     var _a;
     return (_a = element.computedStyleMap().get("color")) == null ? void 0 : _a.toString();
   }
   function getProcess(span, match) {
     return span;
-  }
-  function toFlatClassList(Array2) {
-    return Array2.reduce(
-      (acc, val) => acc.concat(val.join(".")),
-      []
-    );
   }
   function Clone(o, m) {
     if ("object" !== typeof o)
