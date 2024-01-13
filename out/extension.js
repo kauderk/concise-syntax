@@ -491,7 +491,6 @@ async function ExtensionState_statusBarItem(context, setState) {
   );
 }
 async function REC_windowStateSandbox(tryNext, settings, usingContext, recursiveDiff) {
-  debugger;
   const { stores, context, _item: _item2 } = usingContext;
   if (stores.calibrationState.read() != state.active) {
     await defaultWindowState(_item2, state.stale, stores.windowState);
@@ -558,7 +557,6 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   } else {
     checkCalibratedCommandContext(state.active, stores.calibrationState);
   }
-  debugger;
   withProgress({
     title: "Concise Syntax: calibrating...",
     seconds: 10

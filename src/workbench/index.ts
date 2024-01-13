@@ -29,29 +29,29 @@ function cacheProc() {
 const calibrateStyle = createStyles('calibrate')
 calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
 
-let previousPayload: any
+let previous_style_color_table_snapshot: any
 const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((state) => {
     if (!(state == calibrate.opened || state == calibrate.idle)) return
-
     // prettier-ignore
+    // FIXME: use proper uri or shared file path between extension and workbench
     const lineEditor = document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`)
     if (!lineEditor) {
       return toastConsole.error('Calibrate Editor not found')
     }
+
     try {
-      debugger
       if (state == calibrate.opened) {
         const res = parseSymbolColors(lineEditor)
-        previousPayload = res.payload
+        previous_style_color_table_snapshot = res.payload
         // FIXME: here is where the window should send a message to extension to go to the next state
         return
       }
-      if (!previousPayload) {
+      if (!previous_style_color_table_snapshot) {
         throw new Error('previousPayload is undefined')
       } else if (state == calibrate.idle) {
         const res = parseSymbolColors(lineEditor)
-        const css = res.process(previousPayload)
+        const css = res.process(previous_style_color_table_snapshot)
         window.localStorage.setItem(sessionKey, css)
 
         if (css) {

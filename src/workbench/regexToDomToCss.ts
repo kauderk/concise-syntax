@@ -76,9 +76,9 @@ const lastSymbolTable = {
   },
   ternaryOtherwise: {
     match: /\).+?:.+\}/,
-    // FIXME: any
+    // FIXME: type me
     capture({ siblings, current }) {
-      return siblings as any
+      return siblings
     },
   },
 } satisfies SymbolClass
@@ -110,8 +110,10 @@ const multipleSymbolTale = {
 >
 //#endregion
 
+/**
+ * FIXME: This function might crash if it can't find valid selectors...
+ */
 export function parseSymbolColors(lineEditor: HTMLElement) {
-  debugger
   //#region parser
   const lines = Array.from(lineEditor.querySelectorAll('div>span'))
 
@@ -204,7 +206,8 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
     | AllKeys<TableKeyUnions<typeof lastSymbolTable>>
     | AllKeys<TableKeyUnions<typeof multipleSymbolTale>>
   type conditionKeys = AllKeys<TableKeyUnions<Table>[keyof Table]>
-  const process = output as { [key in TableKeys]?: any }
+  // FIXME: type me correctly...
+  const process = output as { [key in TableKeys]: { capture: HTMLElement } }
   //#endregion
 
   //#region map capture to pre selectors
@@ -213,11 +216,16 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
     process.openTag.capture,
     process.closeTag.capture
   )
-  const tagSelector = setToSelector(
+  const anyTagSelector = `${angleBracketSelector}+${setToSelector(
     process.openTag.lowerCase,
     process.openTag.upperCase
-  )
-  const _tagSelector = `${angleBracketSelector}+${tagSelector}`
+  )}`
+  const lowerCaseTagSelector = `${angleBracketSelector}+${classSelector(
+    process.openTag.lowerCase
+  )}`
+  const upperCaseTagSelector = `${angleBracketSelector}+${classSelector(
+    process.openTag.upperCase
+  )}`
 
   const jsxBracketSelector =
     '.' + process.jsxBracket.capture.className.split(' ').shift()
@@ -246,18 +254,6 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
       selector: angleBracketSelector,
       color: color(process.openTag.capture),
     },
-    closingJsxElementLowerCase: {
-      selector: `${angleBracketSelector}+${classSelector(
-        process.openTag.lowerCase
-      )}:has(+${angleBracketSelector}:last-child)`,
-      color: color(process.openTag.lowerCase),
-    },
-    closingJsxElementUpperCase: {
-      selector: `${angleBracketSelector}+${classSelector(
-        process.openTag.upperCase
-      )}:has(+${angleBracketSelector}:last-child)`,
-      color: color(process.openTag.upperCase),
-    },
     lastComa: {
       selector: lastChildSelector(process.lastComa.capture),
       color: color(process.lastComa.capture),
@@ -275,31 +271,46 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
       color: color(endQuoteEl),
     },
   }
+
   const selectorOnly = {
+    closingJsxElementLowerCase: {
+      selector: `${lowerCaseTagSelector}:has(+${angleBracketSelector}:last-child)`,
+    },
+    closingJsxElementUpperCase: {
+      selector: `${upperCaseTagSelector}:has(+${angleBracketSelector}:last-child)`,
+    },
     singleQuotes: {
       selector: `:is([class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote})`,
-      // color: color(process.quotes.string[1] ?? stringEl),
     },
     jsxBracket: {
       selector: jsxBracketSelector,
-      // color: color(process.jsxBracket.capture),
     },
     ternaryClosingBrace: {
       selector: `${jsxBracketSelector}~${classSelector(
         process.ternaryOperator.capture
       )}~[class*="bracket-highlighting-"]:last-child`,
-      // color: color(process.ternaryOperator.capture), // FIXME: can't find the color
     },
   }
   const colorOnly = {
+    closingJsxElementLowerCase: {
+      selector: `${lowerCaseTagSelector}`,
+      color: color(process.openTag.lowerCase),
+    },
+    closingJsxElementUpperCase: {
+      selector: `${upperCaseTagSelector}`,
+      color: color(process.openTag.upperCase),
+    },
     commaSeparator: {
       selector: classSelector(process.comaSeparator.capture),
       color: color(process.comaSeparator.capture),
     },
+    ternaryClosingBrace: {
+      selector: classSelector(process.ternaryOperator.capture),
+      color: color(process.ternaryOperator.capture),
+    },
   }
   const ternaryOtherwise = {
     scope: `:has(${ternaryOtherWiseSelector})`,
-    // color: color(process.ternaryOtherwise.capture[0]),
   }
   //#endregion
 
@@ -339,7 +350,7 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 			${root}>${selectorOnly.singleQuotes.selector} {
 				--r: 1;
 			}
-			.view-lines:has(:is(${toUnion},${_tagSelector}):hover),
+			.view-lines:has(:is(${toUnion},${anyTagSelector}):hover),
 			.view-lines:has(${line}:hover ${ternaryOtherWiseSelector}) {
 				--r: .5;
 			}

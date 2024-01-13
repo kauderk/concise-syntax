@@ -388,10 +388,12 @@ var __publicField = (obj, key, value) => {
             console.group("\x1B[33m\x1B[40m", `⚠ ${print}`, objects ?? {});
             console.trace();
             console.groupEnd();
+            debugger;
           } else {
             console.group("\x1B[31m\x1B[40m", `⛔ ${print}`, objects ?? {});
             console.trace();
             console.groupEnd();
+            debugger;
           }
           const toastStyle = createStyles("toast");
           toastStyle.styleIt(minifiedCss);
@@ -1173,7 +1175,7 @@ var __publicField = (obj, key, value) => {
     },
     ternaryOtherwise: {
       match: /\).+?:.+\}/,
-      // FIXME: any
+      // FIXME: type me
       capture({ siblings, current }) {
         return siblings;
       }
@@ -1198,7 +1200,6 @@ var __publicField = (obj, key, value) => {
   };
   function parseSymbolColors(lineEditor) {
     var _a, _b;
-    debugger;
     const lines = Array.from(lineEditor.querySelectorAll("div>span"));
     let table = Clone(symbolTable);
     let lastTable = Clone(lastSymbolTable);
@@ -1280,11 +1281,16 @@ var __publicField = (obj, key, value) => {
       process.openTag.capture,
       process.closeTag.capture
     );
-    const tagSelector = setToSelector(
+    const anyTagSelector = `${angleBracketSelector}+${setToSelector(
       process.openTag.lowerCase,
       process.openTag.upperCase
-    );
-    const _tagSelector = `${angleBracketSelector}+${tagSelector}`;
+    )}`;
+    const lowerCaseTagSelector = `${angleBracketSelector}+${classSelector(
+      process.openTag.lowerCase
+    )}`;
+    const upperCaseTagSelector = `${angleBracketSelector}+${classSelector(
+      process.openTag.upperCase
+    )}`;
     const jsxBracketSelector = "." + process.jsxBracket.capture.className.split(" ").shift();
     const stringEl = process.quotes.string[0];
     const beginQuote = stringEl.className;
@@ -1304,18 +1310,6 @@ var __publicField = (obj, key, value) => {
         selector: angleBracketSelector,
         color: color(process.openTag.capture)
       },
-      closingJsxElementLowerCase: {
-        selector: `${angleBracketSelector}+${classSelector(
-          process.openTag.lowerCase
-        )}:has(+${angleBracketSelector}:last-child)`,
-        color: color(process.openTag.lowerCase)
-      },
-      closingJsxElementUpperCase: {
-        selector: `${angleBracketSelector}+${classSelector(
-          process.openTag.upperCase
-        )}:has(+${angleBracketSelector}:last-child)`,
-        color: color(process.openTag.upperCase)
-      },
       lastComa: {
         selector: lastChildSelector(process.lastComa.capture),
         color: color(process.lastComa.capture)
@@ -1334,30 +1328,44 @@ var __publicField = (obj, key, value) => {
       }
     };
     const selectorOnly = {
+      closingJsxElementLowerCase: {
+        selector: `${lowerCaseTagSelector}:has(+${angleBracketSelector}:last-child)`
+      },
+      closingJsxElementUpperCase: {
+        selector: `${upperCaseTagSelector}:has(+${angleBracketSelector}:last-child)`
+      },
       singleQuotes: {
         selector: `:is([class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote})`
-        // color: color(process.quotes.string[1] ?? stringEl),
       },
       jsxBracket: {
         selector: jsxBracketSelector
-        // color: color(process.jsxBracket.capture),
       },
       ternaryClosingBrace: {
         selector: `${jsxBracketSelector}~${classSelector(
           process.ternaryOperator.capture
         )}~[class*="bracket-highlighting-"]:last-child`
-        // color: color(process.ternaryOperator.capture), // FIXME: can't find the color
       }
     };
     const colorOnly = {
+      closingJsxElementLowerCase: {
+        selector: `${lowerCaseTagSelector}`,
+        color: color(process.openTag.lowerCase)
+      },
+      closingJsxElementUpperCase: {
+        selector: `${upperCaseTagSelector}`,
+        color: color(process.openTag.upperCase)
+      },
       commaSeparator: {
         selector: classSelector(process.comaSeparator.capture),
         color: color(process.comaSeparator.capture)
+      },
+      ternaryClosingBrace: {
+        selector: classSelector(process.ternaryOperator.capture),
+        color: color(process.ternaryOperator.capture)
       }
     };
     const ternaryOtherwise = {
       scope: `:has(${ternaryOtherWiseSelector})`
-      // color: color(process.ternaryOtherwise.capture[0]),
     };
     const line = "div>span";
     const root = `${linesSelector}>${line}`;
@@ -1389,7 +1397,7 @@ var __publicField = (obj, key, value) => {
 			${root}>${selectorOnly2.singleQuotes.selector} {
 				--r: 1;
 			}
-			.view-lines:has(:is(${toUnion},${_tagSelector}):hover),
+			.view-lines:has(:is(${toUnion},${anyTagSelector}):hover),
 			.view-lines:has(${line}:hover ${ternaryOtherWiseSelector}) {
 				--r: .5;
 			}
@@ -1556,7 +1564,7 @@ var __publicField = (obj, key, value) => {
   }
   const calibrateStyle = createStyles("calibrate");
   calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
-  let previousPayload;
+  let previous_style_color_table_snapshot;
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
     if (!(state2 == calibrate.opened || state2 == calibrate.idle))
       return;
@@ -1565,17 +1573,16 @@ var __publicField = (obj, key, value) => {
       return toastConsole.error("Calibrate Editor not found");
     }
     try {
-      debugger;
       if (state2 == calibrate.opened) {
         const res = parseSymbolColors(lineEditor);
-        previousPayload = res.payload;
+        previous_style_color_table_snapshot = res.payload;
         return;
       }
-      if (!previousPayload) {
+      if (!previous_style_color_table_snapshot) {
         throw new Error("previousPayload is undefined");
       } else if (state2 == calibrate.idle) {
         const res = parseSymbolColors(lineEditor);
-        const css = res.process(previousPayload);
+        const css = res.process(previous_style_color_table_snapshot);
         window.localStorage.setItem(sessionKey, css);
         if (css) {
           requestAnimationFrame(() => syntaxStyle.styleIt(css));

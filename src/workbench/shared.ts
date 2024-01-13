@@ -48,10 +48,12 @@ export const toastConsole = new Proxy(
           console.group('\x1b[33m\x1b[40m', `\u26a0 ${print}`, objects ?? {})
           console.trace()
           console.groupEnd()
+          debugger
         } else {
           console.group('\x1b[31m\x1b[40m', `\u26D4 ${print}`, objects ?? {})
           console.trace()
           console.groupEnd()
+          debugger
         }
         // FIXME: accommodate to the user's theme
         const toastStyle = createStyles('toast')

@@ -90,7 +90,6 @@ async function REC_windowStateSandbox(
   usingContext: UsingContext & { _item: vscode.StatusBarItem },
   recursiveDiff?: boolean
 ) {
-  debugger
   const { stores, context, _item } = usingContext
 
   if (stores.calibrationState.read() != state.active) {
@@ -181,7 +180,6 @@ async function calibrateStateSandbox(
     // seems dumb but if "globalCalibration" is active, then "calibrationState" should be active too
     checkCalibratedCommandContext(state.active, stores.calibrationState)
   }
-  debugger
 
   withProgress({
     title: 'Concise Syntax: calibrating...',
