@@ -1,3 +1,4 @@
+import { type textMateRulesNames } from 'src/extension/settings'
 import { linesSelector } from './keys'
 
 //#region tables
@@ -246,32 +247,77 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
         '[class*="bracket-highlighting"]'
       )
       .slice(0, -1) + ':last-child'
-
   //#endregion
 
   //#region map pre selectors to selectors with colors
+
   const opacitySelectors = {
-    angleBrackets: {
+    'tag.begin': {
       selector: angleBracketSelector,
       color: color(process.openTag.capture),
     },
-    lastComa: {
+    lastComma: {
       selector: lastChildSelector(process.lastComa.capture),
       color: color(process.lastComa.capture),
     },
-    lastSemicolon: {
+    terminator: {
       selector: lastChildSelector(process.lastSemicolon.capture),
       color: color(process.lastSemicolon.capture),
     },
-    beginQuote: {
+    'string.begin': {
       selector: '.' + beginQuote,
       color: color(stringEl),
     },
-    endQuote: {
+    'string.end': {
       selector: '.' + endQuote,
       color: color(endQuoteEl),
     },
+  } satisfies PartialColorSelector
+
+  const colorsSelectorOnly = {
+    'tag.entity': {
+      selector: `${lowerCaseTagSelector}`,
+      color: color(process.openTag.lowerCase),
+    },
+    'tag.component': {
+      selector: `${upperCaseTagSelector}`,
+      color: color(process.openTag.upperCase),
+    },
+    comma: {
+      selector: classSelector(process.comaSeparator.capture),
+      color: color(process.comaSeparator.capture),
+    },
+    ternary: {
+      selector: classSelector(process.ternaryOperator.capture),
+      color: color(process.ternaryOperator.capture),
+    },
+  } satisfies PartialColorSelector
+  type PartialColorSelector = Partial<
+    Record<textMateRulesNames, { selector: string; color: string | undefined }>
+  >
+
+  const colorsOnly = {
+    'tag.end': {
+      color: color(process.closeTag.capture),
+    },
+    text: {
+      color: color(process.text.capture),
+    },
+    'bracket.begin': {
+      color: color(process.jsxBracket.capture),
+    },
+    'bracket.end': {
+      color: color(process.jsxBracket.capture),
+    },
+  } satisfies Partial<Record<textMateRulesNames, { color: string | undefined }>>
+
+  const colorsTableOutput = {
+    ...opacitySelectors,
+    ...colorsSelectorOnly,
+    ...colorsOnly,
   }
+  // Test you are not missing any keys
+  colorsTableOutput['' as textMateRulesNames]
 
   const selectorOnly = {
     closingJsxElementLowerCase: {
@@ -292,24 +338,7 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
       )}~[class*="bracket-highlighting-"]:last-child`,
     },
   }
-  const colorOnly = {
-    closingJsxElementLowerCase: {
-      selector: `${lowerCaseTagSelector}`,
-      color: color(process.openTag.lowerCase),
-    },
-    closingJsxElementUpperCase: {
-      selector: `${upperCaseTagSelector}`,
-      color: color(process.openTag.upperCase),
-    },
-    commaSeparator: {
-      selector: classSelector(process.comaSeparator.capture),
-      color: color(process.comaSeparator.capture),
-    },
-    ternaryClosingBrace: {
-      selector: classSelector(process.ternaryOperator.capture),
-      color: color(process.ternaryOperator.capture),
-    },
-  }
+
   const ternaryOtherwise = {
     scope: `:has(${ternaryOtherwiseSelector})`,
   }
@@ -317,7 +346,28 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 
   const line = 'div>span'
   const root = `${linesSelector}>${line}`
-  const payload = { opacitySelectors, selectorOnly, colorOnly }
+  const payload = {
+    opacitySelectors,
+    selectorOnly,
+    colorSelectorOnly: colorsSelectorOnly,
+  }
+
+  // FIXME: crash if any color or selector are undefined
+  function checkMissingProps(obj: object) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'object') {
+        checkMissingProps(value)
+      } else if (!value) {
+        // prettier-ignore
+        throw new Error(`Missing property ${key} and possibly more...`)
+      }
+    }
+  }
+  checkMissingProps({
+    ...colorsTableOutput,
+    ...selectorOnly,
+    ...ternaryOtherwise,
+  })
 
   return {
     payload,
@@ -330,14 +380,17 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
           }
         }
       }
-      const { opacitySelectors, selectorOnly, colorOnly } = payload
+      const { opacitySelectors, selectorOnly, colorSelectorOnly } = payload
 
       const opacityValues = Object.values(opacitySelectors)
 
       const selectorValues = [...opacityValues, ...Object.values(selectorOnly)]
       const toUnion = selectorValues.map((f) => f.selector).join(',')
 
-      const toColorValue = [...opacityValues, ...Object.values(colorOnly)].map(
+      const toColorValue = [
+        ...opacityValues,
+        ...Object.values(colorSelectorOnly),
+      ].map(
         (f) => `${root} ${f.selector} {
 							color: ${f.color};
 						}`

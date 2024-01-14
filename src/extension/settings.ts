@@ -6,40 +6,46 @@ import { extensionId } from 'src/workbench/keys'
 
 export const key = 'editor.tokenColorCustomizations'
 const name = `${extensionId}.`
-const textMateRules = [
+type textMateRulesNames = (typeof _textMateRules)[number]['name']
+export type { textMateRulesNames }
+const _textMateRules = [
   {
-    name: name + 'text.editable',
+    name: 'text',
     scope: ['meta.jsx.children.tsx'],
     settings: { foreground: '#FF0000' },
   },
   {
-    name: name + 'tag.begin',
+    name: 'tag.begin',
     scope: ['punctuation.definition.tag.begin.tsx'],
     settings: { foreground: '#59ff00' },
   },
   {
-    name: name + 'tag.end',
+    name: 'tag.end',
     scope: ['punctuation.definition.tag.end.tsx'],
     settings: { foreground: '#59ff00' },
   },
   {
-    name: name + 'tag.component',
+    name: 'tag.entity',
+    scope: ['entity.name.tag.tsx'],
+    settings: { foreground: '#ff3900' },
+  },
+  {
+    name: 'tag.component',
     scope: ['support.class.component.tsx'],
     settings: { foreground: '#ff9900' },
   },
-
   {
-    name: name + 'bracket.begin',
+    name: 'bracket.begin',
     scope: ['punctuation.section.embedded.begin.tsx'],
     settings: { foreground: '#0037ff' },
   },
   {
-    name: name + 'bracket.end',
+    name: 'bracket.end',
     scope: ['punctuation.section.embedded.end.tsx'],
     settings: { foreground: '#0037ff' },
   },
   {
-    name: name + 'string.begin',
+    name: 'string.begin',
     scope: [
       'punctuation.definition.string.begin.tsx',
       'punctuation.definition.string.template.begin.tsx',
@@ -47,7 +53,7 @@ const textMateRules = [
     settings: { foreground: '#ffb300' },
   },
   {
-    name: name + 'string.end',
+    name: 'string.end',
     scope: [
       'punctuation.definition.string.end.tsx',
       'punctuation.definition.string.template.end.tsx',
@@ -55,27 +61,30 @@ const textMateRules = [
     settings: { foreground: '#f2ff00' },
   },
   {
-    name: name + 'comma',
+    name: 'comma',
     scope: ['punctuation.separator.parameter.tsx'],
     settings: { foreground: '#82a4a6' },
   },
   {
-    name: name + 'lastComma',
+    name: 'lastComma',
     scope: ['punctuation.separator.comma.tsx'],
     settings: { foreground: '#686868' },
   },
-  //{"scope":["punctuation.definition.block.tsx",],"settings":{"foreground": "#ffffff" }},
   {
-    name: name + 'terminator',
+    name: 'terminator',
     scope: ['punctuation.terminator.statement.tsx'],
     settings: { foreground: '#ff00ee' },
   },
   {
-    name: name + 'ternary',
+    name: 'ternary',
     scope: ['keyword.operator.ternary.tsx'],
     settings: { foreground: '#ae00ff' },
   },
-]
+] as const
+const textMateRules = _textMateRules.map((r) => ({
+  ...r,
+  name: `${name}${r.name}`,
+}))
 
 const settingsJsonPath = '.vscode/settings.json'
 const remoteSettingsJsonPath = 'remote.settings.jsonc'

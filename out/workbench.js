@@ -1301,26 +1301,63 @@ var __publicField = (obj, key, value) => {
       '[class*="bracket-highlighting"]'
     ).slice(0, -1) + ":last-child";
     const opacitySelectors = {
-      angleBrackets: {
+      "tag.begin": {
         selector: angleBracketSelector,
         color: color(process.openTag.capture)
       },
-      lastComa: {
+      lastComma: {
         selector: lastChildSelector(process.lastComa.capture),
         color: color(process.lastComa.capture)
       },
-      lastSemicolon: {
+      terminator: {
         selector: lastChildSelector(process.lastSemicolon.capture),
         color: color(process.lastSemicolon.capture)
       },
-      beginQuote: {
+      "string.begin": {
         selector: "." + beginQuote,
         color: color(stringEl)
       },
-      endQuote: {
+      "string.end": {
         selector: "." + endQuote,
         color: color(endQuoteEl)
       }
+    };
+    const colorsSelectorOnly = {
+      "tag.entity": {
+        selector: `${lowerCaseTagSelector}`,
+        color: color(process.openTag.lowerCase)
+      },
+      "tag.component": {
+        selector: `${upperCaseTagSelector}`,
+        color: color(process.openTag.upperCase)
+      },
+      comma: {
+        selector: classSelector(process.comaSeparator.capture),
+        color: color(process.comaSeparator.capture)
+      },
+      ternary: {
+        selector: classSelector(process.ternaryOperator.capture),
+        color: color(process.ternaryOperator.capture)
+      }
+    };
+    const colorsOnly = {
+      "tag.end": {
+        color: color(process.closeTag.capture)
+      },
+      text: {
+        color: color(process.text.capture)
+      },
+      "bracket.begin": {
+        color: color(process.jsxBracket.capture)
+      },
+      "bracket.end": {
+        color: color(process.jsxBracket.capture)
+      }
+    };
+    const colorsTableOutput = {
+      ...opacitySelectors,
+      ...colorsSelectorOnly,
+      ...colorsOnly
     };
     const selectorOnly = {
       closingJsxElementLowerCase: {
@@ -1341,30 +1378,30 @@ var __publicField = (obj, key, value) => {
         )}~[class*="bracket-highlighting-"]:last-child`
       }
     };
-    const colorOnly = {
-      closingJsxElementLowerCase: {
-        selector: `${lowerCaseTagSelector}`,
-        color: color(process.openTag.lowerCase)
-      },
-      closingJsxElementUpperCase: {
-        selector: `${upperCaseTagSelector}`,
-        color: color(process.openTag.upperCase)
-      },
-      commaSeparator: {
-        selector: classSelector(process.comaSeparator.capture),
-        color: color(process.comaSeparator.capture)
-      },
-      ternaryClosingBrace: {
-        selector: classSelector(process.ternaryOperator.capture),
-        color: color(process.ternaryOperator.capture)
-      }
-    };
     const ternaryOtherwise = {
       scope: `:has(${ternaryOtherwiseSelector})`
     };
     const line = "div>span";
     const root = `${linesSelector}>${line}`;
-    const payload = { opacitySelectors, selectorOnly, colorOnly };
+    const payload = {
+      opacitySelectors,
+      selectorOnly,
+      colorSelectorOnly: colorsSelectorOnly
+    };
+    function checkMissingProps(obj) {
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === "object") {
+          checkMissingProps(value);
+        } else if (!value) {
+          throw new Error(`Missing property ${key} and possibly more...`);
+        }
+      }
+    }
+    checkMissingProps({
+      ...colorsTableOutput,
+      ...selectorOnly,
+      ...ternaryOtherwise
+    });
     return {
       payload,
       process(_payload) {
@@ -1375,11 +1412,14 @@ var __publicField = (obj, key, value) => {
             }
           }
         }
-        const { opacitySelectors: opacitySelectors2, selectorOnly: selectorOnly2, colorOnly: colorOnly2 } = payload;
+        const { opacitySelectors: opacitySelectors2, selectorOnly: selectorOnly2, colorSelectorOnly } = payload;
         const opacityValues = Object.values(opacitySelectors2);
         const selectorValues = [...opacityValues, ...Object.values(selectorOnly2)];
         const toUnion = selectorValues.map((f) => f.selector).join(",");
-        const toColorValue = [...opacityValues, ...Object.values(colorOnly2)].map(
+        const toColorValue = [
+          ...opacityValues,
+          ...Object.values(colorSelectorOnly)
+        ].map(
           (f) => `${root} ${f.selector} {
 							color: ${f.color};
 						}`
