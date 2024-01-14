@@ -1632,38 +1632,42 @@ var __publicField = (obj, key, value) => {
     }
   });
   async function fakeExecuteCommand(displayName, commandName, value) {
-    const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
-    await tap(view);
-    const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
-    await tap(commandPalletOption);
-    let input = document.querySelector("div.quick-input-box input");
-    input.value = `>${displayName}`;
-    await hold();
-    input = document.querySelector("div.quick-input-box input");
-    input.dispatchEvent(new Event("input"));
-    await hold();
-    const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
-    command.click();
-    await hold();
-    input = document.querySelector("div.quick-input-box input");
-    if (input.getAttribute("placeholder") != commandName) {
-      throw new Error("Failed to find command input element");
-    }
-    input.value = value;
-    input.dispatchEvent(new Event("input"));
-    await hold(100);
-    input.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "Enter",
-      code: "Enter",
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true,
-      composed: true
-    }));
-    await hold();
-    if (command) {
-      return true;
+    try {
+      const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
+      await tap(view);
+      const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
+      await tap(commandPalletOption);
+      let input = document.querySelector("div.quick-input-box input");
+      input.value = `>${displayName}`;
+      await hold();
+      input = document.querySelector("div.quick-input-box input");
+      input.dispatchEvent(new Event("input"));
+      await hold();
+      const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
+      command.click();
+      await hold();
+      input = document.querySelector("div.quick-input-box input");
+      if (input.getAttribute("placeholder") != commandName) {
+        throw new Error("Failed to find command input element");
+      }
+      input.value = value;
+      input.dispatchEvent(new Event("input"));
+      await hold(100);
+      input.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      }));
+      await hold();
+      if (command) {
+        return true;
+      }
+    } catch (error) {
+      debugger;
     }
     async function tap(el) {
       el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));

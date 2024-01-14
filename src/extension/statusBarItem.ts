@@ -33,13 +33,10 @@ let crashedMessage = ''
 let _calibrate: vscode.StatusBarItem | undefined
 let c_busy = false
 let disposeClosedEditor = deltaFn(true)
-let calibrate_confirmation_token = deltaValue<vscode.CancellationTokenSource>(
-  (t) => {
-    t.cancel()
-    t.dispose()
-  }
-)
-let calibrate_window_task = deltaValue<ReturnType<typeof createTask>>((t) => {
+let calibrate_confirmation_task = deltaValue<Task>((t) => {
+  t.resolve()
+})
+let calibrate_window_task = deltaValue<Task>((t) => {
   t.resolve()
 })
 
@@ -95,7 +92,7 @@ export async function ExtensionState_statusBarItem(
       dispose() {
         disposeConfiguration.consume()
         disposeClosedEditor.consume()
-        calibrate_confirmation_token.consume()
+        calibrate_confirmation_task.consume()
       },
     }
   )
@@ -144,10 +141,18 @@ async function REC_windowStateSandbox(
 
   if (typeof cash == 'function') {
     if (recursiveDiff) {
-      await withProgress({
-        title: 'revalidating...',
-        seconds: 5,
-      })
+      vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Window,
+          title: packageJson.displayName,
+        },
+        async (progress) => {
+          progress.report({ message: 'revalidating...' })
+          for (let i = 0; i < 5; i++) {
+            await hold(1_000)
+          }
+        }
+      )
     }
     const task = createTask()
     const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
@@ -172,6 +177,7 @@ async function REC_windowStateSandbox(
   }).dispose
 }
 
+let holding = false
 async function calibrateStateSandbox(
   uriRemote: vscode.Uri,
   usingContext: { stores: Stores; context: vscode.ExtensionContext },
@@ -198,10 +204,15 @@ async function calibrateStateSandbox(
     checkCalibratedCommandContext(state.active, stores.calibrationState)
   }
 
-  await withProgress({
-    title: 'calibrating...',
-    seconds: 5,
-  })
+  calibrate_confirmation_task.consume()
+  const taskProgress = withProgress()
+  calibrate_confirmation_task.value = taskProgress.task
+
+  holding = !holding
+
+  const holdTo = holding ? () => hold(1_000) : () => Promise.resolve()
+  await holdTo()
+  taskProgress.progress.report({ message: 'calibrating extension' })
 
   // FIXME: get me out of here
   testShortCircuitWindowState = true
@@ -227,6 +238,9 @@ async function calibrateStateSandbox(
     }
   })
 
+  await holdTo()
+  taskProgress.progress.report({ message: 'calibrating window' })
+
   if (calibrate_window_task.value) {
     throw new Error('calibrate_window_task is busy with a previous task')
   }
@@ -238,14 +252,21 @@ async function calibrateStateSandbox(
   if (!calibrate_window_task.value?.promise) {
     throw new Error('calibrate_window_task is undefined')
   }
-  await Promise.race([
-    calibrate_window_task.value.promise, // either the configuration changes or the timeout
-    new Promise((reject) =>
+  const res = await Promise.race([
+    calibrate_window_task.value.promise,
+    new Promise((reject) => {
       setTimeout(() => {
         reject(new Error('calibrate_window_task timed out'))
-      }, 10_000)
-    ),
+      }, 5_000)
+    }),
   ])
+  if (res instanceof Error) {
+    debugger
+    throw res
+  }
+
+  await holdTo()
+  taskProgress.progress.report({ message: 'calibrating syntax and theme' })
 
   // then update the settings with the extension's textMateRules
   await REC_nextWindowStateCycle(state.active, state.active, usingContext)
@@ -257,10 +278,12 @@ async function calibrateStateSandbox(
   calibrate_window_task.consume()
   await checkCalibrateWindowCommandContext(state.inactive)
 
-  await withProgress({
-    title: 'calibrated you may close the file',
-    seconds: 5,
-  })
+  await holdTo()
+  taskProgress.progress.report({ message: 'calibrated you may close the file' })
+
+  setTimeout(() => {
+    calibrate_confirmation_task.consume()
+  }, 5_000)
 }
 
 //#region module
@@ -358,6 +381,7 @@ async function calibrateCommandCycle(
     c_busy = false
   } catch (error: any) {
     debugger
+    calibrate_confirmation_task.value?.resolve()
     testShortCircuitWindowState = false
     await consume_close(_calibrate)
     vscode.window.showErrorMessage(
@@ -373,7 +397,9 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
     value: '',
   })
   if (!input) {
-    vscode.window.showErrorMessage('No window input was provided')
+    calibrate_window_task.value?.reject(
+      new Error('No window input was provided')
+    )
     return
   }
   try {
@@ -498,34 +524,27 @@ export async function wipeAllState(context: vscode.ExtensionContext) {
   return context
 }
 
-async function withProgress(params: {
-  title: string
-  seconds: number
-  cancellable?: boolean
-}) {
+function withProgress() {
+  const task = createTask()
+  let _progress: vscode.Progress<{ message?: string }>
+
   vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Window,
       title: packageJson.displayName,
     },
-    // prettier-ignore
     async (progress, token) => {
-      if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
-        return
-      }
-      calibrate_confirmation_token.value = new vscode.CancellationTokenSource()
-      const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(stop).dispose
-      function stop() {
-        calibrate_confirmation_token.consume()
-        dispose()
-      }
-      for (let i = 0; i < params.seconds; i++) {
-        progress.report({ message: params.title });
-        await hold(1_000)
-      }
-      stop()
+      _progress = progress
+      await task.promise
     }
   )
+  return {
+    task,
+    get progress() {
+      if (!_progress) throw new Error('progress is undefined')
+      return _progress
+    },
+  }
 }
 
 export function checkDisposedCommandContext(next?: State) {
@@ -540,12 +559,13 @@ export function checkDisposedCommandContext(next?: State) {
     next == state.active || next == state.inactive
   )
 }
-function checkCalibrateWindowCommandContext(next?: State) {
-  return vscode.commands.executeCommand(
+async function checkCalibrateWindowCommandContext(next?: State) {
+  await vscode.commands.executeCommand(
     'setContext',
     'extension.calibrateWindow',
     next == state.active
   )
+  await hold(500)
 }
 
 function onDidCloseTextDocument(
@@ -601,6 +621,7 @@ export function getErrorStore(context: vscode.ExtensionContext) {
   return useState(context, 'error', <'error' | 'throw' | 'unhandled'>{})
 }
 
+type Task = ReturnType<typeof createTask>
 function createTask() {
   let resolve = (value?: unknown) => {},
     reject = (value?: unknown) => {}

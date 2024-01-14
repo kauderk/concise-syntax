@@ -80,6 +80,7 @@ const createCalibrateSubscription = () =>
   })
 // prettier-ignore
 async function fakeExecuteCommand(displayName: string, commandName: string, value: string) {
+  try {
   const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`) as H
   await tap(view)
   const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`) as H
@@ -110,10 +111,15 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
     composed: true
   }))
   await hold()
-  type H = HTMLInputElement
+
   if (command) {
     return true
   }
+
+  } catch (error) {
+    debugger
+  }
+  type H = HTMLInputElement
   async function tap(el:H) {
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
     await hold()

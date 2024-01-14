@@ -561,12 +561,9 @@ let crashedMessage = "";
 let _calibrate;
 let c_busy = false;
 let disposeClosedEditor = deltaFn(true);
-let calibrate_confirmation_token = deltaValue(
-  (t) => {
-    t.cancel();
-    t.dispose();
-  }
-);
+let calibrate_confirmation_task = deltaValue((t) => {
+  t.resolve();
+});
 let calibrate_window_task = deltaValue((t) => {
   t.resolve();
 });
@@ -609,7 +606,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       dispose() {
         disposeConfiguration.consume();
         disposeClosedEditor.consume();
-        calibrate_confirmation_token.consume();
+        calibrate_confirmation_task.consume();
       }
     }
   );
@@ -638,10 +635,18 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, recursive
   }
   if (typeof cash == "function") {
     if (recursiveDiff) {
-      await withProgress({
-        title: "revalidating...",
-        seconds: 5
-      });
+      vscode__namespace.window.withProgress(
+        {
+          location: vscode__namespace.ProgressLocation.Window,
+          title: packageJson.displayName
+        },
+        async (progress) => {
+          progress.report({ message: "revalidating..." });
+          for (let i = 0; i < 5; i++) {
+            await hold(1e3);
+          }
+        }
+      );
     }
     const task = createTask();
     const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
@@ -664,15 +669,16 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, recursive
       await REC_nextWindowStateCycle(next, binary(next), usingContext, true);
     }).dispose;
 }
+let holding = false;
 async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   const { stores } = usingContext;
   if (stores.globalCalibration.read() != state.active) {
-    const res = await vscode__namespace.window.showInformationMessage(
+    const res2 = await vscode__namespace.window.showInformationMessage(
       "The Concise Syntax extension will add/remove textMateRules in .vscode/settings.json to sync up with the window state.       Do you want to continue?",
       "Yes and remember",
       "No and deactivate"
     );
-    const next = res?.includes("Yes") ? state.active : state.inactive;
+    const next = res2?.includes("Yes") ? state.active : state.inactive;
     await stores.globalCalibration.write(next);
     checkCalibratedCommandContext(next, stores.calibrationState);
     if (next == state.inactive && stores.windowState.read() != state.active) {
@@ -681,10 +687,13 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   } else {
     checkCalibratedCommandContext(state.active, stores.calibrationState);
   }
-  await withProgress({
-    title: "calibrating...",
-    seconds: 5
-  });
+  calibrate_confirmation_task.consume();
+  const taskProgress = withProgress();
+  calibrate_confirmation_task.value = taskProgress.task;
+  holding = !holding;
+  const holdTo = holding ? () => hold(1e3) : () => Promise.resolve();
+  await holdTo();
+  taskProgress.progress.report({ message: "calibrating extension" });
   testShortCircuitWindowState = true;
   await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
   testShortCircuitWindowState = false;
@@ -703,6 +712,8 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
       return true;
     }
   });
+  await holdTo();
+  taskProgress.progress.report({ message: "calibrating window" });
   if (calibrate_window_task.value) {
     throw new Error("calibrate_window_task is busy with a previous task");
   }
@@ -712,23 +723,29 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   if (!calibrate_window_task.value?.promise) {
     throw new Error("calibrate_window_task is undefined");
   }
-  await Promise.race([
+  const res = await Promise.race([
     calibrate_window_task.value.promise,
-    // either the configuration changes or the timeout
-    new Promise(
-      (reject) => setTimeout(() => {
+    new Promise((reject) => {
+      setTimeout(() => {
         reject(new Error("calibrate_window_task timed out"));
-      }, 1e4)
-    )
+      }, 5e3);
+    })
   ]);
+  if (res instanceof Error) {
+    debugger;
+    throw res;
+  }
+  await holdTo();
+  taskProgress.progress.report({ message: "calibrating syntax and theme" });
   await REC_nextWindowStateCycle(state.active, state.active, usingContext);
   await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
   calibrate_window_task.consume();
   await checkCalibrateWindowCommandContext(state.inactive);
-  await withProgress({
-    title: "calibrated you may close the file",
-    seconds: 5
-  });
+  await holdTo();
+  taskProgress.progress.report({ message: "calibrated you may close the file" });
+  setTimeout(() => {
+    calibrate_confirmation_task.consume();
+  }, 5e3);
 }
 async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursiveDiff) {
   if (!_item) {
@@ -798,6 +815,7 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
     c_busy = false;
   } catch (error) {
     debugger;
+    calibrate_confirmation_task.value?.resolve();
     testShortCircuitWindowState = false;
     await consume_close(_calibrate);
     vscode__namespace.window.showErrorMessage(
@@ -812,7 +830,9 @@ async function calibrateWindowCommandCycle(usingContext) {
     value: ""
   });
   if (!input) {
-    vscode__namespace.window.showErrorMessage("No window input was provided");
+    calibrate_window_task.value?.reject(
+      new Error("No window input was provided")
+    );
     return;
   }
   try {
@@ -911,30 +931,27 @@ async function wipeAllState(context) {
   }
   return context;
 }
-async function withProgress(params) {
+function withProgress() {
+  const task = createTask();
+  let _progress;
   vscode__namespace.window.withProgress(
     {
       location: vscode__namespace.ProgressLocation.Window,
       title: packageJson.displayName
     },
-    // prettier-ignore
     async (progress, token) => {
-      if (calibrate_confirmation_token.value?.token.isCancellationRequested) {
-        return;
-      }
-      calibrate_confirmation_token.value = new vscode__namespace.CancellationTokenSource();
-      const dispose = calibrate_confirmation_token.value.token.onCancellationRequested(stop).dispose;
-      function stop() {
-        calibrate_confirmation_token.consume();
-        dispose();
-      }
-      for (let i = 0; i < params.seconds; i++) {
-        progress.report({ message: params.title });
-        await hold(1e3);
-      }
-      stop();
+      _progress = progress;
+      await task.promise;
     }
   );
+  return {
+    task,
+    get progress() {
+      if (!_progress)
+        throw new Error("progress is undefined");
+      return _progress;
+    }
+  };
 }
 function checkDisposedCommandContext(next) {
   vscode__namespace.commands.executeCommand(
@@ -948,12 +965,13 @@ function checkDisposedCommandContext(next) {
     next == state.active || next == state.inactive
   );
 }
-function checkCalibrateWindowCommandContext(next) {
-  return vscode__namespace.commands.executeCommand(
+async function checkCalibrateWindowCommandContext(next) {
+  await vscode__namespace.commands.executeCommand(
     "setContext",
     "extension.calibrateWindow",
     next == state.active
   );
+  await hold(500);
 }
 function onDidCloseTextDocument(tryClose) {
   return vscode__namespace.window.tabGroups?.onDidChangeTabs?.(async (changedEvent) => {
