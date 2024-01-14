@@ -1,6 +1,11 @@
 import * as vscode from 'vscode'
 import packageJson from '../../package.json'
-import { key, updateSettingsCycle } from './settings'
+import {
+  getTextMateRules,
+  key,
+  updateSettingsCycle,
+  updateWriteTextMateRules,
+} from './settings'
 import {
   IState,
   State,
@@ -13,6 +18,7 @@ import { Calibrate, calibrateIcon } from 'src/shared/state'
 import { useGlobal, useState } from './utils'
 import path from 'path'
 import { deltaFn, deltaValue } from 'src/shared/utils'
+import { type windowColorsTable } from 'src/workbench'
 
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
@@ -222,6 +228,11 @@ async function calibrateStateSandbox(
 
   await tryUpdateCalibrateState(calibrate.opened, _calibrate, 1500)
 
+  await vscode.window.showInformationMessage(
+    'Calibrate the window now...',
+    'ok'
+  )
+
   // then update the settings with the extension's textMateRules
   await REC_nextWindowStateCycle(state.active, state.active, usingContext)
 
@@ -339,9 +350,58 @@ async function calibrateCommandCycle(
     )
   }
 }
-
+export type calibrateWIndowPlaceholder = 'Calibrate Window'
 async function calibrateWindowCommandCycle(usingContext: UsingContext) {
-  debugger
+  const input = await vscode.window.showInputBox({
+    placeHolder: 'Calibrate Window' satisfies calibrateWIndowPlaceholder,
+    prompt: `Calibrate Window using session's syntax and theme`,
+    value: '',
+  })
+  if (!input) {
+    vscode.window.showErrorMessage('No window input was provided')
+    return
+  }
+  try {
+    const table: windowColorsTable = JSON.parse(input)
+
+    await updateWriteTextMateRules(
+      usingContext.context,
+      (textMateRules, nameSuffix) => {
+        const len = textMateRules.length
+        for (let i = 0; i < len; i++) {
+          const value = textMateRules[i]
+          const tableValue = table[value.name.replace(nameSuffix, '')]
+          if (tableValue && tableValue.color) {
+            // prettier-ignore
+            const divergence = ((i / len) / len) + .9
+            // the window script function "parseSymbolColors" depends on unique colors
+            value.settings.foreground =
+              rgbToHexDivergent(tableValue.color, divergence) ??
+              value.settings.foreground
+          }
+        }
+      }
+    )
+  } catch (error: any) {
+    vscode.window.showErrorMessage('Failed to parse window input')
+  }
+}
+function rgbToHexDivergent(rgbString: string, scalar = 1) {
+  const cleanedString = rgbString.replace(/\s/g, '').toLowerCase()
+  const isRgba = cleanedString.includes('rgba')
+  const values = cleanedString.match(/\d+(\.\d+)?/g)
+  if (values && (isRgba ? values.length === 4 : values.length === 3)) {
+    const hexValues = values.map((value, index) => {
+      const intValue = parseFloat(value)
+      const scaledValue = Math.min(255, Math.round(intValue * scalar))
+      const hex = scaledValue.toString(16).padStart(2, '0')
+      return index < 3 ? hex : scaledValue.toString(16).padStart(2, '0')
+    })
+    return `#${hexValues.join('')}`
+  } else {
+    vscode.window.showErrorMessage(`Failed to parse rbg to hex: ${rgbString}`)
+    return null
+  }
 }
 
 async function toggleCommandCycle(usingContext: UsingContext) {
@@ -405,6 +465,7 @@ function getStores(context: vscode.ExtensionContext) {
     globalInvalidation: getGlobalAnyInvalidate(context),
     globalCalibration: getGlobalAnyCalibrate(context),
     calibrationState: getAnyCalibrate(context),
+    textMateRules: getTextMateRules(context),
   }
 }
 type Stores = ReturnType<typeof getStores>

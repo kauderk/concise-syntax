@@ -9,6 +9,7 @@ import { createObservable } from '../shared/observable'
 import { or_return } from '../shared/or_return'
 import { deltaFn } from 'src/shared/utils'
 import { createTryFunction } from './lifecycle'
+import { type calibrateWIndowPlaceholder } from 'src/extension/statusBarItem'
 export type { editorObservable, stateObservable, calibrateObservable }
 
 const editorObservable = createObservable<undefined | string>(undefined)
@@ -30,6 +31,9 @@ const calibrateStyle = createStyles('calibrate')
 calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
 
 let previous_style_color_table_snapshot: any
+export type windowColorsTable = ReturnType<
+  typeof parseSymbolColors
+>['colorsTableOutput']
 const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((state) => {
     if (!(state == calibrate.opened || state == calibrate.idle)) return
@@ -41,9 +45,15 @@ const createCalibrateSubscription = () =>
     }
 
     try {
+      syntaxStyle.dispose() // makes sense right...? otherwise it will conflict with parseSymbolColors
       if (state == calibrate.opened) {
         const res = parseSymbolColors(lineEditor)
-        fakeExecuteCommand('Concise Syntax', 'Calibrate Window').catch(() => {
+        const windowColorsTable = JSON.stringify(res.colorsTableOutput)
+        fakeExecuteCommand(
+          'Concise Syntax',
+          'Calibrate Window' satisfies calibrateWIndowPlaceholder,
+          windowColorsTable
+        ).catch(() => {
           toastConsole.error('Failed to execute Calibrate Window command')
         })
         previous_style_color_table_snapshot = res.payload
@@ -69,7 +79,7 @@ const createCalibrateSubscription = () =>
     }
   })
 // prettier-ignore
-async function fakeExecuteCommand(displayName: string, commandName: string) {
+async function fakeExecuteCommand(displayName: string, commandName: string, value: string) {
   const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`) as H
   await tap(view)
   const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`) as H
@@ -83,6 +93,23 @@ async function fakeExecuteCommand(displayName: string, commandName: string) {
   const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`) as H
   command.click()
   await hold()
+  input = document.querySelector("div.quick-input-box input") as H
+  if (input.getAttribute('placeholder') != commandName) {
+    throw new Error('Failed to find command input element')
+  }
+  input.value = value
+  input.dispatchEvent(new Event('input'))
+  await hold(100)
+  input.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'Enter',
+    code: 'Enter',
+    keyCode: 13,
+    which: 13,
+    bubbles: true,
+    cancelable: true,
+    composed: true
+  }))
+  await hold()
   type H = HTMLInputElement
   if (command) {
     return true
@@ -91,7 +118,7 @@ async function fakeExecuteCommand(displayName: string, commandName: string) {
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
     await hold()
   }
-  function hold(t = 300) {
+  function hold(t = 1000) {
     return new Promise((resolve)=>setTimeout(resolve, t))
   }
 }

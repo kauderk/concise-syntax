@@ -86,7 +86,7 @@ const contributes = {
       command: "extension.calibrateWindow",
       title: "Calibrate Window",
       category: "Concise Syntax",
-      enablement: "!extension.disposed && extension.calibrated"
+      enablement: "!extension.disposed && extension.calibrateWindow"
     },
     {
       command: "extension.reset",
@@ -146,9 +146,106 @@ async function preRead(base) {
     }
   };
 }
+function _catch(e) {
+}
+function useState(context, key2, type2) {
+  const _key = `${extensionId}.workspace.${key2}`;
+  return {
+    key: _key,
+    value: void 0,
+    read() {
+      return this.value = context.workspaceState.get(_key);
+    },
+    async write(newState) {
+      this.value = newState;
+      await context.workspaceState.update(_key, newState);
+      return newState;
+    }
+  };
+}
+function useGlobal(context, key2, type2) {
+  const _key = `${extensionId}.global.${key2}`;
+  return {
+    key: _key,
+    value: void 0,
+    read() {
+      return this.value = context.globalState.get(_key);
+    },
+    async write(newState) {
+      this.value = newState;
+      await context.globalState.update(_key, newState);
+      return newState;
+    }
+  };
+}
+function Clone(o, m) {
+  if ("object" !== typeof o)
+    return o;
+  if ("object" !== typeof m || null === m)
+    m = /* @__PURE__ */ new WeakMap();
+  let n = m.get(o);
+  if ("undefined" !== typeof n)
+    return n;
+  let c = Object.getPrototypeOf(o).constructor;
+  switch (c) {
+    case Boolean:
+    case Error:
+    case Function:
+    case Number:
+    case Promise:
+    case String:
+    case Symbol:
+    case WeakMap:
+    case WeakSet:
+      n = o;
+      break;
+    case Array:
+      m.set(o, n = o.slice(0));
+      n.forEach(function(v, i) {
+        if ("object" === typeof v)
+          n[i] = Clone(v, m);
+      });
+      break;
+    case ArrayBuffer:
+      m.set(o, n = o.slice(0));
+      break;
+    case DataView:
+      m.set(
+        o,
+        // @ts-ignore
+        n = new c(Clone(o.buffer, m), o.byteOffset, o.byteLength)
+      );
+      break;
+    case Map:
+    case Set:
+      m.set(o, n = new c(Clone(Array.from(o.entries()), m)));
+      break;
+    case Int8Array:
+    case Uint8Array:
+    case Uint8ClampedArray:
+    case Int16Array:
+    case Uint16Array:
+    case Int32Array:
+    case Uint32Array:
+    case Float32Array:
+    case Float64Array:
+      m.set(o, n = new c(Clone(o.buffer, m), o.byteOffset, o.length));
+      break;
+    case Date:
+    case RegExp:
+      m.set(o, n = new c(o));
+      break;
+    default:
+      m.set(o, n = Object.assign(new c(), o));
+      for (c in n)
+        if ("object" === typeof n[c])
+          n[c] = Clone(n[c], m);
+  }
+  return n;
+}
 const key = "editor.tokenColorCustomizations";
 const name = `${extensionId}.`;
-const _textMateRules = [
+const TextMateRules = [
   {
     name: "text",
     scope: ["meta.jsx.children.tsx"],
@@ -221,16 +318,21 @@ const _textMateRules = [
     settings: { foreground: "#ae00ff" }
   }
 ];
-const textMateRules = _textMateRules.map((r) => ({
-  ...r,
-  name: `${name}${r.name}`
-}));
+function getTextMateRules(context) {
+  return useState(context, "textMateRules");
+}
+async function updateWriteTextMateRules(context, cb) {
+  const store = await getOrDefaultTextMateRules(context);
+  cb(store, name);
+  await getTextMateRules(context).write(JSON.stringify(store));
+}
 const settingsJsonPath = ".vscode/settings.json";
 async function updateSettingsCycle(context, operation) {
   const res = await tryParseSettings();
   if (!res)
     return;
   const { wasEmpty, specialObjectUserRules: userRules } = res;
+  const textMateRules = await getOrDefaultTextMateRules(context);
   let diff = false;
   if (operation == "active") {
     if (wasEmpty) {
@@ -291,6 +393,35 @@ async function updateSettingsCycle(context, operation) {
     return true;
   }
   return res.write;
+}
+const DefaultTextMateRules = () => Clone(
+  TextMateRules.map((r) => ({ ...r, name: `${name}${r.name}` }))
+);
+async function getOrDefaultTextMateRules(context) {
+  try {
+    const serialized = await getTextMateRules(context).read();
+    if (serialized) {
+      const parsed = JSON.parse(serialized);
+      if (!Array.isArray(parsed)) {
+        throw new Error("textMateRules is not an array");
+      }
+      for (let i = 0; i < TextMateRules.length; i++) {
+        const rule = TextMateRules[i];
+        if (name + rule.name != parsed[i].name) {
+          parsed[i] = rule;
+        }
+      }
+      parsed.length = TextMateRules.length;
+      return parsed;
+    } else {
+      return DefaultTextMateRules();
+    }
+  } catch (error) {
+    vscode__namespace.window.showErrorMessage(
+      "Failed to parse textMateRules. Error: " + error?.message
+    );
+    return DefaultTextMateRules();
+  }
 }
 async function tryParseSettings() {
   const workspace = vscode__namespace.workspace.workspaceFolders?.[0].uri;
@@ -387,38 +518,6 @@ const calibrate = {
 function iconSelector(icon) {
   return `[id="${extensionId}"]:has(.codicon-${icon})`;
 }
-function _catch(e) {
-}
-function useState(context, key2, type2) {
-  const _key = `${extensionId}.workspace.${key2}`;
-  return {
-    key: _key,
-    value: void 0,
-    read() {
-      return this.value = context.workspaceState.get(_key);
-    },
-    async write(newState) {
-      this.value = newState;
-      await context.workspaceState.update(_key, newState);
-      return newState;
-    }
-  };
-}
-function useGlobal(context, key2, type2) {
-  const _key = `${extensionId}.global.${key2}`;
-  return {
-    key: _key,
-    value: void 0,
-    read() {
-      return this.value = context.globalState.get(_key);
-    },
-    async write(newState) {
-      this.value = newState;
-      await context.globalState.update(_key, newState);
-      return newState;
-    }
-  };
-}
 function deltaFn(consume = false) {
   let delta;
   return {
@@ -501,7 +600,7 @@ async function ExtensionState_statusBarItem(context, setState) {
     ),
     vscode__namespace.commands.registerCommand(
       calibrateWIndowCommand,
-      () => calibrateWindowCommandCycle()
+      () => calibrateWindowCommandCycle(usingContext)
     ),
     {
       dispose() {
@@ -603,6 +702,10 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   });
   await checkCalibrateWindowCommandContext(state.active);
   await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
+  await vscode__namespace.window.showInformationMessage(
+    "Calibrate the window now...",
+    "ok"
+  );
   await REC_nextWindowStateCycle(state.active, state.active, usingContext);
   await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
   await checkCalibrateWindowCommandContext(state.inactive);
@@ -687,7 +790,51 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
   }
 }
 async function calibrateWindowCommandCycle(usingContext) {
-  debugger;
+  const input = await vscode__namespace.window.showInputBox({
+    placeHolder: "Calibrate Window",
+    prompt: `Calibrate Window using session's syntax and theme`,
+    value: ""
+  });
+  if (!input) {
+    vscode__namespace.window.showErrorMessage("No window input was provided");
+    return;
+  }
+  try {
+    const table = JSON.parse(input);
+    await updateWriteTextMateRules(
+      usingContext.context,
+      (textMateRules, nameSuffix) => {
+        const len = textMateRules.length;
+        for (let i = 0; i < len; i++) {
+          const value = textMateRules[i];
+          const tableValue = table[value.name.replace(nameSuffix, "")];
+          if (tableValue && tableValue.color) {
+            const divergence = i / len / len + 0.9;
+            value.settings.foreground = rgbToHexDivergent(tableValue.color, divergence) ?? value.settings.foreground;
+          }
+        }
+      }
+    );
+  } catch (error) {
+    vscode__namespace.window.showErrorMessage("Failed to parse window input");
+  }
+}
+function rgbToHexDivergent(rgbString, scalar = 1) {
+  const cleanedString = rgbString.replace(/\s/g, "").toLowerCase();
+  const isRgba = cleanedString.includes("rgba");
+  const values = cleanedString.match(/\d+(\.\d+)?/g);
+  if (values && (isRgba ? values.length === 4 : values.length === 3)) {
+    const hexValues = values.map((value, index) => {
+      const intValue = parseFloat(value);
+      const scaledValue = Math.min(255, Math.round(intValue * scalar));
+      const hex = scaledValue.toString(16).padStart(2, "0");
+      return index < 3 ? hex : scaledValue.toString(16).padStart(2, "0");
+    });
+    return `#${hexValues.join("")}`;
+  } else {
+    vscode__namespace.window.showErrorMessage(`Failed to parse rbg to hex: ${rgbString}`);
+    return null;
+  }
 }
 async function toggleCommandCycle(usingContext) {
   const { stores } = usingContext;
@@ -733,7 +880,8 @@ function getStores(context) {
     windowState: getWindowState(context),
     globalInvalidation: getGlobalAnyInvalidate(context),
     globalCalibration: getGlobalAnyCalibrate(context),
-    calibrationState: getAnyCalibrate(context)
+    calibrationState: getAnyCalibrate(context),
+    textMateRules: getTextMateRules(context)
   };
 }
 async function wipeAllState(context) {

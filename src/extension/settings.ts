@@ -1,14 +1,15 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
-import { _catch } from './utils'
+import { _catch, useState } from './utils'
 import JSONC from 'comment-json'
 import { extensionId } from 'src/workbench/keys'
+import { Clone } from 'src/shared/clone'
 
 export const key = 'editor.tokenColorCustomizations'
 const name = `${extensionId}.`
-type textMateRulesNames = (typeof _textMateRules)[number]['name']
+type textMateRulesNames = (typeof TextMateRules)[number]['name']
 export type { textMateRulesNames }
-const _textMateRules = [
+const TextMateRules = [
   {
     name: 'text',
     scope: ['meta.jsx.children.tsx'],
@@ -81,13 +82,24 @@ const _textMateRules = [
     settings: { foreground: '#ae00ff' },
   },
 ] as const
-const textMateRules = _textMateRules.map((r) => ({
-  ...r,
-  name: `${name}${r.name}`,
-}))
+type _TextMateRules = {
+  name: string
+  scope: string[]
+  settings: { foreground: string }
+}[]
+export function getTextMateRules(context: vscode.ExtensionContext) {
+  return useState(context, 'textMateRules', <string>{})
+}
+export async function updateWriteTextMateRules(
+  context: vscode.ExtensionContext,
+  cb: (mutableTextMaleRules: _TextMateRules, nameSuffix: string) => void
+) {
+  const store = await getOrDefaultTextMateRules(context)
+  cb(store, name)
+  await getTextMateRules(context).write(JSON.stringify(store))
+}
 
 const settingsJsonPath = '.vscode/settings.json'
-const remoteSettingsJsonPath = 'remote.settings.jsonc'
 
 // TODO: avoid writing defensive code, someone else surely knows a better way to do this
 export async function updateSettingsCycle(
@@ -97,6 +109,7 @@ export async function updateSettingsCycle(
   const res = await tryParseSettings()
   if (!res) return
   const { wasEmpty, specialObjectUserRules: userRules } = res
+  const textMateRules = await getOrDefaultTextMateRules(context)
 
   // could be more elegant...
   // this has to be faster than writing the file every time, otherwise it's not worth it
@@ -123,7 +136,7 @@ export async function updateSettingsCycle(
             diff = true
           }
           // prettier-ignore
-          if (userRule.settings?.foreground!== presetRule.settings.foreground) {
+          if (userRule.settings?.foreground !== presetRule.settings.foreground) {
 						userRule.settings ??= {}
             userRule.settings.foreground = presetRule.settings.foreground
             diff = true
@@ -169,6 +182,40 @@ export async function updateSettingsCycle(
   return res.write
 }
 
+// why is this so bloated?
+const DefaultTextMateRules = () =>
+  Clone(
+    TextMateRules.map((r) => ({ ...r, name: `${name}${r.name}` }))
+  ) as any as _TextMateRules
+async function getOrDefaultTextMateRules(context: vscode.ExtensionContext) {
+  try {
+    const serialized = await getTextMateRules(context).read()
+    if (serialized) {
+      const parsed: _TextMateRules = JSON.parse(serialized)
+      if (!Array.isArray(parsed)) {
+        throw new Error('textMateRules is not an array')
+      }
+      for (let i = 0; i < TextMateRules.length; i++) {
+        const rule = TextMateRules[i]
+        if (name + rule.name != parsed[i].name) {
+          // @ts-expect-error
+          parsed[i] = rule
+        }
+      }
+      // make sure it has the same values
+      parsed.length = TextMateRules.length
+      return parsed
+    } else {
+      return DefaultTextMateRules()
+    }
+  } catch (error: any) {
+    vscode.window.showErrorMessage(
+      'Failed to parse textMateRules. Error: ' + error?.message
+    )
+    return DefaultTextMateRules()
+  }
+}
+
 async function tryParseSettings() {
   const workspace = vscode.workspace.workspaceFolders?.[0].uri
   if (!workspace) {
@@ -198,7 +245,7 @@ async function tryParseSettings() {
   }
 
   // NOTE: This is a special object https://www.npmjs.com/package/comment-json#commentarray
-  let userRules: DeepPartial<typeof textMateRules> | undefined =
+  let userRules: DeepPartial<_TextMateRules> | undefined =
     config?.[key]?.textMateRules
 
   if (userRules && !Array.isArray(userRules)) {

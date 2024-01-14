@@ -1118,6 +1118,71 @@ var __publicField = (obj, key, value) => {
   function iconSelector(icon) {
     return `[id="${extensionId}"]:has(.codicon-${icon})`;
   }
+  function Clone(o, m) {
+    if ("object" !== typeof o)
+      return o;
+    if ("object" !== typeof m || null === m)
+      m = /* @__PURE__ */ new WeakMap();
+    let n = m.get(o);
+    if ("undefined" !== typeof n)
+      return n;
+    let c = Object.getPrototypeOf(o).constructor;
+    switch (c) {
+      case Boolean:
+      case Error:
+      case Function:
+      case Number:
+      case Promise:
+      case String:
+      case Symbol:
+      case WeakMap:
+      case WeakSet:
+        n = o;
+        break;
+      case Array:
+        m.set(o, n = o.slice(0));
+        n.forEach(function(v, i) {
+          if ("object" === typeof v)
+            n[i] = Clone(v, m);
+        });
+        break;
+      case ArrayBuffer:
+        m.set(o, n = o.slice(0));
+        break;
+      case DataView:
+        m.set(
+          o,
+          // @ts-ignore
+          n = new c(Clone(o.buffer, m), o.byteOffset, o.byteLength)
+        );
+        break;
+      case Map:
+      case Set:
+        m.set(o, n = new c(Clone(Array.from(o.entries()), m)));
+        break;
+      case Int8Array:
+      case Uint8Array:
+      case Uint8ClampedArray:
+      case Int16Array:
+      case Uint16Array:
+      case Int32Array:
+      case Uint32Array:
+      case Float32Array:
+      case Float64Array:
+        m.set(o, n = new c(Clone(o.buffer, m), o.byteOffset, o.length));
+        break;
+      case Date:
+      case RegExp:
+        m.set(o, n = new c(o));
+        break;
+      default:
+        m.set(o, n = Object.assign(new c(), o));
+        for (c in n)
+          if ("object" === typeof n[c])
+            n[c] = Clone(n[c], m);
+    }
+    return n;
+  }
   const symbolTable = {
     "tag.begin": {
       match: /<|<\//,
@@ -1360,6 +1425,7 @@ var __publicField = (obj, key, value) => {
       ...colorsSelectorOnly,
       ...colorsOnly
     };
+    colorsTableOutput[""];
     const selectorOnly = {
       closingTagEntity: {
         selector: `${entityTagSelector}:has(+${angleBracketSelector}:last-child)`
@@ -1467,71 +1533,6 @@ var __publicField = (obj, key, value) => {
   function getProcess(span, match) {
     return span;
   }
-  function Clone(o, m) {
-    if ("object" !== typeof o)
-      return o;
-    if ("object" !== typeof m || null === m)
-      m = /* @__PURE__ */ new WeakMap();
-    let n = m.get(o);
-    if ("undefined" !== typeof n)
-      return n;
-    let c = Object.getPrototypeOf(o).constructor;
-    switch (c) {
-      case Boolean:
-      case Error:
-      case Function:
-      case Number:
-      case Promise:
-      case String:
-      case Symbol:
-      case WeakMap:
-      case WeakSet:
-        n = o;
-        break;
-      case Array:
-        m.set(o, n = o.slice(0));
-        n.forEach(function(v, i) {
-          if ("object" === typeof v)
-            n[i] = Clone(v, m);
-        });
-        break;
-      case ArrayBuffer:
-        m.set(o, n = o.slice(0));
-        break;
-      case DataView:
-        m.set(
-          o,
-          // @ts-ignore
-          n = new c(Clone(o.buffer, m), o.byteOffset, o.byteLength)
-        );
-        break;
-      case Map:
-      case Set:
-        m.set(o, n = new c(Clone(Array.from(o.entries()), m)));
-        break;
-      case Int8Array:
-      case Uint8Array:
-      case Uint8ClampedArray:
-      case Int16Array:
-      case Uint16Array:
-      case Int32Array:
-      case Uint32Array:
-      case Float32Array:
-      case Float64Array:
-        m.set(o, n = new c(Clone(o.buffer, m), o.byteOffset, o.length));
-        break;
-      case Date:
-      case RegExp:
-        m.set(o, n = new c(o));
-        break;
-      default:
-        m.set(o, n = Object.assign(new c(), o));
-        for (c in n)
-          if ("object" === typeof n[c])
-            n[c] = Clone(n[c], m);
-    }
-    return n;
-  }
   function createObservable(initialValue) {
     let _value = initialValue;
     let _subscribers = [];
@@ -1599,9 +1600,15 @@ var __publicField = (obj, key, value) => {
       return toastConsole.error("Calibrate Editor not found");
     }
     try {
+      syntaxStyle.dispose();
       if (state2 == calibrate.opened) {
         const res = parseSymbolColors(lineEditor);
-        fakeExecuteCommand("Concise Syntax", "Calibrate Window").catch(() => {
+        const windowColorsTable = JSON.stringify(res.colorsTableOutput);
+        fakeExecuteCommand(
+          "Concise Syntax",
+          "Calibrate Window",
+          windowColorsTable
+        ).catch(() => {
           toastConsole.error("Failed to execute Calibrate Window command");
         });
         previous_style_color_table_snapshot = res.payload;
@@ -1624,7 +1631,7 @@ var __publicField = (obj, key, value) => {
       toastConsole.error("Failed to calibrate editor");
     }
   });
-  async function fakeExecuteCommand(displayName, commandName) {
+  async function fakeExecuteCommand(displayName, commandName, value) {
     const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
     await tap(view);
     const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
@@ -1638,6 +1645,23 @@ var __publicField = (obj, key, value) => {
     const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
     command.click();
     await hold();
+    input = document.querySelector("div.quick-input-box input");
+    if (input.getAttribute("placeholder") != commandName) {
+      throw new Error("Failed to find command input element");
+    }
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
+    await hold(100);
+    input.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    }));
+    await hold();
     if (command) {
       return true;
     }
@@ -1645,7 +1669,7 @@ var __publicField = (obj, key, value) => {
       el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
       await hold();
     }
-    function hold(t = 300) {
+    function hold(t = 1e3) {
       return new Promise((resolve) => setTimeout(resolve, t));
     }
   }
