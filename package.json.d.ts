@@ -48,6 +48,12 @@ declare const data: {
         "enablement": "!extension.disposed && extension.running"
       },
       {
+        "command": "extension.calibrateWindow",
+        "title": "Calibrate Window",
+        "category": "Concise Syntax",
+        "enablement": "!extension.disposed && extension.calibrateWindow"
+      },
+      {
         "command": "extension.reset",
         "title": "Reset then reload (dev)",
         "category": "Concise Syntax"

@@ -19,7 +19,7 @@ export { deactivateCycle as deactivate } from './extensionCycle'
 export async function activate(context: vscode.ExtensionContext) {
   // return wipeAllState(context).then(uninstallCycle)
 
-  const resetCommand = packageJson.contributes.commands[4].command
+  const resetCommand = packageJson.contributes.commands[5].command
   context.subscriptions.push(
     vscode.commands.registerCommand(resetCommand, () =>
       wipeAllState(context)

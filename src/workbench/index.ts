@@ -43,6 +43,9 @@ const createCalibrateSubscription = () =>
     try {
       if (state == calibrate.opened) {
         const res = parseSymbolColors(lineEditor)
+        fakeExecuteCommand('Concise Syntax', 'Calibrate Window').catch(() => {
+          toastConsole.error('Failed to execute Calibrate Window command')
+        })
         previous_style_color_table_snapshot = res.payload
         // FIXME: here is where the window should send a message to extension to go to the next state
         return
@@ -65,6 +68,33 @@ const createCalibrateSubscription = () =>
       toastConsole.error('Failed to calibrate editor')
     }
   })
+// prettier-ignore
+async function fakeExecuteCommand(displayName: string, commandName: string) {
+  const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`) as H
+  await tap(view)
+  const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`) as H
+  await tap(commandPalletOption)
+  let input = document.querySelector("div.quick-input-box input") as H
+  input.value = `>${displayName}`
+  await hold()
+  input = document.querySelector("div.quick-input-box input") as H
+  input.dispatchEvent(new Event('input'))
+  await hold()
+  const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`) as H
+  command.click()
+  await hold()
+  type H = HTMLInputElement
+  if (command) {
+    return true
+  }
+  async function tap(el:H) {
+    el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
+    await hold()
+  }
+  function hold(t = 300) {
+    return new Promise((resolve)=>setTimeout(resolve, t))
+  }
+}
 
 const createEditorSubscription = () =>
   editorObservable.$ubscribe((value) => {

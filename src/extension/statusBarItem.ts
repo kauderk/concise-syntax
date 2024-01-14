@@ -51,7 +51,7 @@ export async function ExtensionState_statusBarItem(
   }
 
   // This section will be called once because you are counting on the _item to be defined
-  // and you are counting on the scope closure to keep the context
+  // the scope closure maintains the context
 
   const toggleCommand = packageJson.contributes.commands[2].command
   _item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0)
@@ -65,6 +65,8 @@ export async function ExtensionState_statusBarItem(
   _calibrate.command = calibrateCommand
   defaultCalibrate(_calibrate)
 
+  const calibrateWIndowCommand = packageJson.contributes.commands[4].command
+
   const next = setState ?? 'active'
   await REC_nextWindowStateCycle(next, binary(next), usingContext)
 
@@ -76,6 +78,9 @@ export async function ExtensionState_statusBarItem(
     _calibrate,
     vscode.commands.registerCommand(calibrateCommand, () =>
       calibrateCommandCycle(uriRemote, usingContext)
+    ),
+    vscode.commands.registerCommand(calibrateWIndowCommand, () =>
+      calibrateWindowCommandCycle(usingContext)
     ),
     {
       dispose() {
@@ -213,6 +218,8 @@ async function calibrateStateSandbox(
     }
   })
 
+  await checkCalibrateWindowCommandContext(state.active)
+
   await tryUpdateCalibrateState(calibrate.opened, _calibrate, 1500)
 
   // then update the settings with the extension's textMateRules
@@ -221,6 +228,8 @@ async function calibrateStateSandbox(
   // then notify the window the calibration is done
   // FIXME: the window should trigger this event
   await tryUpdateCalibrateState(calibrate.idle, _calibrate, 500)
+
+  await checkCalibrateWindowCommandContext(state.inactive)
 
   await withProgress({
     title: 'calibrated you may close the file',
@@ -329,6 +338,10 @@ async function calibrateCommandCycle(
       `Error: failed to open calibrate file -> ${error?.message}`
     )
   }
+}
+
+async function calibrateWindowCommandCycle(usingContext: UsingContext) {
+  debugger
 }
 
 async function toggleCommandCycle(usingContext: UsingContext) {
@@ -444,6 +457,13 @@ export function checkDisposedCommandContext(next?: State) {
     'setContext',
     'extension.running',
     next == state.active || next == state.inactive
+  )
+}
+function checkCalibrateWindowCommandContext(next?: State) {
+  return vscode.commands.executeCommand(
+    'setContext',
+    'extension.calibrateWindow',
+    next == state.active
   )
 }
 

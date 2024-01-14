@@ -1200,7 +1200,6 @@ var __publicField = (obj, key, value) => {
   };
   function parseSymbolColors(lineEditor) {
     var _a, _b;
-    debugger;
     const lineSelector = "div>span";
     const lines = Array.from(lineEditor.querySelectorAll(lineSelector));
     let table = Clone(symbolTable);
@@ -1404,6 +1403,7 @@ var __publicField = (obj, key, value) => {
       ...ternaryOtherwise
     });
     return {
+      colorsTableOutput,
       payload,
       process(_payload) {
         for (let key in payload) {
@@ -1601,6 +1601,9 @@ var __publicField = (obj, key, value) => {
     try {
       if (state2 == calibrate.opened) {
         const res = parseSymbolColors(lineEditor);
+        fakeExecuteCommand("Concise Syntax", "Calibrate Window").catch(() => {
+          toastConsole.error("Failed to execute Calibrate Window command");
+        });
         previous_style_color_table_snapshot = res.payload;
         return;
       }
@@ -1621,6 +1624,31 @@ var __publicField = (obj, key, value) => {
       toastConsole.error("Failed to calibrate editor");
     }
   });
+  async function fakeExecuteCommand(displayName, commandName) {
+    const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
+    await tap(view);
+    const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
+    await tap(commandPalletOption);
+    let input = document.querySelector("div.quick-input-box input");
+    input.value = `>${displayName}`;
+    await hold();
+    input = document.querySelector("div.quick-input-box input");
+    input.dispatchEvent(new Event("input"));
+    await hold();
+    const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
+    command.click();
+    await hold();
+    if (command) {
+      return true;
+    }
+    async function tap(el) {
+      el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
+      await hold();
+    }
+    function hold(t = 300) {
+      return new Promise((resolve) => setTimeout(resolve, t));
+    }
+  }
   const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
     if (!value)
       return;

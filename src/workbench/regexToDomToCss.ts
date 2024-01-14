@@ -114,7 +114,6 @@ const multipleSymbolTale = {
  * FIXME: the types are overloaded but correct, fix them
  */
 export function parseSymbolColors(lineEditor: HTMLElement) {
-  debugger
   //#region parser
   const lineSelector = 'div>span'
   const lines = Array.from(lineEditor.querySelectorAll(lineSelector))
@@ -370,6 +369,7 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
   })
 
   return {
+    colorsTableOutput,
     payload,
     process(_payload: typeof payload) {
       // FIXME: avoid mutations...

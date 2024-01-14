@@ -83,6 +83,12 @@ const contributes = {
       enablement: "!extension.disposed && extension.running"
     },
     {
+      command: "extension.calibrateWindow",
+      title: "Calibrate Window",
+      category: "Concise Syntax",
+      enablement: "!extension.disposed && extension.calibrated"
+    },
+    {
       command: "extension.reset",
       title: "Reset then reload (dev)",
       category: "Concise Syntax"
@@ -479,6 +485,7 @@ async function ExtensionState_statusBarItem(context, setState) {
   _calibrate = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _calibrate.command = calibrateCommand;
   defaultCalibrate(_calibrate);
+  const calibrateWIndowCommand = packageJson.contributes.commands[4].command;
   const next = setState ?? "active";
   await REC_nextWindowStateCycle(next, binary(next), usingContext);
   context.subscriptions.push(
@@ -491,6 +498,10 @@ async function ExtensionState_statusBarItem(context, setState) {
     vscode__namespace.commands.registerCommand(
       calibrateCommand,
       () => calibrateCommandCycle(uriRemote, usingContext)
+    ),
+    vscode__namespace.commands.registerCommand(
+      calibrateWIndowCommand,
+      () => calibrateWindowCommandCycle()
     ),
     {
       dispose() {
@@ -590,9 +601,11 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
       return true;
     }
   });
+  await checkCalibrateWindowCommandContext(state.active);
   await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
   await REC_nextWindowStateCycle(state.active, state.active, usingContext);
   await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
+  await checkCalibrateWindowCommandContext(state.inactive);
   await withProgress({
     title: "calibrated you may close the file",
     seconds: 5
@@ -672,6 +685,9 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
       `Error: failed to open calibrate file -> ${error?.message}`
     );
   }
+}
+async function calibrateWindowCommandCycle(usingContext) {
+  debugger;
 }
 async function toggleCommandCycle(usingContext) {
   const { stores } = usingContext;
@@ -762,6 +778,13 @@ function checkDisposedCommandContext(next) {
     "setContext",
     "extension.running",
     next == state.active || next == state.inactive
+  );
+}
+function checkCalibrateWindowCommandContext(next) {
+  return vscode__namespace.commands.executeCommand(
+    "setContext",
+    "extension.calibrateWindow",
+    next == state.active
   );
 }
 function onDidCloseTextDocument(tryClose) {
@@ -858,7 +881,7 @@ async function read() {
   return await preRead(base);
 }
 async function activate(context) {
-  const resetCommand = packageJson.contributes.commands[4].command;
+  const resetCommand = packageJson.contributes.commands[5].command;
   context.subscriptions.push(
     vscode__namespace.commands.registerCommand(
       resetCommand,
