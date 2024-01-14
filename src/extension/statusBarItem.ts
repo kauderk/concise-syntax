@@ -39,6 +39,9 @@ let calibrate_confirmation_token = deltaValue<vscode.CancellationTokenSource>(
     t.dispose()
   }
 )
+let calibrate_window_task = deltaValue<ReturnType<typeof createTask>>((t) => {
+  t.resolve()
+})
 
 type UsingContext = { stores: Stores; context: vscode.ExtensionContext }
 
@@ -224,14 +227,25 @@ async function calibrateStateSandbox(
     }
   })
 
+  if (calibrate_window_task.value) {
+    throw new Error('calibrate_window_task is busy with a previous task')
+  }
+  calibrate_window_task.value = createTask()
   await checkCalibrateWindowCommandContext(state.active)
 
   await tryUpdateCalibrateState(calibrate.opened, _calibrate, 1500)
 
-  await vscode.window.showInformationMessage(
-    'Calibrate the window now...',
-    'ok'
-  )
+  if (!calibrate_window_task.value?.promise) {
+    throw new Error('calibrate_window_task is undefined')
+  }
+  await Promise.race([
+    calibrate_window_task.value.promise, // either the configuration changes or the timeout
+    new Promise((reject) =>
+      setTimeout(() => {
+        reject(new Error('calibrate_window_task timed out'))
+      }, 10_000)
+    ),
+  ])
 
   // then update the settings with the extension's textMateRules
   await REC_nextWindowStateCycle(state.active, state.active, usingContext)
@@ -240,6 +254,7 @@ async function calibrateStateSandbox(
   // FIXME: the window should trigger this event
   await tryUpdateCalibrateState(calibrate.idle, _calibrate, 500)
 
+  calibrate_window_task.consume()
   await checkCalibrateWindowCommandContext(state.inactive)
 
   await withProgress({
@@ -382,8 +397,13 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
         }
       }
     )
+
+    calibrate_window_task.consume()
   } catch (error: any) {
     vscode.window.showErrorMessage('Failed to parse window input')
+    calibrate_window_task.value?.reject(
+      new Error('Failed to parse window input')
+    )
   }
 }
 function rgbToHexDivergent(rgbString: string, scalar = 1) {
@@ -583,7 +603,7 @@ export function getErrorStore(context: vscode.ExtensionContext) {
 
 function createTask() {
   let resolve = (value?: unknown) => {},
-    reject = () => {}
+    reject = (value?: unknown) => {}
   const promise = new Promise((_resolve, _reject) => {
     reject = _reject
     resolve = _resolve

@@ -118,7 +118,7 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
     await hold()
   }
-  function hold(t = 1000) {
+  function hold(t = 300) {
     return new Promise((resolve)=>setTimeout(resolve, t))
   }
 }

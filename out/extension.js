@@ -567,6 +567,9 @@ let calibrate_confirmation_token = deltaValue(
     t.dispose();
   }
 );
+let calibrate_window_task = deltaValue((t) => {
+  t.resolve();
+});
 async function ExtensionState_statusBarItem(context, setState) {
   const stores = getStores(context);
   await stores.windowState.write(setState);
@@ -700,14 +703,27 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
       return true;
     }
   });
+  if (calibrate_window_task.value) {
+    throw new Error("calibrate_window_task is busy with a previous task");
+  }
+  calibrate_window_task.value = createTask();
   await checkCalibrateWindowCommandContext(state.active);
   await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
-  await vscode__namespace.window.showInformationMessage(
-    "Calibrate the window now...",
-    "ok"
-  );
+  if (!calibrate_window_task.value?.promise) {
+    throw new Error("calibrate_window_task is undefined");
+  }
+  await Promise.race([
+    calibrate_window_task.value.promise,
+    // either the configuration changes or the timeout
+    new Promise(
+      (reject) => setTimeout(() => {
+        reject(new Error("calibrate_window_task timed out"));
+      }, 1e4)
+    )
+  ]);
   await REC_nextWindowStateCycle(state.active, state.active, usingContext);
   await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
+  calibrate_window_task.consume();
   await checkCalibrateWindowCommandContext(state.inactive);
   await withProgress({
     title: "calibrated you may close the file",
@@ -815,8 +831,12 @@ async function calibrateWindowCommandCycle(usingContext) {
         }
       }
     );
+    calibrate_window_task.consume();
   } catch (error) {
     vscode__namespace.window.showErrorMessage("Failed to parse window input");
+    calibrate_window_task.value?.reject(
+      new Error("Failed to parse window input")
+    );
   }
 }
 function rgbToHexDivergent(rgbString, scalar = 1) {
@@ -981,7 +1001,7 @@ function getErrorStore(context) {
 }
 function createTask() {
   let resolve = (value) => {
-  }, reject = () => {
+  }, reject = (value) => {
   };
   const promise = new Promise((_resolve, _reject) => {
     reject = _reject;

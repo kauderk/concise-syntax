@@ -1669,7 +1669,7 @@ var __publicField = (obj, key, value) => {
       el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
       await hold();
     }
-    function hold(t = 1e3) {
+    function hold(t = 300) {
       return new Promise((resolve) => setTimeout(resolve, t));
     }
   }
