@@ -1119,16 +1119,16 @@ var __publicField = (obj, key, value) => {
     return `[id="${extensionId}"]:has(.codicon-${icon})`;
   }
   const symbolTable = {
-    openTag: {
+    "tag.begin": {
       match: /<|<\//,
-      lowerCase({ siblings, current }) {
+      entity({ siblings, current }) {
         var _a;
         const tag = siblings[siblings.indexOf(current) + 1];
         if (((_a = tag.textContent) == null ? void 0 : _a.toLowerCase()) === tag.textContent) {
           return tag;
         }
       },
-      upperCase({ siblings, current }) {
+      component({ siblings, current }) {
         var _a;
         const tag = siblings[siblings.indexOf(current) + 1];
         if ((_a = tag.textContent) == null ? void 0 : _a.match(/^[A-Z]/)) {
@@ -1137,7 +1137,7 @@ var __publicField = (obj, key, value) => {
       }
     },
     text: { match: /Hello\sConcise\sSyntax!/ },
-    comaSeparator: {
+    comma: {
       match: /,/,
       capture({ siblings, current }) {
         const next = siblings[siblings.indexOf(current) + 1];
@@ -1146,28 +1146,28 @@ var __publicField = (obj, key, value) => {
         }
       }
     },
-    ternaryOperator: { match: /\?/ }
+    ternary: { match: /\?/ }
   };
   const lastSymbolTable = {
-    closeTag: {
+    "tag.end": {
       match: /(>|\/>)$/,
       capture({ siblings }) {
         return siblings[siblings.length - 1];
       }
     },
-    lastSemicolon: {
+    terminator: {
       match: /;$/,
       capture({ siblings }) {
         return siblings[siblings.length - 1];
       }
     },
-    lastComa: {
+    lastComma: {
       match: /,$/,
       capture({ siblings }) {
         return siblings[siblings.length - 1];
       }
     },
-    jsxBracket: {
+    "bracket.begin": {
       match: /={{$/,
       capture({ siblings }) {
         return siblings[siblings.length - 2];
@@ -1200,16 +1200,18 @@ var __publicField = (obj, key, value) => {
   };
   function parseSymbolColors(lineEditor) {
     var _a, _b;
-    const lines = Array.from(lineEditor.querySelectorAll("div>span"));
+    debugger;
+    const lineSelector = "div>span";
+    const lines = Array.from(lineEditor.querySelectorAll(lineSelector));
     let table = Clone(symbolTable);
     let lastTable = Clone(lastSymbolTable);
     let multipleTable = Clone(multipleSymbolTale);
     let output = {};
-    for (const line2 of lines) {
-      const text = line2.textContent;
+    for (const line of lines) {
+      const text = line.textContent;
       if (!text)
         continue;
-      const siblings = Array.from(line2.children);
+      const siblings = Array.from(line.children);
       for (let current of siblings) {
         const content = current.textContent;
         for (let key in table) {
@@ -1278,20 +1280,20 @@ var __publicField = (obj, key, value) => {
     }
     const process = output;
     const angleBracketSelector = setToSelector(
-      process.openTag.capture,
-      process.closeTag.capture
+      process["tag.begin"].capture,
+      process["tag.end"].capture
     );
     const anyTagSelector = `${angleBracketSelector}+${setToSelector(
-      process.openTag.lowerCase,
-      process.openTag.upperCase
+      process["tag.begin"].entity,
+      process["tag.begin"].component
     )}`;
-    const lowerCaseTagSelector = `${angleBracketSelector}+${classSelector(
-      process.openTag.lowerCase
+    const entityTagSelector = `${angleBracketSelector}+${classSelector(
+      process["tag.begin"].entity
     )}`;
-    const upperCaseTagSelector = `${angleBracketSelector}+${classSelector(
-      process.openTag.upperCase
+    const componentTagSelector = `${angleBracketSelector}+${classSelector(
+      process["tag.begin"].component
     )}`;
-    const jsxBracketSelector = "." + process.jsxBracket.capture.className.split(" ").shift();
+    const bracketBeginSelector = "." + process["bracket.begin"].capture.className.split(" ").shift();
     const stringEl = process.quotes.string[0];
     const beginQuote = stringEl.className;
     const endQuoteEl = process.quotes.string[2] ?? stringEl;
@@ -1303,15 +1305,15 @@ var __publicField = (obj, key, value) => {
     const opacitySelectors = {
       "tag.begin": {
         selector: angleBracketSelector,
-        color: color(process.openTag.capture)
+        color: color(process["tag.begin"].capture)
       },
       lastComma: {
-        selector: lastChildSelector(process.lastComa.capture),
-        color: color(process.lastComa.capture)
+        selector: lastChildSelector(process.lastComma.capture),
+        color: color(process.lastComma.capture)
       },
       terminator: {
-        selector: lastChildSelector(process.lastSemicolon.capture),
-        color: color(process.lastSemicolon.capture)
+        selector: lastChildSelector(process.terminator.capture),
+        color: color(process.terminator.capture)
       },
       "string.begin": {
         selector: "." + beginQuote,
@@ -1324,34 +1326,34 @@ var __publicField = (obj, key, value) => {
     };
     const colorsSelectorOnly = {
       "tag.entity": {
-        selector: `${lowerCaseTagSelector}`,
-        color: color(process.openTag.lowerCase)
+        selector: `${entityTagSelector}`,
+        color: color(process["tag.begin"].entity)
       },
       "tag.component": {
-        selector: `${upperCaseTagSelector}`,
-        color: color(process.openTag.upperCase)
+        selector: `${componentTagSelector}`,
+        color: color(process["tag.begin"].component)
       },
       comma: {
-        selector: classSelector(process.comaSeparator.capture),
-        color: color(process.comaSeparator.capture)
+        selector: classSelector(process.comma.capture),
+        color: color(process.comma.capture)
       },
       ternary: {
-        selector: classSelector(process.ternaryOperator.capture),
-        color: color(process.ternaryOperator.capture)
+        selector: classSelector(process.ternary.capture),
+        color: color(process.ternary.capture)
       }
     };
     const colorsOnly = {
       "tag.end": {
-        color: color(process.closeTag.capture)
+        color: color(process["tag.end"].capture)
       },
       text: {
         color: color(process.text.capture)
       },
       "bracket.begin": {
-        color: color(process.jsxBracket.capture)
+        color: color(process["bracket.begin"].capture)
       },
       "bracket.end": {
-        color: color(process.jsxBracket.capture)
+        color: color(process["bracket.begin"].capture)
       }
     };
     const colorsTableOutput = {
@@ -1360,29 +1362,28 @@ var __publicField = (obj, key, value) => {
       ...colorsOnly
     };
     const selectorOnly = {
-      closingJsxElementLowerCase: {
-        selector: `${lowerCaseTagSelector}:has(+${angleBracketSelector}:last-child)`
+      closingTagEntity: {
+        selector: `${entityTagSelector}:has(+${angleBracketSelector}:last-child)`
       },
-      closingJsxElementUpperCase: {
-        selector: `${upperCaseTagSelector}:has(+${angleBracketSelector}:last-child)`
+      closingTagComponent: {
+        selector: `${componentTagSelector}:has(+${angleBracketSelector}:last-child)`
       },
-      singleQuotes: {
+      emptyQuote: {
         selector: `:is([class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote})`
       },
-      jsxBracket: {
-        selector: jsxBracketSelector
+      bracketBegin: {
+        selector: bracketBeginSelector
       },
       ternaryClosingBrace: {
-        selector: `${jsxBracketSelector}~${classSelector(
-          process.ternaryOperator.capture
+        selector: `${bracketBeginSelector}~${classSelector(
+          process.ternary.capture
         )}~[class*="bracket-highlighting-"]:last-child`
       }
     };
     const ternaryOtherwise = {
       scope: `:has(${ternaryOtherwiseSelector})`
     };
-    const line = "div>span";
-    const root = `${linesSelector}>${line}`;
+    const root = `${linesSelector}>${lineSelector}`;
     const payload = {
       opacitySelectors,
       selectorOnly,
@@ -1429,11 +1430,11 @@ var __publicField = (obj, key, value) => {
 				--r: 0;
 			}
 			.view-lines > div:hover,
-			${root}>${selectorOnly2.singleQuotes.selector} {
+			${root}>${selectorOnly2.emptyQuote.selector} {
 				--r: 1;
 			}
 			.view-lines:has(:is(${toUnion},${anyTagSelector}):hover),
-			.view-lines:has(${line}:hover ${ternaryOtherwiseSelector}) {
+			.view-lines:has(${lineSelector}:hover ${ternaryOtherwiseSelector}) {
 				--r: .5;
 			}
 			${root} :is(${toUnion}),

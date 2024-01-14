@@ -7,7 +7,7 @@ type Condition = (payload: {
   current: HTMLSpanElement
 }) => HTMLElement | undefined // FIXME: handle multiple return types
 type SymbolClass<C = Condition> = {
-  [key: string]:
+  [key in textMateRulesNames]?:
     | {
         match: RegExp | string
         capture?: Condition
@@ -20,24 +20,23 @@ type SymbolClass<C = Condition> = {
 }
 
 const symbolTable = {
-  openTag: {
+  'tag.begin': {
     match: /<|<\//,
-    lowerCase({ siblings, current }) {
+    entity({ siblings, current }) {
       const tag = siblings[siblings.indexOf(current) + 1]
       if (tag.textContent?.toLowerCase() === tag.textContent) {
         return tag
       }
     },
-    upperCase({ siblings, current }) {
+    component({ siblings, current }) {
       const tag = siblings[siblings.indexOf(current) + 1]
       if (tag.textContent?.match(/^[A-Z]/)) {
         return tag
       }
     },
   },
-
   text: { match: /Hello\sConcise\sSyntax!/ },
-  comaSeparator: {
+  comma: {
     match: /,/,
     capture({ siblings, current }) {
       const next = siblings[siblings.indexOf(current) + 1]
@@ -46,30 +45,29 @@ const symbolTable = {
       }
     },
   },
-
-  ternaryOperator: { match: /\?/ },
+  ternary: { match: /\?/ },
 } satisfies SymbolClass
 
 const lastSymbolTable = {
-  closeTag: {
+  'tag.end': {
     match: /(>|\/>)$/,
     capture({ siblings }) {
       return siblings[siblings.length - 1]
     },
   },
-  lastSemicolon: {
+  terminator: {
     match: /;$/,
     capture({ siblings }) {
       return siblings[siblings.length - 1]
     },
   },
-  lastComa: {
+  lastComma: {
     match: /,$/,
     capture({ siblings }) {
       return siblings[siblings.length - 1]
     },
   },
-  jsxBracket: {
+  'bracket.begin': {
     match: /={{$/,
     capture({ siblings }) {
       return siblings[siblings.length - 2]
@@ -113,10 +111,13 @@ const multipleSymbolTale = {
 
 /**
  * FIXME: This function might crash if it can't find valid selectors...
+ * FIXME: the types are overloaded but correct, fix them
  */
 export function parseSymbolColors(lineEditor: HTMLElement) {
+  debugger
   //#region parser
-  const lines = Array.from(lineEditor.querySelectorAll('div>span'))
+  const lineSelector = 'div>span'
+  const lines = Array.from(lineEditor.querySelectorAll(lineSelector))
 
   let table: any = Clone(symbolTable)
   let lastTable: any = Clone(lastSymbolTable)
@@ -214,22 +215,22 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
   //#region map capture to pre selectors
 
   const angleBracketSelector = setToSelector(
-    process.openTag.capture,
-    process.closeTag.capture
+    process['tag.begin'].capture,
+    process['tag.end'].capture
   )
   const anyTagSelector = `${angleBracketSelector}+${setToSelector(
-    process.openTag.lowerCase,
-    process.openTag.upperCase
+    process['tag.begin'].entity,
+    process['tag.begin'].component
   )}`
-  const lowerCaseTagSelector = `${angleBracketSelector}+${classSelector(
-    process.openTag.lowerCase
+  const entityTagSelector = `${angleBracketSelector}+${classSelector(
+    process['tag.begin'].entity
   )}`
-  const upperCaseTagSelector = `${angleBracketSelector}+${classSelector(
-    process.openTag.upperCase
+  const componentTagSelector = `${angleBracketSelector}+${classSelector(
+    process['tag.begin'].component
   )}`
 
-  const jsxBracketSelector =
-    '.' + process.jsxBracket.capture.className.split(' ').shift()
+  const bracketBeginSelector =
+    '.' + process['bracket.begin'].capture.className.split(' ').shift()
 
   const stringEl = process.quotes.string[0]
   const beginQuote = stringEl.className
@@ -254,15 +255,15 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
   const opacitySelectors = {
     'tag.begin': {
       selector: angleBracketSelector,
-      color: color(process.openTag.capture),
+      color: color(process['tag.begin'].capture),
     },
     lastComma: {
-      selector: lastChildSelector(process.lastComa.capture),
-      color: color(process.lastComa.capture),
+      selector: lastChildSelector(process.lastComma.capture),
+      color: color(process.lastComma.capture),
     },
     terminator: {
-      selector: lastChildSelector(process.lastSemicolon.capture),
-      color: color(process.lastSemicolon.capture),
+      selector: lastChildSelector(process.terminator.capture),
+      color: color(process.terminator.capture),
     },
     'string.begin': {
       selector: '.' + beginQuote,
@@ -276,20 +277,20 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 
   const colorsSelectorOnly = {
     'tag.entity': {
-      selector: `${lowerCaseTagSelector}`,
-      color: color(process.openTag.lowerCase),
+      selector: `${entityTagSelector}`,
+      color: color(process['tag.begin'].entity),
     },
     'tag.component': {
-      selector: `${upperCaseTagSelector}`,
-      color: color(process.openTag.upperCase),
+      selector: `${componentTagSelector}`,
+      color: color(process['tag.begin'].component),
     },
     comma: {
-      selector: classSelector(process.comaSeparator.capture),
-      color: color(process.comaSeparator.capture),
+      selector: classSelector(process.comma.capture),
+      color: color(process.comma.capture),
     },
     ternary: {
-      selector: classSelector(process.ternaryOperator.capture),
-      color: color(process.ternaryOperator.capture),
+      selector: classSelector(process.ternary.capture),
+      color: color(process.ternary.capture),
     },
   } satisfies PartialColorSelector
   type PartialColorSelector = Partial<
@@ -298,16 +299,16 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 
   const colorsOnly = {
     'tag.end': {
-      color: color(process.closeTag.capture),
+      color: color(process['tag.end'].capture),
     },
     text: {
       color: color(process.text.capture),
     },
     'bracket.begin': {
-      color: color(process.jsxBracket.capture),
+      color: color(process['bracket.begin'].capture),
     },
     'bracket.end': {
-      color: color(process.jsxBracket.capture),
+      color: color(process['bracket.begin'].capture),
     },
   } satisfies Partial<Record<textMateRulesNames, { color: string | undefined }>>
 
@@ -320,21 +321,21 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
   colorsTableOutput['' as textMateRulesNames]
 
   const selectorOnly = {
-    closingJsxElementLowerCase: {
-      selector: `${lowerCaseTagSelector}:has(+${angleBracketSelector}:last-child)`,
+    closingTagEntity: {
+      selector: `${entityTagSelector}:has(+${angleBracketSelector}:last-child)`,
     },
-    closingJsxElementUpperCase: {
-      selector: `${upperCaseTagSelector}:has(+${angleBracketSelector}:last-child)`,
+    closingTagComponent: {
+      selector: `${componentTagSelector}:has(+${angleBracketSelector}:last-child)`,
     },
-    singleQuotes: {
+    emptyQuote: {
       selector: `:is([class="${beginQuote}"]:has(+.${endQuote}), [class="${beginQuote}"]+.${endQuote})`,
     },
-    jsxBracket: {
-      selector: jsxBracketSelector,
+    bracketBegin: {
+      selector: bracketBeginSelector,
     },
     ternaryClosingBrace: {
-      selector: `${jsxBracketSelector}~${classSelector(
-        process.ternaryOperator.capture
+      selector: `${bracketBeginSelector}~${classSelector(
+        process.ternary.capture
       )}~[class*="bracket-highlighting-"]:last-child`,
     },
   }
@@ -344,8 +345,7 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
   }
   //#endregion
 
-  const line = 'div>span'
-  const root = `${linesSelector}>${line}`
+  const root = `${linesSelector}>${lineSelector}`
   const payload = {
     opacitySelectors,
     selectorOnly,
@@ -401,11 +401,11 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 				--r: 0;
 			}
 			.view-lines > div:hover,
-			${root}>${selectorOnly.singleQuotes.selector} {
+			${root}>${selectorOnly.emptyQuote.selector} {
 				--r: 1;
 			}
 			.view-lines:has(:is(${toUnion},${anyTagSelector}):hover),
-			.view-lines:has(${line}:hover ${ternaryOtherwiseSelector}) {
+			.view-lines:has(${lineSelector}:hover ${ternaryOtherwiseSelector}) {
 				--r: .5;
 			}
 			${root} :is(${toUnion}),
