@@ -388,15 +388,6 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
       const selectorValues = [...opacityValues, ...Object.values(selectorOnly)]
       const toUnion = selectorValues.map((f) => f.selector).join(',')
 
-      const toColorValue = [
-        ...opacityValues,
-        ...Object.values(colorSelectorOnly),
-      ].map(
-        (f) => `${root} ${f.selector} {
-							color: ${f.color};
-						}`
-      )
-
       return `
 			.view-lines {
 				--r: 0;
@@ -413,7 +404,6 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 			${root}:is(${ternaryOtherwise.scope}) {
 				opacity: var(--r);
 			}
-			${toColorValue.join('\n')}
 			`
     },
   }

@@ -669,7 +669,6 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, recursive
       await REC_nextWindowStateCycle(next, binary(next), usingContext, true);
     }).dispose;
 }
-let holding = false;
 async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   const { stores } = usingContext;
   if (stores.globalCalibration.read() != state.active) {
@@ -690,12 +689,12 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   calibrate_confirmation_task.consume();
   const taskProgress = withProgress();
   calibrate_confirmation_task.value = taskProgress.task;
-  holding = !holding;
-  const holdTo = holding ? () => hold(1e3) : () => Promise.resolve();
-  await holdTo();
   taskProgress.progress.report({ message: "calibrating extension" });
   testShortCircuitWindowState = true;
-  await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
+  const error = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
+  if (error instanceof Error) {
+    throw error;
+  }
   testShortCircuitWindowState = false;
   if (stores.windowState.read() != state.active && _item) {
     await defaultWindowState(_item, "active", stores.windowState);
@@ -712,36 +711,39 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
       return true;
     }
   });
-  await holdTo();
   taskProgress.progress.report({ message: "calibrating window" });
   if (calibrate_window_task.value) {
     throw new Error("calibrate_window_task is busy with a previous task");
   }
   calibrate_window_task.value = createTask();
+  await vscode__namespace.window.showInformationMessage("about to sync window", "ok");
   await checkCalibrateWindowCommandContext(state.active);
   await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
+  await vscode__namespace.window.showInformationMessage("about to check window task", "ok");
   if (!calibrate_window_task.value?.promise) {
     throw new Error("calibrate_window_task is undefined");
   }
+  let whyIsThisNotRejecting = false;
   const res = await Promise.race([
     calibrate_window_task.value.promise,
     new Promise((reject) => {
       setTimeout(() => {
+        whyIsThisNotRejecting = true;
         reject(new Error("calibrate_window_task timed out"));
       }, 5e3);
     })
   ]);
-  if (res instanceof Error) {
-    debugger;
-    throw res;
+  if (whyIsThisNotRejecting || res instanceof Error) {
+    throw res || new Error("calibrate_window_task timed out");
   }
-  await holdTo();
   taskProgress.progress.report({ message: "calibrating syntax and theme" });
-  await REC_nextWindowStateCycle(state.active, state.active, usingContext);
+  const error2 = await REC_nextWindowStateCycle(state.active, state.active, usingContext);
+  if (error2 instanceof Error) {
+    throw error2;
+  }
   await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
   calibrate_window_task.consume();
   await checkCalibrateWindowCommandContext(state.inactive);
-  await holdTo();
   taskProgress.progress.report({ message: "calibrated you may close the file" });
   setTimeout(() => {
     calibrate_confirmation_task.consume();
@@ -768,13 +770,17 @@ async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursi
     );
     busy = false;
   } catch (error) {
-    debugger;
-    crashedMessage = error?.message || "unknown";
-    _item.text = `$(error)` + iconText;
-    _item.tooltip = IState.encode(state.error);
-    _item.show();
-    disposeConfiguration.consume();
+    showCrashIcon(_item, error);
+    return error;
   }
+}
+function showCrashIcon(_item2, error) {
+  debugger;
+  crashedMessage = error?.message || "unknown";
+  _item2.text = `$(error)` + iconText;
+  _item2.tooltip = IState.encode(state.error);
+  _item2.show();
+  disposeConfiguration.consume();
 }
 let testShortCircuitWindowState = false;
 async function defaultWindowState(_item2, next, windowState) {
@@ -815,7 +821,10 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
     c_busy = false;
   } catch (error) {
     debugger;
-    calibrate_confirmation_task.value?.resolve();
+    if (_item) {
+      showCrashIcon(_item, error);
+    }
+    calibrate_confirmation_task.consume();
     testShortCircuitWindowState = false;
     await consume_close(_calibrate);
     vscode__namespace.window.showErrorMessage(
@@ -849,9 +858,17 @@ async function calibrateWindowCommandCycle(usingContext) {
             value.settings.foreground = rgbToHexDivergent(tableValue.color, divergence) ?? value.settings.foreground;
           }
         }
+        const begin = textMateRules.find(
+          (r) => r.name.includes("bracket.begin")
+        );
+        const end = textMateRules.find((r) => r.name.includes("bracket.end"));
+        if (begin && end) {
+          end.settings.foreground = begin.settings.foreground;
+        }
       }
     );
-    calibrate_window_task.consume();
+    await vscode__namespace.window.showInformationMessage("Calibrated window", "ok");
+    calibrate_window_task.value?.resolve();
   } catch (error) {
     vscode__namespace.window.showErrorMessage("Failed to parse window input");
     calibrate_window_task.value?.reject(

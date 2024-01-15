@@ -1483,14 +1483,6 @@ var __publicField = (obj, key, value) => {
         const opacityValues = Object.values(opacitySelectors2);
         const selectorValues = [...opacityValues, ...Object.values(selectorOnly2)];
         const toUnion = selectorValues.map((f) => f.selector).join(",");
-        const toColorValue = [
-          ...opacityValues,
-          ...Object.values(colorSelectorOnly)
-        ].map(
-          (f) => `${root} ${f.selector} {
-							color: ${f.color};
-						}`
-        );
         return `
 			.view-lines {
 				--r: 0;
@@ -1507,7 +1499,6 @@ var __publicField = (obj, key, value) => {
 			${root}:is(${ternaryOtherwise.scope}) {
 				opacity: var(--r);
 			}
-			${toColorValue.join("\n")}
 			`;
       }
     };
@@ -1633,26 +1624,34 @@ var __publicField = (obj, key, value) => {
   });
   async function fakeExecuteCommand(displayName, commandName, value) {
     try {
-      const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
-      await tap(view);
-      const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
-      await tap(commandPalletOption);
-      let input = document.querySelector("div.quick-input-box input");
+      let inputView = document.querySelector("li.action-item.command-center-center");
+      if (inputView) {
+        await tap(inputView);
+      } else {
+        const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
+        await tap(view);
+        const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
+        await tap(commandPalletOption);
+      }
+      let input = getInput();
       input.value = `>${displayName}`;
       await hold();
-      input = document.querySelector("div.quick-input-box input");
+      input = getInput();
       input.dispatchEvent(new Event("input"));
       await hold();
       const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
       command.click();
       await hold();
-      input = document.querySelector("div.quick-input-box input");
-      if (input.getAttribute("placeholder") != commandName) {
-        throw new Error("Failed to find command input element");
-      }
-      input.value = value;
-      input.dispatchEvent(new Event("input"));
-      await hold(100);
+      input = await tries(async () => {
+        const input2 = getInput();
+        if (input2.getAttribute("placeholder") != commandName) {
+          throw new Error("Failed to find command input element");
+        }
+        input2.value = value;
+        input2.dispatchEvent(new Event("input"));
+        await hold(100);
+        return input2;
+      }, 3);
       input.dispatchEvent(new KeyboardEvent("keydown", {
         key: "Enter",
         code: "Enter",
@@ -1668,6 +1667,21 @@ var __publicField = (obj, key, value) => {
       }
     } catch (error) {
       debugger;
+    }
+    function getInput() {
+      return document.querySelector("div.quick-input-box input");
+    }
+    async function tries(cb, n) {
+      let m = "";
+      for (let i = 0; i < n; i++) {
+        try {
+          return await cb();
+        } catch (error) {
+          m = error.message;
+          await hold(500);
+        }
+      }
+      throw new Error(m || `Failed to find command input element after ${n} tries`);
     }
     async function tap(el) {
       el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));

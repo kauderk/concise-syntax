@@ -177,7 +177,6 @@ async function REC_windowStateSandbox(
   }).dispose
 }
 
-let holding = false
 async function calibrateStateSandbox(
   uriRemote: vscode.Uri,
   usingContext: { stores: Stores; context: vscode.ExtensionContext },
@@ -208,16 +207,16 @@ async function calibrateStateSandbox(
   const taskProgress = withProgress()
   calibrate_confirmation_task.value = taskProgress.task
 
-  holding = !holding
-
-  const holdTo = holding ? () => hold(1_000) : () => Promise.resolve()
-  await holdTo()
   taskProgress.progress.report({ message: 'calibrating extension' })
 
   // FIXME: get me out of here
   testShortCircuitWindowState = true
   // update the settings before showing the calibration file and risking the user to close it while the procedure is waiting
-  await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext)
+  // prettier-ignore
+  const error = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext)
+  if (error instanceof Error) {
+    throw error
+  }
   testShortCircuitWindowState = false
   if (stores.windowState.read() != state.active && _item) {
     // this would be a cold start or a restart...
@@ -238,38 +237,43 @@ async function calibrateStateSandbox(
     }
   })
 
-  await holdTo()
   taskProgress.progress.report({ message: 'calibrating window' })
 
   if (calibrate_window_task.value) {
     throw new Error('calibrate_window_task is busy with a previous task')
   }
   calibrate_window_task.value = createTask()
+  await vscode.window.showInformationMessage('about to sync window', 'ok')
   await checkCalibrateWindowCommandContext(state.active)
 
   await tryUpdateCalibrateState(calibrate.opened, _calibrate, 1500)
 
+  await vscode.window.showInformationMessage('about to check window task', 'ok')
   if (!calibrate_window_task.value?.promise) {
     throw new Error('calibrate_window_task is undefined')
   }
+  let whyIsThisNotRejecting = false
   const res = await Promise.race([
     calibrate_window_task.value.promise,
     new Promise((reject) => {
       setTimeout(() => {
+        whyIsThisNotRejecting = true
         reject(new Error('calibrate_window_task timed out'))
       }, 5_000)
     }),
   ])
-  if (res instanceof Error) {
-    debugger
-    throw res
+  if (whyIsThisNotRejecting || res instanceof Error) {
+    throw res || new Error('calibrate_window_task timed out')
   }
 
-  await holdTo()
   taskProgress.progress.report({ message: 'calibrating syntax and theme' })
 
   // then update the settings with the extension's textMateRules
-  await REC_nextWindowStateCycle(state.active, state.active, usingContext)
+  // prettier-ignore
+  const error2 = await REC_nextWindowStateCycle(state.active, state.active, usingContext)
+  if (error2 instanceof Error) {
+    throw error2
+  }
 
   // then notify the window the calibration is done
   // FIXME: the window should trigger this event
@@ -278,7 +282,6 @@ async function calibrateStateSandbox(
   calibrate_window_task.consume()
   await checkCalibrateWindowCommandContext(state.inactive)
 
-  await holdTo()
   taskProgress.progress.report({ message: 'calibrated you may close the file' })
 
   setTimeout(() => {
@@ -318,13 +321,17 @@ async function REC_nextWindowStateCycle(
 
     busy = false
   } catch (error: any) {
-    debugger
-    crashedMessage = error?.message || 'unknown'
-    _item.text = `$(error)` + iconText
-    _item.tooltip = IState.encode(state.error)
-    _item.show()
-    disposeConfiguration.consume()
+    showCrashIcon(_item, error)
+    return error as Error
   }
+}
+function showCrashIcon(_item: vscode.StatusBarItem, error: any) {
+  debugger
+  crashedMessage = error?.message || 'unknown'
+  _item.text = `$(error)` + iconText
+  _item.tooltip = IState.encode(state.error)
+  _item.show()
+  disposeConfiguration.consume()
 }
 let testShortCircuitWindowState = false
 async function defaultWindowState(
@@ -381,7 +388,10 @@ async function calibrateCommandCycle(
     c_busy = false
   } catch (error: any) {
     debugger
-    calibrate_confirmation_task.value?.resolve()
+    if (_item) {
+      showCrashIcon(_item, error)
+    }
+    calibrate_confirmation_task.consume()
     testShortCircuitWindowState = false
     await consume_close(_calibrate)
     vscode.window.showErrorMessage(
@@ -411,6 +421,7 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
         const len = textMateRules.length
         for (let i = 0; i < len; i++) {
           const value = textMateRules[i]
+          // @ts-expect-error
           const tableValue = table[value.name.replace(nameSuffix, '')]
           if (tableValue && tableValue.color) {
             // prettier-ignore
@@ -421,10 +432,18 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
               value.settings.foreground
           }
         }
+        const begin = textMateRules.find((r) =>
+          r.name.includes('bracket.begin')
+        )
+        const end = textMateRules.find((r) => r.name.includes('bracket.end'))
+        if (begin && end) {
+          end.settings.foreground = begin.settings.foreground
+        }
       }
     )
 
-    calibrate_window_task.consume()
+    await vscode.window.showInformationMessage('Calibrated window', 'ok')
+    calibrate_window_task.value?.resolve()
   } catch (error: any) {
     vscode.window.showErrorMessage('Failed to parse window input')
     calibrate_window_task.value?.reject(

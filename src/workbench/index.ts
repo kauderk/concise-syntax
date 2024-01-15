@@ -81,26 +81,34 @@ const createCalibrateSubscription = () =>
 // prettier-ignore
 async function fakeExecuteCommand(displayName: string, commandName: string, value: string) {
   try {
-  const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`) as H
-  await tap(view)
-  const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`) as H
-  await tap(commandPalletOption)
-  let input = document.querySelector("div.quick-input-box input") as H
+  let inputView = document.querySelector("li.action-item.command-center-center") as H
+  if (inputView){
+    await tap(inputView)
+  } else {
+    const view: H = document.querySelector(`.menubar-menu-button[aria-label="View"]`) as H
+    await tap(view)
+    const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`) as H
+    await tap(commandPalletOption)
+  }
+  let input = getInput();
   input.value = `>${displayName}`
   await hold()
-  input = document.querySelector("div.quick-input-box input") as H
+  input = getInput();
   input.dispatchEvent(new Event('input'))
   await hold()
   const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`) as H
   command.click()
   await hold()
-  input = document.querySelector("div.quick-input-box input") as H
-  if (input.getAttribute('placeholder') != commandName) {
-    throw new Error('Failed to find command input element')
-  }
-  input.value = value
-  input.dispatchEvent(new Event('input'))
-  await hold(100)
+  input = await tries(async ()=>{
+    const input = getInput();
+    if (input.getAttribute('placeholder') != commandName) {
+      throw new Error('Failed to find command input element')
+    }
+    input.value = value
+    input.dispatchEvent(new Event('input'))
+    await hold(100)
+    return input
+  }, 3)
   input.dispatchEvent(new KeyboardEvent('keydown', {
     key: 'Enter',
     code: 'Enter',
@@ -120,6 +128,22 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
     debugger
   }
   type H = HTMLInputElement
+
+  function getInput() {
+    return document.querySelector("div.quick-input-box input") as H
+  }
+  async function tries(cb:()=>Promise<H>, n:number){
+    let m = ''
+    for (let i = 0; i < n; i++) {
+      try {
+        return await cb()
+      } catch (error) {
+        m = error.message
+        await hold(500)
+      }
+    }
+    throw new Error(m || `Failed to find command input element after ${n} tries`)
+  }
   async function tap(el:H) {
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
     await hold()
