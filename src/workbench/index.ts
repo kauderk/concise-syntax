@@ -56,7 +56,8 @@ const createCalibrateSubscription = () =>
           toastConsole.error('Failed to execute Calibrate Window command')
         })
         previous_style_color_table_snapshot = res.payload
-        // FIXME: here is where the window should send a message to extension to go to the next state
+        // FIXME: here is where the window should resolve the 'Calibrate Window' task
+        // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
         return
       }
       if (!previous_style_color_table_snapshot) {
@@ -79,7 +80,6 @@ const createCalibrateSubscription = () =>
   })
 // prettier-ignore
 async function fakeExecuteCommand(displayName: string, commandName: string, value: string) {
-  try {
   let inputView = document.querySelector("li.action-item.command-center-center") as H
   if (inputView){
     await tap(inputView)
@@ -123,9 +123,6 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
     return true
   }
 
-  } catch (error) {
-    debugger
-  }
   type H = HTMLInputElement
 
   function getInput() {

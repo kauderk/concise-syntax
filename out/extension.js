@@ -572,9 +572,6 @@ async function ExtensionState_statusBarItem(context, setState) {
   await stores.windowState.write(setState);
   const usingContext = { stores, context };
   checkDisposedCommandContext(setState);
-  if (setState == state.disposed) {
-    debugger;
-  }
   if (_item) {
     return REC_nextWindowStateCycle(setState, binary(setState), usingContext);
   }
@@ -616,15 +613,11 @@ async function ExtensionState_statusBarItem(context, setState) {
 }
 async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRecursiveDiff) {
   const { stores, context, _item: _item2 } = usingContext;
-  if (stores.calibrationState.read() != state.active) {
-    await defaultWindowState(_item2, state.stale, stores.windowState);
-    return;
-  }
   _item2.text = `$(${statusIconLoading})` + iconText;
   const cache = await updateSettingsCycle(context, settings);
   if (typeof cache == "function") {
     if (await invalidRecursiveDiff?.(cache)) {
-      return;
+      return "invalid recursive diff";
     }
     const task = createTask();
     const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
@@ -680,6 +673,11 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRe
         }
       );
     }).dispose;
+  if (cache === true) {
+    return "cached";
+  } else {
+    return "invalidated";
+  }
 }
 async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   const { stores } = usingContext;
@@ -698,16 +696,14 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   } else {
     checkCalibratedCommandContext(state.active, stores.calibrationState);
   }
-  calibrate_confirmation_task.consume();
   const taskProgress = withProgress();
   calibrate_confirmation_task.value = taskProgress.task;
   taskProgress.progress.report({ message: "calibrating extension" });
-  testShortCircuitWindowState = true;
-  const error = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
-  if (error instanceof Error) {
-    throw error;
-  }
-  testShortCircuitWindowState = false;
+  annoyance = true;
+  const res1 = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
+  annoyance = false;
+  if (res1 instanceof Error)
+    throw res1;
   if (stores.windowState.read() != state.active && _item) {
     await defaultWindowState(_item, "active", stores.windowState);
   }
@@ -735,41 +731,44 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
       }, 5e3)
     )
   ]);
-  if (race instanceof Error) {
+  if (race instanceof Error)
     throw race;
-  }
   taskProgress.progress.report({ message: "calibrating syntax and theme" });
   const error2 = await REC_nextWindowStateCycle(state.active, state.active, usingContext);
-  if (error2 instanceof Error) {
+  if (error2 instanceof Error)
     throw error2;
-  }
-  await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
   calibrate_window_task.consume();
   await checkCalibrateWindowCommandContext(state.inactive);
+  await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
   taskProgress.progress.report({ message: "calibrated you may close the file" });
-  setTimeout(() => {
-    calibrate_confirmation_task.consume();
-  }, 5e3);
+  setTimeout(calibrate_confirmation_task.consume, 5e3);
 }
 async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursiveDiff) {
   if (!_item) {
-    vscode__namespace.window.showErrorMessage("No status bar item found");
-    return;
+    const r = "No status bar item found";
+    vscode__namespace.window.showErrorMessage(r);
+    return r;
   } else if (crashedMessage) {
     vscode__namespace.window.showErrorMessage(
       `The extension crashed when updating .vscode/settings.json with property ${key}.textMateRules with error: ${crashedMessage}`
     );
-    return;
+    return "crashed";
+  }
+  const { stores } = usingContext;
+  if (stores.calibrationState.read() != state.active) {
+    await defaultWindowState(_item, state.stale, stores.windowState);
+    return "not calibrated";
   }
   try {
     busy = true;
-    await REC_windowStateSandbox(
+    const res = await REC_windowStateSandbox(
       tryNext,
       settings,
       Object.assign(usingContext, { _item }),
       recursiveDiff
     );
     busy = false;
+    return res;
   } catch (error) {
     showCrashIcon(_item, error);
     return error;
@@ -784,9 +783,9 @@ function showCrashIcon(_item2, error) {
   _calibrate?.hide();
   disposeConfiguration.consume();
 }
-let testShortCircuitWindowState = false;
+let annoyance = false;
 async function defaultWindowState(_item2, next, windowState) {
-  if (testShortCircuitWindowState)
+  if (annoyance)
     return;
   await windowState.write(next);
   _item2.text = `$(${stateIcon})` + iconText;
@@ -835,7 +834,6 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
       showCrashIcon(_item, error);
     }
     calibrate_confirmation_task.consume();
-    testShortCircuitWindowState = false;
     await consume_close(_calibrate);
     vscode__namespace.window.showErrorMessage(
       `Error: failed to open calibrate file -> ${error?.message}`

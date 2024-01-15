@@ -52,15 +52,6 @@ export async function ExtensionState_statusBarItem(
   const usingContext = { stores, context }
   checkDisposedCommandContext(setState)
 
-  if (setState == state.disposed) {
-    debugger
-    // await updateSettingsCycle(context, state.inactive).catch(() => {
-    //   vscode.window.showErrorMessage(
-    //     'Failed to remove textMateRules in .vscode/settings.json'
-    //   )
-    // })
-    // _item?.hide()
-  }
   if (_item) {
     return REC_nextWindowStateCycle(setState, binary(setState), usingContext)
   }
@@ -118,17 +109,12 @@ async function REC_windowStateSandbox(
 ) {
   const { stores, context, _item } = usingContext
 
-  if (stores.calibrationState.read() != state.active) {
-    await defaultWindowState(_item, state.stale, stores.windowState)
-    return
-  }
-
   _item.text = `$(${statusIconLoading})` + iconText
   const cache = await updateSettingsCycle(context, settings)
 
   if (typeof cache == 'function') {
     if (await invalidRecursiveDiff?.(cache)) {
-      return
+      return 'invalid recursive diff'
     }
     const task = createTask()
     const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
@@ -193,6 +179,12 @@ async function REC_windowStateSandbox(
         )
       })
   }).dispose
+
+  if (cache === true) {
+    return 'cached'
+  } else {
+    return 'invalidated'
+  }
 }
 
 async function calibrateStateSandbox(
@@ -221,21 +213,16 @@ async function calibrateStateSandbox(
     checkCalibratedCommandContext(state.active, stores.calibrationState)
   }
 
-  calibrate_confirmation_task.consume()
   const taskProgress = withProgress()
   calibrate_confirmation_task.value = taskProgress.task
 
   taskProgress.progress.report({ message: 'calibrating extension' })
-
-  // FIXME: get me out of here
-  testShortCircuitWindowState = true
   // update the settings before showing the calibration file and risking the user to close it while the procedure is waiting
+  annoyance = true
   // prettier-ignore
-  const error = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext)
-  if (error instanceof Error) {
-    throw error
-  }
-  testShortCircuitWindowState = false
+  const res1 = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext)
+  annoyance = false
+  if (res1 instanceof Error) throw res1
   if (stores.windowState.read() != state.active && _item) {
     // this would be a cold start or a restart...
     await defaultWindowState(_item, 'active', stores.windowState)
@@ -247,7 +234,6 @@ async function calibrateStateSandbox(
     preview: false,
     preserveFocus: false,
   })
-
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
     if (doc.uri.path === uriRemote.path || editor.document.isClosed) {
       await consume_close(_calibrate)
@@ -256,10 +242,8 @@ async function calibrateStateSandbox(
   })
 
   taskProgress.progress.report({ message: 'calibrating window' })
-
   calibrate_window_task.value = createTask()
   await checkCalibrateWindowCommandContext(state.active)
-
   await tryUpdateCalibrateState(calibrate.opened, _calibrate, 1500)
 
   const race = await Promise.race([
@@ -270,31 +254,20 @@ async function calibrateStateSandbox(
       }, 5_000)
     ),
   ])
-  if (race instanceof Error) {
-    throw race
-  }
-
+  if (race instanceof Error) throw race
   taskProgress.progress.report({ message: 'calibrating syntax and theme' })
-
-  // then update the settings with the extension's textMateRules
   // prettier-ignore
   const error2 = await REC_nextWindowStateCycle(state.active, state.active, usingContext)
-  if (error2 instanceof Error) {
-    throw error2
-  }
-
-  // then notify the window the calibration is done
-  // FIXME: the window should trigger this event
-  await tryUpdateCalibrateState(calibrate.idle, _calibrate, 500)
+  if (error2 instanceof Error) throw error2
 
   calibrate_window_task.consume()
+  // FIXME: the window should trigger the 'Calibrate Window' task
+  // take a look at src/workbench/index.ts createCalibrateSubscription's "state == calibrate.opened" branch
   await checkCalibrateWindowCommandContext(state.inactive)
-
+  await tryUpdateCalibrateState(calibrate.idle, _calibrate, 500)
   taskProgress.progress.report({ message: 'calibrated you may close the file' })
 
-  setTimeout(() => {
-    calibrate_confirmation_task.consume()
-  }, 5_000)
+  setTimeout(calibrate_confirmation_task.consume, 5_000)
 }
 
 //#region module
@@ -306,19 +279,25 @@ async function REC_nextWindowStateCycle(
   recursiveDiff?: RecursiveDiff
 ) {
   if (!_item) {
-    vscode.window.showErrorMessage('No status bar item found')
-    return
+    const r = 'No status bar item found'
+    vscode.window.showErrorMessage(r)
+    return r
   } else if (crashedMessage) {
     vscode.window.showErrorMessage(
       `The extension crashed when updating .vscode/settings.json with property ${key}.textMateRules with error: ${crashedMessage}`
     )
-    return
+    return 'crashed'
+  }
+  const { stores } = usingContext
+  if (stores.calibrationState.read() != state.active) {
+    await defaultWindowState(_item, state.stale, stores.windowState)
+    return 'not calibrated'
   }
 
   try {
     busy = true
 
-    await REC_windowStateSandbox(
+    const res = await REC_windowStateSandbox(
       tryNext,
       settings,
       Object.assign(usingContext, { _item }),
@@ -326,6 +305,7 @@ async function REC_nextWindowStateCycle(
     )
 
     busy = false
+    return res
   } catch (error: any) {
     showCrashIcon(_item, error)
     return error as Error
@@ -340,14 +320,15 @@ function showCrashIcon(_item: vscode.StatusBarItem, error: any) {
   _calibrate?.hide()
   disposeConfiguration.consume()
 }
-let testShortCircuitWindowState = false
+// Prevent rare annoying flickering on editors when the workbench observers trigger their inactive states
+// I won't create an abstraction on top of REC_nextWindowStateCycle to handle this case because it is too specific
+let annoyance = false
 async function defaultWindowState(
   _item: vscode.StatusBarItem,
   next: State,
   windowState: Stores['windowState']
 ) {
-  if (testShortCircuitWindowState) return
-
+  if (annoyance) return
   await windowState.write(next)
   _item.text = `$(${stateIcon})` + iconText
   _item.tooltip = IState.encode(next)
@@ -407,7 +388,6 @@ async function calibrateCommandCycle(
       showCrashIcon(_item, error)
     }
     calibrate_confirmation_task.consume()
-    testShortCircuitWindowState = false
     await consume_close(_calibrate)
     vscode.window.showErrorMessage(
       `Error: failed to open calibrate file -> ${error?.message}`

@@ -1635,50 +1635,46 @@ var __publicField = (obj, key, value) => {
     }
   });
   async function fakeExecuteCommand(displayName, commandName, value) {
-    try {
-      let inputView = document.querySelector("li.action-item.command-center-center");
-      if (inputView) {
-        await tap(inputView);
-      } else {
-        const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
-        await tap(view);
-        const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
-        await tap(commandPalletOption);
+    let inputView = document.querySelector("li.action-item.command-center-center");
+    if (inputView) {
+      await tap(inputView);
+    } else {
+      const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
+      await tap(view);
+      const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
+      await tap(commandPalletOption);
+    }
+    let input = getInput();
+    input.value = `>${displayName}`;
+    await hold();
+    input = getInput();
+    input.dispatchEvent(new Event("input"));
+    await hold();
+    const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
+    command.click();
+    await hold();
+    input = await tries(async () => {
+      const input2 = getInput();
+      if (input2.getAttribute("placeholder") != commandName) {
+        throw new Error("Failed to find command input element");
       }
-      let input = getInput();
-      input.value = `>${displayName}`;
-      await hold();
-      input = getInput();
-      input.dispatchEvent(new Event("input"));
-      await hold();
-      const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
-      command.click();
-      await hold();
-      input = await tries(async () => {
-        const input2 = getInput();
-        if (input2.getAttribute("placeholder") != commandName) {
-          throw new Error("Failed to find command input element");
-        }
-        input2.value = value;
-        input2.dispatchEvent(new Event("input"));
-        await hold(100);
-        return input2;
-      }, 3);
-      input.dispatchEvent(new KeyboardEvent("keydown", {
-        key: "Enter",
-        code: "Enter",
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true,
-        composed: true
-      }));
-      await hold();
-      if (command) {
-        return true;
-      }
-    } catch (error) {
-      debugger;
+      input2.value = value;
+      input2.dispatchEvent(new Event("input"));
+      await hold(100);
+      return input2;
+    }, 3);
+    input.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    }));
+    await hold();
+    if (command) {
+      return true;
     }
     function getInput() {
       return document.querySelector("div.quick-input-box input");
