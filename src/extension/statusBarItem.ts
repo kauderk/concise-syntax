@@ -52,6 +52,15 @@ export async function ExtensionState_statusBarItem(
   const usingContext = { stores, context }
   checkDisposedCommandContext(setState)
 
+  if (setState == state.disposed) {
+    debugger
+    // await updateSettingsCycle(context, state.inactive).catch(() => {
+    //   vscode.window.showErrorMessage(
+    //     'Failed to remove textMateRules in .vscode/settings.json'
+    //   )
+    // })
+    // _item?.hide()
+  }
   if (_item) {
     return REC_nextWindowStateCycle(setState, binary(setState), usingContext)
   }
@@ -239,31 +248,21 @@ async function calibrateStateSandbox(
 
   taskProgress.progress.report({ message: 'calibrating window' })
 
-  if (calibrate_window_task.value) {
-    throw new Error('calibrate_window_task is busy with a previous task')
-  }
   calibrate_window_task.value = createTask()
-  await vscode.window.showInformationMessage('about to sync window', 'ok')
   await checkCalibrateWindowCommandContext(state.active)
 
   await tryUpdateCalibrateState(calibrate.opened, _calibrate, 1500)
 
-  await vscode.window.showInformationMessage('about to check window task', 'ok')
-  if (!calibrate_window_task.value?.promise) {
-    throw new Error('calibrate_window_task is undefined')
-  }
-  let whyIsThisNotRejecting = false
-  const res = await Promise.race([
+  const race = await Promise.race([
     calibrate_window_task.value.promise,
-    new Promise((reject) => {
+    new Promise((reject) =>
       setTimeout(() => {
-        whyIsThisNotRejecting = true
         reject(new Error('calibrate_window_task timed out'))
       }, 5_000)
-    }),
+    ),
   ])
-  if (whyIsThisNotRejecting || res instanceof Error) {
-    throw res || new Error('calibrate_window_task timed out')
+  if (race instanceof Error) {
+    throw race
   }
 
   taskProgress.progress.report({ message: 'calibrating syntax and theme' })
@@ -331,6 +330,7 @@ function showCrashIcon(_item: vscode.StatusBarItem, error: any) {
   _item.text = `$(error)` + iconText
   _item.tooltip = IState.encode(state.error)
   _item.show()
+  _calibrate?.hide()
   disposeConfiguration.consume()
 }
 let testShortCircuitWindowState = false
@@ -349,8 +349,10 @@ async function defaultWindowState(
   await hold(failure ? 1000 : 100)
 
   if (failure) {
+    _calibrate?.hide()
     _item.hide()
   } else {
+    _calibrate?.show()
     _item.show()
   }
 }
@@ -376,6 +378,12 @@ async function calibrateCommandCycle(
     // and the user wants to run this command again, the message is unclear...
     vscode.window.showInformationMessage(
       'The extension is busy. Try again in a few seconds.'
+    )
+    return
+  }
+  if (calibrate_window_task.value) {
+    vscode.window.showInformationMessage(
+      'The extension is busy with a window task. Try again later'
     )
     return
   }
@@ -442,7 +450,6 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
       }
     )
 
-    await vscode.window.showInformationMessage('Calibrated window', 'ok')
     calibrate_window_task.value?.resolve()
   } catch (error: any) {
     vscode.window.showErrorMessage('Failed to parse window input')
@@ -490,12 +497,8 @@ async function toggleCommandCycle(usingContext: UsingContext) {
 }
 
 function defaultCalibrate(_calibrate: vscode.StatusBarItem) {
-  // prettier-ignore
-
   _calibrate.text = `$(${calibrateIcon})`
   _calibrate.tooltip = 'bootUp'
-  // FIXME: show _calibrate only when the extension is active
-  _calibrate.show()
 }
 
 function consume_close(_calibrate: vscode.StatusBarItem) {
@@ -507,7 +510,7 @@ function tryUpdateCalibrateState(
   _calibrate: vscode.StatusBarItem,
   t = 100
 ) {
-  _calibrate!.tooltip = state
+  _calibrate.tooltip = state
   return hold(t)
 }
 

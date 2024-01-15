@@ -3,10 +3,9 @@ import { createHighlightLifeCycle } from './highlight'
 import { extensionId, viewLinesSelector } from './keys'
 import { IState, State, calibrationFileName, state } from 'src/shared/state'
 import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
-import { createStyles, toastConsole } from './shared'
+import { addRemoveRootStyles, createStyles, toastConsole } from './shared'
 import { parseSymbolColors } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
-import { or_return } from '../shared/or_return'
 import { deltaFn } from 'src/shared/utils'
 import { createTryFunction } from './lifecycle'
 import { type calibrateWIndowPlaceholder } from 'src/extension/statusBarItem'
@@ -132,12 +131,12 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
   function getInput() {
     return document.querySelector("div.quick-input-box input") as H
   }
-  async function tries(cb:()=>Promise<H>, n:number){
+  async function tries(cb:()=>Promise<H>, n: number){
     let m = ''
     for (let i = 0; i < n; i++) {
       try {
         return await cb()
-      } catch (error) {
+      } catch (error: any) {
         m = error.message
         await hold(500)
       }
@@ -166,6 +165,7 @@ const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
       if (!calibration.running) {
+        addRemoveRootStyles(true)
         calibration.activate(500)
         let unSubscribers = [createCalibrateSubscription()]
 
@@ -178,6 +178,7 @@ const createStateSubscription = () =>
         return () => unSubscribers.forEach((un) => un())
       }
     } else {
+      addRemoveRootStyles(false)
       syntaxStyle.dispose()
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow
       calibration.dispose()
@@ -211,6 +212,7 @@ const conciseSyntax = {
 // prettier-ignore
 declare global { interface Window { conciseSyntax?: typeof conciseSyntax } }
 if (window.conciseSyntax) {
+  debugger
   window.conciseSyntax.dispose()
 }
 window.conciseSyntax = conciseSyntax

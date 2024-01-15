@@ -9,6 +9,7 @@ var __publicField = (obj, key, value) => {
 };
 
   const extensionId = "kauderk.concise-syntax";
+  const extensionScriptSrc = extensionId + ".js";
   const windowId = "window." + extensionId;
   const bridgeBetweenVscodeExtension = "aria-label";
   const editorSelector = ".editor-instance";
@@ -347,7 +348,18 @@ var __publicField = (obj, key, value) => {
   const minifiedCss = `.toastify{padding:12px 20px;color:#fff;display:inline-block;box-shadow:0 3px 6px -1px rgba(0,0,0,.12),0 10px 36px -4px rgba(77,96,232,.3);background:-webkit-linear-gradient(315deg,#73a5ff,#5477f5);background:linear-gradient(135deg,#73a5ff,#5477f5);position:fixed;opacity:0;transition:all .4s cubic-bezier(.215, .61, .355, 1);border-radius:2px;cursor:pointer;text-decoration:none;max-width:calc(50% - 20px);z-index:2147483647}.toastify.on{opacity:1}.toast-close{background:0 0;border:0;color:#fff;cursor:pointer;font-family:inherit;font-size:1em;opacity:.4;padding:0 5px}.toastify-right{right:15px}.toastify-left{left:15px}.toastify-top{top:-150px}.toastify-bottom{bottom:-150px}.toastify-rounded{border-radius:25px}.toastify-avatar{width:1.5em;height:1.5em;margin:-7px 5px;border-radius:2px}.toastify-center{margin-left:auto;margin-right:auto;left:0;right:0;max-width:fit-content;max-width:-moz-fit-content}@media only screen and (max-width:360px){.toastify-left,.toastify-right{margin-left:auto;margin-right:auto;left:0;right:0;max-width:fit-content}}`;
   const stylesContainer = document.getElementById(windowId) ?? document.createElement("div");
   stylesContainer.id = windowId;
-  document.body.appendChild(stylesContainer);
+  const workbenchScript = document.querySelector(`[src*="${extensionScriptSrc}"]`);
+  workbenchScript == null ? void 0 : workbenchScript.setAttribute("state", "stale");
+  document.head.appendChild(workbenchScript);
+  function addRemoveRootStyles(add) {
+    if (add) {
+      workbenchScript == null ? void 0 : workbenchScript.setAttribute("state", "active");
+      document.head.appendChild(stylesContainer);
+    } else {
+      workbenchScript == null ? void 0 : workbenchScript.setAttribute("state", "inactive");
+      stylesContainer.remove();
+    }
+  }
   const levels = {
     log: {
       background: "linear-gradient(to right, #292d3e, #31364a)",
@@ -1701,6 +1713,7 @@ var __publicField = (obj, key, value) => {
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
       if (!calibration.running) {
+        addRemoveRootStyles(true);
         calibration.activate(500);
         let unSubscribers = [createCalibrateSubscription()];
         cacheProc();
@@ -1711,6 +1724,7 @@ var __publicField = (obj, key, value) => {
         return () => unSubscribers.forEach((un) => un());
       }
     } else {
+      addRemoveRootStyles(false);
       syntaxStyle.dispose();
       highlight.dispose();
       calibration.dispose();
@@ -1739,6 +1753,7 @@ var __publicField = (obj, key, value) => {
     dispose: deltaDispose.consume
   };
   if (window.conciseSyntax) {
+    debugger;
     window.conciseSyntax.dispose();
   }
   window.conciseSyntax = conciseSyntax;

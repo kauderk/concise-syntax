@@ -4,8 +4,7 @@ import packageJson from '../../package.json'
 
 // FIXME: find a way to compile only the properties that are being used
 export { extensionId } from '../workbench/keys'
-import { extensionId } from '../workbench/keys'
-export const extensionScriptSrc = extensionId + '.js'
+import { extensionScriptSrc, extensionId } from '../workbench/keys'
 export const extensionScriptTag = () =>
   new RegExp(
     `<script.+${extensionId.replaceAll('.', '\\.')}.+\/script>`,

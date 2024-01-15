@@ -1,11 +1,23 @@
-import { windowId } from './keys'
+import { windowId, extensionScriptSrc } from './keys'
 import { Toastify, minifiedCss } from '../shared/toast.js'
 import { deltaFn } from 'src/shared/utils'
 
 export const stylesContainer =
   document.getElementById(windowId) ?? document.createElement('div')
 stylesContainer.id = windowId
-document.body.appendChild(stylesContainer)
+const workbenchScript = document.querySelector(`[src*="${extensionScriptSrc}"]`)
+workbenchScript?.setAttribute('state', 'stale')
+document.head.appendChild(workbenchScript!) // just fail... why not?
+
+export function addRemoveRootStyles(add: boolean) {
+  if (add) {
+    workbenchScript?.setAttribute('state', 'active')
+    document.head.appendChild(stylesContainer)
+  } else {
+    workbenchScript?.setAttribute('state', 'inactive')
+    stylesContainer.remove()
+  }
+}
 
 const levels = {
   log: {

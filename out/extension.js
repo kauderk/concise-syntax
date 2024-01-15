@@ -572,6 +572,9 @@ async function ExtensionState_statusBarItem(context, setState) {
   await stores.windowState.write(setState);
   const usingContext = { stores, context };
   checkDisposedCommandContext(setState);
+  if (setState == state.disposed) {
+    debugger;
+  }
   if (_item) {
     return REC_nextWindowStateCycle(setState, binary(setState), usingContext);
   }
@@ -672,12 +675,12 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, recursive
 async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   const { stores } = usingContext;
   if (stores.globalCalibration.read() != state.active) {
-    const res2 = await vscode__namespace.window.showInformationMessage(
+    const res = await vscode__namespace.window.showInformationMessage(
       "The Concise Syntax extension will add/remove textMateRules in .vscode/settings.json to sync up with the window state.       Do you want to continue?",
       "Yes and remember",
       "No and deactivate"
     );
-    const next = res2?.includes("Yes") ? state.active : state.inactive;
+    const next = res?.includes("Yes") ? state.active : state.inactive;
     await stores.globalCalibration.write(next);
     checkCalibratedCommandContext(next, stores.calibrationState);
     if (next == state.inactive && stores.windowState.read() != state.active) {
@@ -712,29 +715,19 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
     }
   });
   taskProgress.progress.report({ message: "calibrating window" });
-  if (calibrate_window_task.value) {
-    throw new Error("calibrate_window_task is busy with a previous task");
-  }
   calibrate_window_task.value = createTask();
-  await vscode__namespace.window.showInformationMessage("about to sync window", "ok");
   await checkCalibrateWindowCommandContext(state.active);
   await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
-  await vscode__namespace.window.showInformationMessage("about to check window task", "ok");
-  if (!calibrate_window_task.value?.promise) {
-    throw new Error("calibrate_window_task is undefined");
-  }
-  let whyIsThisNotRejecting = false;
-  const res = await Promise.race([
+  const race = await Promise.race([
     calibrate_window_task.value.promise,
-    new Promise((reject) => {
-      setTimeout(() => {
-        whyIsThisNotRejecting = true;
+    new Promise(
+      (reject) => setTimeout(() => {
         reject(new Error("calibrate_window_task timed out"));
-      }, 5e3);
-    })
+      }, 5e3)
+    )
   ]);
-  if (whyIsThisNotRejecting || res instanceof Error) {
-    throw res || new Error("calibrate_window_task timed out");
+  if (race instanceof Error) {
+    throw race;
   }
   taskProgress.progress.report({ message: "calibrating syntax and theme" });
   const error2 = await REC_nextWindowStateCycle(state.active, state.active, usingContext);
@@ -780,6 +773,7 @@ function showCrashIcon(_item2, error) {
   _item2.text = `$(error)` + iconText;
   _item2.tooltip = IState.encode(state.error);
   _item2.show();
+  _calibrate?.hide();
   disposeConfiguration.consume();
 }
 let testShortCircuitWindowState = false;
@@ -792,8 +786,10 @@ async function defaultWindowState(_item2, next, windowState) {
   const failure = next == state.disposed || next == state.stale || next == state.error;
   await hold(failure ? 1e3 : 100);
   if (failure) {
+    _calibrate?.hide();
     _item2.hide();
   } else {
+    _calibrate?.show();
     _item2.show();
   }
 }
@@ -812,6 +808,12 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
   if (c_busy || busy) {
     vscode__namespace.window.showInformationMessage(
       "The extension is busy. Try again in a few seconds."
+    );
+    return;
+  }
+  if (calibrate_window_task.value) {
+    vscode__namespace.window.showInformationMessage(
+      "The extension is busy with a window task. Try again later"
     );
     return;
   }
@@ -867,7 +869,6 @@ async function calibrateWindowCommandCycle(usingContext) {
         }
       }
     );
-    await vscode__namespace.window.showInformationMessage("Calibrated window", "ok");
     calibrate_window_task.value?.resolve();
   } catch (error) {
     vscode__namespace.window.showErrorMessage("Failed to parse window input");
@@ -913,7 +914,6 @@ async function toggleCommandCycle(usingContext) {
 function defaultCalibrate(_calibrate2) {
   _calibrate2.text = `$(${calibrateIcon})`;
   _calibrate2.tooltip = "bootUp";
-  _calibrate2.show();
 }
 function consume_close(_calibrate2) {
   disposeClosedEditor.consume();

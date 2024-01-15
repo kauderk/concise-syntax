@@ -1,4 +1,5 @@
 export const extensionId = 'kauderk.concise-syntax'
+export const extensionScriptSrc = extensionId + '.js'
 export const windowId = 'window.' + extensionId
 // exploit the fact that vscode renders data to the dom, could be any other attribute
 export const bridgeBetweenVscodeExtension = 'aria-label'
