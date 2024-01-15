@@ -29,6 +29,8 @@ function cacheProc() {
 const calibrateStyle = createStyles('calibrate')
 calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
 
+const calibrateWindowStyle = createStyles('calibrate.window')
+
 let previous_style_color_table_snapshot: any
 export type windowColorsTable = ReturnType<
   typeof parseSymbolColors
@@ -48,13 +50,26 @@ const createCalibrateSubscription = () =>
       if (state == calibrate.opened) {
         const res = parseSymbolColors(lineEditor)
         const windowColorsTable = JSON.stringify(res.colorsTableOutput)
-        fakeExecuteCommand(
+
+        const bonkers = blurOutWindow()
+        bonkers?.take()
+        BonkersExecuteCommand(
           'Concise Syntax',
           'Calibrate Window' satisfies calibrateWIndowPlaceholder,
           windowColorsTable
-        ).catch(() => {
-          toastConsole.error('Failed to execute Calibrate Window command')
-        })
+        )
+          .catch(() => {
+            toastConsole.error('Failed to execute Calibrate Window command')
+          })
+          .finally(() => {
+            calibrateWindowStyle.dispose()
+            bonkers?.recover()
+            PREVENT_NULL(window)
+            PREVENT_NULL(getInput())
+          })
+          .catch(() => {
+            toastConsole.error('Failed to PREVENT_NULL input')
+          })
         previous_style_color_table_snapshot = res.payload
         // FIXME: here is where the window should resolve the 'Calibrate Window' task
         // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
@@ -66,12 +81,9 @@ const createCalibrateSubscription = () =>
         const res = parseSymbolColors(lineEditor)
         const css = res.process(previous_style_color_table_snapshot)
         window.localStorage.setItem(sessionKey, css)
-
-        if (css) {
-          requestAnimationFrame(() => syntaxStyle.styleIt(css))
-          if (!highlight.running) {
-            highlight.activate(500) // FIXME: find the moment the css finishes loading
-          }
+        syntaxStyle.styleIt(css)
+        if (!highlight.running) {
+          highlight.activate(500) // FIXME: find the moment the css finishes loading
         }
       }
     } catch (error) {
@@ -79,7 +91,9 @@ const createCalibrateSubscription = () =>
     }
   })
 // prettier-ignore
-async function fakeExecuteCommand(displayName: string, commandName: string, value: string) {
+async function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
+  calibrateWindowStyle.styleIt(`* {pointer-events:none;} .split-view-view {outline: 1px solid red;}`)
+  PREVENT(window)
   let inputView = document.querySelector("li.action-item.command-center-center") as H
   if (inputView){
     await tap(inputView)
@@ -90,6 +104,7 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
     await tap(commandPalletOption)
   }
   let input = getInput();
+  PREVENT(input)
   input.value = `>${displayName}`
   await hold()
   input = getInput();
@@ -108,6 +123,9 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
     await hold(100)
     return input
   }, 3)
+  calibrateWindowStyle.dispose()
+  PREVENT_NULL(window)
+  PREVENT_NULL(input)
   input.dispatchEvent(new KeyboardEvent('keydown', {
     key: 'Enter',
     code: 'Enter',
@@ -123,11 +141,7 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
     return true
   }
 
-  type H = HTMLInputElement
-
-  function getInput() {
-    return document.querySelector("div.quick-input-box input") as H
-  }
+  
   async function tries(cb:()=>Promise<H>, n: number){
     let m = ''
     for (let i = 0; i < n; i++) {
@@ -147,6 +161,56 @@ async function fakeExecuteCommand(displayName: string, commandName: string, valu
   function hold(t = 300) {
     return new Promise((resolve)=>setTimeout(resolve, t))
   }
+}
+function blurOutWindow() {
+  debugger
+  // https://stackoverflow.com/questions/63040475/uncaught-referenceerror-geteventlisteners-is-not-defined
+  const eventListeners = window.getEventListeners?.(window)
+  if (!eventListeners) return
+
+  const freezeListeners = ['focusin', 'focusout', 'focus', 'blur'].map(
+    (name) => eventListeners[name]
+  )
+  return {
+    take() {
+      debugger
+      for (const events of freezeListeners) {
+        if (!events) continue
+        for (const event of events) {
+          if (!event) continue
+          window.removeEventListener(event.type, event.listener)
+        }
+      }
+    },
+    recover() {
+      debugger
+      for (const events of freezeListeners) {
+        if (!events) continue
+        for (const event of events) {
+          if (!event) continue
+          window.addEventListener(event.type, event.listener, event)
+        }
+      }
+      freezeListeners.length = 0
+    },
+  }
+}
+type H = HTMLInputElement
+function getInput() {
+  return document.querySelector('div.quick-input-box input') as H
+}
+function prevent(e: Event) {
+  e.preventDefault()
+  e.stopPropagation()
+  return false
+}
+function PREVENT($0: HTMLElement | Window) {
+  // prettier-ignore
+  $0.onclick=$0.onkeydown=$0.onkeyup=$0.onmousedown=$0.onmouseup=$0.onblur=$0.onfocus=prevent
+}
+function PREVENT_NULL($0: HTMLElement | Window) {
+  // prettier-ignore
+  $0.onclick=$0.onkeydown=$0.onkeyup=$0.onmousedown=$0.onmouseup=$0.onblur=$0.onfocus=null
 }
 
 const createEditorSubscription = () =>
@@ -208,6 +272,8 @@ const conciseSyntax = {
 
 // prettier-ignore
 declare global { interface Window { conciseSyntax?: typeof conciseSyntax } }
+// prettier-ignore
+declare global { interface Window { getEventListeners?: (node:unknown)=> Record<string, ({ type: string, listener: EventListenerOrEventListenerObject, useCapture: boolean, once: boolean, passive: boolean }|undefined)[]> }}
 if (window.conciseSyntax) {
   debugger
   window.conciseSyntax.dispose()

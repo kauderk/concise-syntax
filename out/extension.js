@@ -699,9 +699,10 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
   const taskProgress = withProgress();
   calibrate_confirmation_task.value = taskProgress.task;
   taskProgress.progress.report({ message: "calibrating extension" });
-  annoyance = true;
+  defaultWindowState = () => {
+  };
   const res1 = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
-  annoyance = false;
+  defaultWindowState = annoyance;
   if (res1 instanceof Error)
     throw res1;
   if (stores.windowState.read() != state.active && _item) {
@@ -727,8 +728,8 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
     calibrate_window_task.value.promise,
     new Promise(
       (reject) => setTimeout(() => {
-        reject(new Error("calibrate_window_task timed out"));
-      }, 5e3)
+        reject(new Error("calibrate_window_task timed out "));
+      }, 12e4)
     )
   ]);
   if (race instanceof Error)
@@ -770,12 +771,13 @@ async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursi
     busy = false;
     return res;
   } catch (error) {
+    debugger;
+    busy = false;
     showCrashIcon(_item, error);
     return error;
   }
 }
 function showCrashIcon(_item2, error) {
-  debugger;
   crashedMessage = error?.message || "unknown";
   _item2.text = `$(error)` + iconText;
   _item2.tooltip = IState.encode(state.error);
@@ -783,10 +785,7 @@ function showCrashIcon(_item2, error) {
   _calibrate?.hide();
   disposeConfiguration.consume();
 }
-let annoyance = false;
-async function defaultWindowState(_item2, next, windowState) {
-  if (annoyance)
-    return;
+let defaultWindowState = async function(_item2, next, windowState) {
   await windowState.write(next);
   _item2.text = `$(${stateIcon})` + iconText;
   _item2.tooltip = IState.encode(next);
@@ -799,7 +798,8 @@ async function defaultWindowState(_item2, next, windowState) {
     _calibrate?.show();
     _item2.show();
   }
-}
+};
+const annoyance = defaultWindowState;
 async function calibrateCommandCycle(uriRemote, usingContext) {
   const { stores } = usingContext;
   if (!_calibrate) {
@@ -830,13 +830,14 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
     c_busy = false;
   } catch (error) {
     debugger;
+    c_busy = false;
     if (_item) {
       showCrashIcon(_item, error);
     }
     calibrate_confirmation_task.consume();
     await consume_close(_calibrate);
     vscode__namespace.window.showErrorMessage(
-      `Error: failed to open calibrate file -> ${error?.message}`
+      `Error: failed to execute calibrate command with error: ${error?.message}`
     );
   }
 }

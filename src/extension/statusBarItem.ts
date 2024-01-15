@@ -98,9 +98,6 @@ export async function ExtensionState_statusBarItem(
   )
 }
 
-type RecursiveDiff = (
-  cache: Awaited<ReturnType<typeof updateSettingsCycle>>
-) => Promise<true | undefined>
 async function REC_windowStateSandbox(
   tryNext: State,
   settings: 'active' | 'inactive',
@@ -218,10 +215,10 @@ async function calibrateStateSandbox(
 
   taskProgress.progress.report({ message: 'calibrating extension' })
   // update the settings before showing the calibration file and risking the user to close it while the procedure is waiting
-  annoyance = true
+  defaultWindowState = (() => {}) as any
   // prettier-ignore
   const res1 = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext)
-  annoyance = false
+  defaultWindowState = annoyance
   if (res1 instanceof Error) throw res1
   if (stores.windowState.read() != state.active && _item) {
     // this would be a cold start or a restart...
@@ -250,8 +247,8 @@ async function calibrateStateSandbox(
     calibrate_window_task.value.promise,
     new Promise((reject) =>
       setTimeout(() => {
-        reject(new Error('calibrate_window_task timed out'))
-      }, 5_000)
+        reject(new Error('calibrate_window_task timed out '))
+      }, 120_000)
     ),
   ])
   if (race instanceof Error) throw race
@@ -271,7 +268,9 @@ async function calibrateStateSandbox(
 }
 
 //#region module
-
+type RecursiveDiff = (
+  cache: Awaited<ReturnType<typeof updateSettingsCycle>>
+) => Promise<true | undefined>
 async function REC_nextWindowStateCycle(
   tryNext: State,
   settings: 'active' | 'inactive',
@@ -307,12 +306,13 @@ async function REC_nextWindowStateCycle(
     busy = false
     return res
   } catch (error: any) {
+    debugger
+    busy = false
     showCrashIcon(_item, error)
     return error as Error
   }
 }
 function showCrashIcon(_item: vscode.StatusBarItem, error: any) {
-  debugger
   crashedMessage = error?.message || 'unknown'
   _item.text = `$(error)` + iconText
   _item.tooltip = IState.encode(state.error)
@@ -320,15 +320,11 @@ function showCrashIcon(_item: vscode.StatusBarItem, error: any) {
   _calibrate?.hide()
   disposeConfiguration.consume()
 }
-// Prevent rare annoying flickering on editors when the workbench observers trigger their inactive states
-// I won't create an abstraction on top of REC_nextWindowStateCycle to handle this case because it is too specific
-let annoyance = false
-async function defaultWindowState(
+let defaultWindowState = async function (
   _item: vscode.StatusBarItem,
   next: State,
   windowState: Stores['windowState']
 ) {
-  if (annoyance) return
   await windowState.write(next)
   _item.text = `$(${stateIcon})` + iconText
   _item.tooltip = IState.encode(next)
@@ -344,6 +340,9 @@ async function defaultWindowState(
     _item.show()
   }
 }
+// Prevent rare annoying flickering on editors when the workbench observers trigger their inactive states
+// I won't create an abstraction on top of REC_nextWindowStateCycle to handle this case because it is too specific
+const annoyance = defaultWindowState
 
 async function calibrateCommandCycle(
   uriRemote: vscode.Uri,
@@ -384,13 +383,14 @@ async function calibrateCommandCycle(
     c_busy = false
   } catch (error: any) {
     debugger
+    c_busy = false
     if (_item) {
       showCrashIcon(_item, error)
     }
     calibrate_confirmation_task.consume()
     await consume_close(_calibrate)
     vscode.window.showErrorMessage(
-      `Error: failed to open calibrate file -> ${error?.message}`
+      `Error: failed to execute calibrate command with error: ${error?.message}`
     )
   }
 }

@@ -1594,6 +1594,7 @@ var __publicField = (obj, key, value) => {
   }
   const calibrateStyle = createStyles("calibrate");
   calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
+  const calibrateWindowStyle = createStyles("calibrate.window");
   let previous_style_color_table_snapshot;
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
     if (!(state2 == calibrate.opened || state2 == calibrate.idle))
@@ -1607,12 +1608,21 @@ var __publicField = (obj, key, value) => {
       if (state2 == calibrate.opened) {
         const res = parseSymbolColors(lineEditor);
         const windowColorsTable = JSON.stringify(res.colorsTableOutput);
-        fakeExecuteCommand(
+        const bonkers = blurOutWindow();
+        bonkers == null ? void 0 : bonkers.take();
+        BonkersExecuteCommand(
           "Concise Syntax",
           "Calibrate Window",
           windowColorsTable
         ).catch(() => {
           toastConsole.error("Failed to execute Calibrate Window command");
+        }).finally(() => {
+          calibrateWindowStyle.dispose();
+          bonkers == null ? void 0 : bonkers.recover();
+          PREVENT_NULL(window);
+          PREVENT_NULL(getInput());
+        }).catch(() => {
+          toastConsole.error("Failed to PREVENT_NULL input");
         });
         previous_style_color_table_snapshot = res.payload;
         return;
@@ -1623,18 +1633,18 @@ var __publicField = (obj, key, value) => {
         const res = parseSymbolColors(lineEditor);
         const css = res.process(previous_style_color_table_snapshot);
         window.localStorage.setItem(sessionKey, css);
-        if (css) {
-          requestAnimationFrame(() => syntaxStyle.styleIt(css));
-          if (!highlight.running) {
-            highlight.activate(500);
-          }
+        syntaxStyle.styleIt(css);
+        if (!highlight.running) {
+          highlight.activate(500);
         }
       }
     } catch (error) {
       toastConsole.error("Failed to calibrate editor");
     }
   });
-  async function fakeExecuteCommand(displayName, commandName, value) {
+  async function BonkersExecuteCommand(displayName, commandName, value) {
+    calibrateWindowStyle.styleIt(`* {pointer-events:none;} .split-view-view {outline: 1px solid red;}`);
+    PREVENT(window);
     let inputView = document.querySelector("li.action-item.command-center-center");
     if (inputView) {
       await tap(inputView);
@@ -1645,6 +1655,7 @@ var __publicField = (obj, key, value) => {
       await tap(commandPalletOption);
     }
     let input = getInput();
+    PREVENT(input);
     input.value = `>${displayName}`;
     await hold();
     input = getInput();
@@ -1663,6 +1674,9 @@ var __publicField = (obj, key, value) => {
       await hold(100);
       return input2;
     }, 3);
+    calibrateWindowStyle.dispose();
+    PREVENT_NULL(window);
+    PREVENT_NULL(input);
     input.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Enter",
       code: "Enter",
@@ -1675,9 +1689,6 @@ var __publicField = (obj, key, value) => {
     await hold();
     if (command) {
       return true;
-    }
-    function getInput() {
-      return document.querySelector("div.quick-input-box input");
     }
     async function tries(cb, n) {
       let m = "";
@@ -1698,6 +1709,57 @@ var __publicField = (obj, key, value) => {
     function hold(t = 300) {
       return new Promise((resolve) => setTimeout(resolve, t));
     }
+  }
+  function blurOutWindow() {
+    var _a;
+    debugger;
+    const eventListeners = (_a = window.getEventListeners) == null ? void 0 : _a.call(window, window);
+    if (!eventListeners)
+      return;
+    const freezeListeners = ["focusin", "focusout", "focus", "blur"].map(
+      (name) => eventListeners[name]
+    );
+    return {
+      take() {
+        debugger;
+        for (const events of freezeListeners) {
+          if (!events)
+            continue;
+          for (const event of events) {
+            if (!event)
+              continue;
+            window.removeEventListener(event.type, event.listener);
+          }
+        }
+      },
+      recover() {
+        debugger;
+        for (const events of freezeListeners) {
+          if (!events)
+            continue;
+          for (const event of events) {
+            if (!event)
+              continue;
+            window.addEventListener(event.type, event.listener, event);
+          }
+        }
+        freezeListeners.length = 0;
+      }
+    };
+  }
+  function getInput() {
+    return document.querySelector("div.quick-input-box input");
+  }
+  function prevent(e2) {
+    e2.preventDefault();
+    e2.stopPropagation();
+    return false;
+  }
+  function PREVENT($0) {
+    $0.onclick = $0.onkeydown = $0.onkeyup = $0.onmousedown = $0.onmouseup = $0.onblur = $0.onfocus = prevent;
+  }
+  function PREVENT_NULL($0) {
+    $0.onclick = $0.onkeydown = $0.onkeyup = $0.onmousedown = $0.onmouseup = $0.onblur = $0.onfocus = null;
   }
   const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
     if (!value)
