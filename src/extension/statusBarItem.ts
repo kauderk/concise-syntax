@@ -27,7 +27,7 @@ let _item: vscode.StatusBarItem | undefined
 const statusIconLoading = 'loading~spin'
 const iconText = '' //' Concise'
 let busy: boolean | undefined
-let disposeConfiguration = deltaFn()
+let disposeConfiguration = deltaFn(true)
 let crashedMessage = ''
 
 let _calibrate: vscode.StatusBarItem | undefined
@@ -107,11 +107,14 @@ export async function ExtensionState_statusBarItem(
   )
 }
 
+type RecursiveDiff = (
+  cache: Awaited<ReturnType<typeof updateSettingsCycle>>
+) => Promise<true | undefined>
 async function REC_windowStateSandbox(
   tryNext: State,
   settings: 'active' | 'inactive',
   usingContext: UsingContext & { _item: vscode.StatusBarItem },
-  recursiveDiff?: boolean
+  invalidRecursiveDiff?: RecursiveDiff
 ) {
   const { stores, context, _item } = usingContext
 
@@ -121,51 +124,15 @@ async function REC_windowStateSandbox(
   }
 
   _item.text = `$(${statusIconLoading})` + iconText
-  const cash = await updateSettingsCycle(context, settings)
+  const cache = await updateSettingsCycle(context, settings)
 
-  /**
-   * There is a cash waiting to be executed (invalidated)
-   * The recursion/watcher was called
-   * And the extension is active so now it will fall out of sync
-   * Therefor the user deserves to know the settings.json is not up to date
-   * It is rude to change the settings.json without the user's consent
-   */
-  // prettier-ignore
-  if (typeof cash == 'function' && recursiveDiff && tryNext == state.active && stores.globalInvalidation.read() != state.active) {
-    await defaultWindowState(_item, state.stale, stores.windowState)
-    const res = await vscode.window.showInformationMessage(
-      "The extension settings were invalidated while the extension was running. \
-        Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
-      'Yes and remember',
-      'No and deactivate',
-    )
-    const next = res?.includes('Yes') ? state.active : state.inactive
-    await stores.globalInvalidation.write(next)
-
-    if( next == state.inactive){
-      await defaultWindowState(_item, next, stores.windowState)
+  if (typeof cache == 'function') {
+    if (await invalidRecursiveDiff?.(cache)) {
       return
-    }
-  }
-
-  if (typeof cash == 'function') {
-    if (recursiveDiff) {
-      vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Window,
-          title: packageJson.displayName,
-        },
-        async (progress) => {
-          progress.report({ message: 'revalidating...' })
-          for (let i = 0; i < 5; i++) {
-            await hold(1_000)
-          }
-        }
-      )
     }
     const task = createTask()
     const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
-    await cash()
+    await cache()
     await Promise.race([
       task.promise, // either the configuration changes or the timeout
       new Promise((resolve) => setTimeout(resolve, 3000)),
@@ -179,10 +146,52 @@ async function REC_windowStateSandbox(
   if(tryNext == state.active)
   disposeConfiguration.fn = vscode.workspace.onDidChangeConfiguration(async (config) => {
     if (busy || !config.affectsConfiguration(key)) return
-    const next = stores.windowState.read()
-    if (!next) return
-    // TODO: add a throttle to be extra safe
-    await REC_nextWindowStateCycle(next, binary(next), usingContext, true)
+    const tryNext = stores.windowState.read()
+    if (!tryNext) return
+    
+    await REC_nextWindowStateCycle(
+      tryNext,
+      binary(tryNext),
+      usingContext,
+      async (cache) => {
+        if (typeof cache != 'function') return
+        
+        /**
+         * There is a cash waiting to be executed (invalidated)
+         * The recursion/watcher was called
+         * And the extension is active so now it will fall out of sync
+         * Therefor the user deserves to know the settings.json is not up to date
+         * It is rude to change the settings.json without the user's consent
+         */
+        if (tryNext == state.active && stores.globalInvalidation.read() != state.active) {
+          await defaultWindowState(_item, state.stale, stores.windowState)
+          const res = await vscode.window.showInformationMessage(
+            "The extension settings were invalidated while the extension was running. \
+              Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
+            'Yes and remember',
+            'No and deactivate',
+          )
+          const next = res?.includes('Yes') ? state.active : state.inactive
+          await stores.globalInvalidation.write(next)
+
+          if(next == state.inactive){
+            await defaultWindowState(_item, next, stores.windowState)
+            return true
+          }
+        }
+        vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Window,
+            title: packageJson.displayName,
+          },
+          async (progress) => {
+            progress.report({ message: 'revalidating...' })
+            for (let i = 0; i < 5; i++) {
+              await hold(1_000)
+            }
+          }
+        )
+      })
   }).dispose
 }
 
@@ -294,7 +303,7 @@ async function REC_nextWindowStateCycle(
   tryNext: State,
   settings: 'active' | 'inactive',
   usingContext: UsingContext,
-  recursiveDiff?: boolean
+  recursiveDiff?: RecursiveDiff
 ) {
   if (!_item) {
     vscode.window.showErrorMessage('No status bar item found')
@@ -308,8 +317,6 @@ async function REC_nextWindowStateCycle(
 
   try {
     busy = true
-
-    disposeConfiguration.consume()
 
     await REC_windowStateSandbox(
       tryNext,

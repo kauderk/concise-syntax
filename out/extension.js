@@ -556,7 +556,7 @@ let _item;
 const statusIconLoading = "loading~spin";
 const iconText = "";
 let busy;
-let disposeConfiguration = deltaFn();
+let disposeConfiguration = deltaFn(true);
 let crashedMessage = "";
 let _calibrate;
 let c_busy = false;
@@ -614,46 +614,21 @@ async function ExtensionState_statusBarItem(context, setState) {
     }
   );
 }
-async function REC_windowStateSandbox(tryNext, settings, usingContext, recursiveDiff) {
+async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRecursiveDiff) {
   const { stores, context, _item: _item2 } = usingContext;
   if (stores.calibrationState.read() != state.active) {
     await defaultWindowState(_item2, state.stale, stores.windowState);
     return;
   }
   _item2.text = `$(${statusIconLoading})` + iconText;
-  const cash = await updateSettingsCycle(context, settings);
-  if (typeof cash == "function" && recursiveDiff && tryNext == state.active && stores.globalInvalidation.read() != state.active) {
-    await defaultWindowState(_item2, state.stale, stores.windowState);
-    const res = await vscode__namespace.window.showInformationMessage(
-      "The extension settings were invalidated while the extension was running.         Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
-      "Yes and remember",
-      "No and deactivate"
-    );
-    const next = res?.includes("Yes") ? state.active : state.inactive;
-    await stores.globalInvalidation.write(next);
-    if (next == state.inactive) {
-      await defaultWindowState(_item2, next, stores.windowState);
+  const cache = await updateSettingsCycle(context, settings);
+  if (typeof cache == "function") {
+    if (await invalidRecursiveDiff?.(cache)) {
       return;
-    }
-  }
-  if (typeof cash == "function") {
-    if (recursiveDiff) {
-      vscode__namespace.window.withProgress(
-        {
-          location: vscode__namespace.ProgressLocation.Window,
-          title: packageJson.displayName
-        },
-        async (progress) => {
-          progress.report({ message: "revalidating..." });
-          for (let i = 0; i < 5; i++) {
-            await hold(1e3);
-          }
-        }
-      );
     }
     const task = createTask();
     const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
-    await cash();
+    await cache();
     await Promise.race([
       task.promise,
       // either the configuration changes or the timeout
@@ -666,10 +641,44 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, recursive
     disposeConfiguration.fn = vscode__namespace.workspace.onDidChangeConfiguration(async (config) => {
       if (busy || !config.affectsConfiguration(key))
         return;
-      const next = stores.windowState.read();
-      if (!next)
+      const tryNext2 = stores.windowState.read();
+      if (!tryNext2)
         return;
-      await REC_nextWindowStateCycle(next, binary(next), usingContext, true);
+      await REC_nextWindowStateCycle(
+        tryNext2,
+        binary(tryNext2),
+        usingContext,
+        async (cache2) => {
+          if (typeof cache2 != "function")
+            return;
+          if (tryNext2 == state.active && stores.globalInvalidation.read() != state.active) {
+            await defaultWindowState(_item2, state.stale, stores.windowState);
+            const res = await vscode__namespace.window.showInformationMessage(
+              "The extension settings were invalidated while the extension was running.               Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
+              "Yes and remember",
+              "No and deactivate"
+            );
+            const next = res?.includes("Yes") ? state.active : state.inactive;
+            await stores.globalInvalidation.write(next);
+            if (next == state.inactive) {
+              await defaultWindowState(_item2, next, stores.windowState);
+              return true;
+            }
+          }
+          vscode__namespace.window.withProgress(
+            {
+              location: vscode__namespace.ProgressLocation.Window,
+              title: packageJson.displayName
+            },
+            async (progress) => {
+              progress.report({ message: "revalidating..." });
+              for (let i = 0; i < 5; i++) {
+                await hold(1e3);
+              }
+            }
+          );
+        }
+      );
     }).dispose;
 }
 async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
@@ -754,7 +763,6 @@ async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursi
   }
   try {
     busy = true;
-    disposeConfiguration.consume();
     await REC_windowStateSandbox(
       tryNext,
       settings,
