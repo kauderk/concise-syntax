@@ -1596,6 +1596,53 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
+  function createObservableTask(target, tasks) {
+    const task = createTask();
+    let done = false;
+    const observer = new MutationObserver(async (record) => {
+      for (const mutation of record) {
+        if (mutation.type == "attributes") {
+          if (stepForward(mutation.target)) {
+            return;
+          }
+        }
+        for (const node2 of mutation.addedNodes) {
+          if (stepForward(node2)) {
+            return;
+          }
+        }
+      }
+      const node = document.querySelector(tasks[step][0]);
+      if (stepForward(node)) {
+        return;
+      }
+    });
+    function stepForward(node) {
+      if (!(node instanceof HTMLElement)) {
+        return;
+      }
+      if (done || !tasks[step])
+        return;
+      const [selector, o_task] = tasks[step];
+      if (node.matches(selector)) {
+        o_task(node);
+        step++;
+        if (!tasks[step]) {
+          done = true;
+          observer.disconnect();
+          task.resolve();
+        }
+        return true;
+      }
+    }
+    let step = 0;
+    observer.observe(target, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+    return task;
+  }
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
   const calibrateObservable = createObservable(void 0);
@@ -1640,51 +1687,58 @@ var __publicField = (obj, key, value) => {
   async function BonkersExecuteCommand(displayName, commandName, value) {
     BonkersExecuteCommand.shadow(true);
     const inputView = await tries(async () => document.querySelector("li.action-item.command-center-center"), 2, 100);
-    if (inputView) {
-      await tap(inputView);
-    } else {
-      const view = await tries(async () => document.querySelector(`.menubar-menu-button[aria-label="View"]`), 2, 100);
-      await tap(view);
-      const commandPalletOption = await tries(async () => document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`), 2, 100);
-      await tap(commandPalletOption);
-    }
-    const shadowInput = await tries(async () => getInput(), 3, 100);
-    shadowInput.value = `>${displayName}`;
-    let input = await tries(async () => getInput(), 3, 100);
-    input.dispatchEvent(new Event("input"));
-    const command = await tries(
-      async () => document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`),
-      3,
-      300
-    );
-    command.click();
-    await hold(100);
-    input = await tries(async () => {
-      const input2 = getInput();
-      if ((input2 == null ? void 0 : input2.getAttribute("placeholder")) != commandName) {
-        return;
-      }
-      input2.value = value;
-      input2.dispatchEvent(new Event("input"));
-      return input2;
-    }, 4, 500);
-    await hold(100);
-    if (shadowInput !== input) {
-      debugger;
-      throw new Error("shadowInput!==input");
-    } else {
-      BonkersExecuteCommand.shadow(false, input);
-    }
-    input.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "Enter",
-      code: "Enter",
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true,
-      composed: true
-    }));
-    await hold(100);
+    await inputView.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
+    const widgetSelector = ".quick-input-widget";
+    const target = await tries(async () => document.querySelector(widgetSelector), 2, 100);
+    const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`;
+    let shadowInput;
+    const tasks = [
+      // ['li.action-item.command-center-center', tap],
+      // [`.menubar-menu-button[aria-label="View"]`,()=>{}],
+      // [`[class="action-item"]:has([aria-label="Command Palette..."])`,()=>{}],
+      [
+        `${inputSelector}`,
+        (el) => {
+          shadowEventListeners(shadowInput = el);
+          el.value = `>${displayName}`;
+          el.dispatchEvent(new Event("input"));
+        }
+      ],
+      [
+        `.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`,
+        (el) => el.click()
+      ],
+      [
+        `${inputSelector}[placeholder="${commandName}"]`,
+        (el) => {
+          el.value = value;
+          el.dispatchEvent(new Event("input"));
+        }
+      ],
+      [
+        `${inputSelector}[title="${commandName}"][aria-describedby="quickInput_message"]`,
+        (el) => {
+          if (shadowInput !== el) {
+            debugger;
+            return new Error("shadowInput!==target");
+          } else {
+            BonkersExecuteCommand.shadow(false, el);
+          }
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "Enter",
+              code: "Enter",
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true,
+              composed: true
+            })
+          );
+        }
+      ]
+    ];
+    await createObservableTask(target, tasks);
     async function tries(cb, n, t = 500) {
       for (let i = 0; i < n; i++) {
         if (i == n - 1) {
@@ -1696,10 +1750,6 @@ var __publicField = (obj, key, value) => {
         await hold(t);
       }
       return void 0;
-    }
-    async function tap(el) {
-      el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
-      await hold(300);
     }
     function hold(t) {
       return new Promise((resolve) => setTimeout(resolve, t));

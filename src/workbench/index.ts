@@ -8,6 +8,7 @@ import { parseSymbolColors } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 import { createTask, deltaFn } from 'src/shared/utils'
 import { type calibrateWIndowPlaceholder } from 'src/extension/statusBarItem'
+import { ObserverTasks, createObservableTask } from './observableTask'
 export type { editorObservable, stateObservable, calibrateObservable }
 
 const editorObservable = createObservable<undefined | string>(undefined)
@@ -77,66 +78,72 @@ const calibrateWindowStyle = createStyles('calibrate.window')
 async function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
   BonkersExecuteCommand.shadow(true)
   const inputView = await tries(async()=>document.querySelector("li.action-item.command-center-center"), 2, 100)
-  if (inputView){
-    await tap(inputView)
-  } else {
-    const view = await tries(async()=>document.querySelector(`.menubar-menu-button[aria-label="View"]`), 2, 100)
-    await tap(view)
-    const commandPalletOption = await tries(async()=>document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`), 2, 100)
-    await tap(commandPalletOption)
-  }
-
-  const shadowInput = await tries(async()=>getInput(), 3, 100)
-  shadowInput.value = `>${displayName}`
+	await inputView.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
   
-  let input = await tries(async ()=>getInput(), 3, 100)
-  input.dispatchEvent(new Event('input'))
+	const widgetSelector = '.quick-input-widget'
+	const target = await tries(async()=>document.querySelector(widgetSelector),2,100)
 
-  const command = await tries(async()=>document.querySelector<HTMLElement>(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`), 
-                                            3, 300)
-  command.click()
-  await hold(100)
-  input = await tries(async ()=>{
-    const input = getInput();
-    if (input?.getAttribute('placeholder') != commandName) {
-      return
-    }
-    input.value = value
-    input.dispatchEvent(new Event('input'))
-    return input
-  }, 4, 500)
-  await hold(100)
-	if (shadowInput!==input) {
-		debugger
-		throw new Error('shadowInput!==input')
-	} else {
-		BonkersExecuteCommand.shadow(false, input)
-	}
-  input.dispatchEvent(new KeyboardEvent('keydown', {
-    key: 'Enter',
-    code: 'Enter',
-    keyCode: 13,
-    which: 13,
-    bubbles: true,
-    cancelable: true,
-    composed: true
-  }))
-  await hold(100)
-  
+	const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`
+
+	let shadowInput: any
+
+	const tasks = [
+		// ['li.action-item.command-center-center', tap],
+		// [`.menubar-menu-button[aria-label="View"]`,()=>{}],
+		// [`[class="action-item"]:has([aria-label="Command Palette..."])`,()=>{}],
+		[
+			`${inputSelector}`,
+			(el) => {
+				shadowEventListeners(shadowInput=el)
+				el.value = `>${displayName}`
+				el.dispatchEvent(new Event('input'))
+			},
+		],
+		[
+			`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`,
+			(el) => el.click(),
+		],
+		[
+			`${inputSelector}[placeholder="${commandName}"]`,
+			(el) => {
+				el.value = value
+				el.dispatchEvent(new Event('input'))
+			},
+		],
+		[
+			`${inputSelector}[title="${commandName}"][aria-describedby="quickInput_message"]`,
+			(el) => {
+				if (shadowInput !== el) {
+					debugger
+					return new Error('shadowInput!==target')
+				} else {
+					BonkersExecuteCommand.shadow(false, el)
+				}
+				el.dispatchEvent(
+					new KeyboardEvent('keydown', {
+						key: 'Enter',
+						code: 'Enter',
+						keyCode: 13,
+						which: 13,
+						bubbles: true,
+						cancelable: true,
+						composed: true,
+					})
+				)
+			},
+		],
+	] as const satisfies ObserverTasks
+	
+	await createObservableTask(target,tasks)
+
   async function tries<T>(cb:()=>Promise<T|undefined>, n: number,t=500){
     for (let i = 0; i < n; i++) {
-      if(i==n-1) {
-        debugger
-      }
+      if(i==n-1) { debugger }
       const res = await cb()
       if(res) return res
       await hold(t)
     }
     return <any>undefined // better stack trace errors
-  }
-  async function tap(el:Element) {
-    el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
-    await hold(300)
   }
   function hold(t:number) {
     return new Promise((resolve)=>setTimeout(resolve, t))

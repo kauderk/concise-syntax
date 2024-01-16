@@ -85,8 +85,7 @@ const contributes = {
     {
       command: "extension.calibrateWindow",
       title: "Calibrate Window",
-      category: "Concise Syntax",
-      enablement: "!extension.disposed && extension.calibrateWindow"
+      category: "Concise Syntax"
     },
     {
       command: "extension.reset",
@@ -750,12 +749,12 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
   await checkCalibrateWindowCommandContext(state.active);
   await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
   const race = await Promise.race([
-    calibrate_window_task.value.promise,
-    new Promise(
-      (reject) => setTimeout(() => {
-        reject(new Error("calibrate_window_task timed out "));
-      }, 5e3)
-    )
+    calibrate_window_task.value.promise
+    // new Promise((reject) =>
+    //   setTimeout(() => {
+    //     reject(new Error('calibrate_window_task timed out '))
+    //   }, 500_000)
+    // ),
   ]);
   if (race instanceof Error)
     throw race;
