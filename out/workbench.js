@@ -1629,7 +1629,7 @@ var __publicField = (obj, key, value) => {
       const css = parseSymbolColors(lineEditor).process(snapshot.payload);
       window.localStorage.setItem(sessionKey, css);
       syntaxStyle.styleIt(css);
-    });
+    }).finally(() => tableTask = void 0);
   });
   function createTask() {
     let resolve = (value) => {
@@ -1653,30 +1653,33 @@ var __publicField = (obj, key, value) => {
       const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
       await tap(commandPalletOption);
     }
+    let preventInput = getInput();
+    PREVENT(preventInput);
+    preventInput.value = `>${displayName}`;
+    await hold();
     let input = getInput();
-    PREVENT(input);
-    input.value = `>${displayName}`;
-    await hold();
-    input = getInput();
     input.dispatchEvent(new Event("input"));
-    await hold();
     await tries(async () => {
       const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
       command.click();
       return command;
     }, 3);
-    await hold();
     input = await tries(async () => {
-      const input2 = getInput();
-      if (input2.getAttribute("placeholder") != commandName) {
+      const deltaInput = getInput();
+      if (deltaInput.getAttribute("placeholder") != commandName) {
         throw new Error("Failed to find command input element");
       }
-      input2.value = value;
-      input2.dispatchEvent(new Event("input"));
-      await hold(100);
-      return input2;
+      if (preventInput !== deltaInput) {
+        toastConsole.warn("BonkersExecuteCommand preventInput !== deltaInput");
+        debugger;
+        PREVENT_NULL(preventInput);
+      }
+      PREVENT_NULL(deltaInput);
+      deltaInput.value = value;
+      deltaInput.dispatchEvent(new Event("input"));
+      await hold(300);
+      return deltaInput;
     }, 3);
-    BonkersExecuteCommand.clean();
     input.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Enter",
       code: "Enter",
@@ -1697,6 +1700,7 @@ var __publicField = (obj, key, value) => {
           await hold(500);
         }
       }
+      debugger;
       throw new Error(m || `Failed to find command input element after ${n} tries`);
     }
     async function tap(el) {

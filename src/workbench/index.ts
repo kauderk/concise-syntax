@@ -78,6 +78,7 @@ const createCalibrateSubscription = () =>
         window.localStorage.setItem(sessionKey, css)
         syntaxStyle.styleIt(css)
       })
+      .finally(() => (tableTask = undefined))
   })
 function createTask<R = unknown, E = R>() {
   let resolve = (value?: R) => {},
@@ -102,30 +103,33 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
     const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`) as H
     await tap(commandPalletOption)
   }
+  let preventInput = getInput();
+  PREVENT(preventInput)
+  preventInput.value = `>${displayName}`
+  await hold()
   let input = getInput();
-  PREVENT(input)
-  input.value = `>${displayName}`
-  await hold()
-  input = getInput();
   input.dispatchEvent(new Event('input'))
-  await hold()
   await tries(async()=>{
     const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`) as H
     command.click()
     return command
-  },3)
-  await hold()
+  }, 3)
   input = await tries(async ()=>{
-    const input = getInput();
-    if (input.getAttribute('placeholder') != commandName) {
+    const deltaInput = getInput();
+    if (deltaInput.getAttribute('placeholder') != commandName) {
       throw new Error('Failed to find command input element')
     }
-    input.value = value
-    input.dispatchEvent(new Event('input'))
-    await hold(100)
-    return input
+		if(preventInput!==deltaInput){
+			toastConsole.warn('BonkersExecuteCommand preventInput !== deltaInput')
+			debugger
+			PREVENT_NULL(preventInput)
+		}
+    PREVENT_NULL(deltaInput)
+    deltaInput.value = value
+    deltaInput.dispatchEvent(new Event('input'))
+    await hold(300)
+    return deltaInput
   }, 3)
-  BonkersExecuteCommand.clean()
   input.dispatchEvent(new KeyboardEvent('keydown', {
     key: 'Enter',
     code: 'Enter',
@@ -147,6 +151,7 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
         await hold(500)
       }
     }
+		debugger
     throw new Error(m || `Failed to find command input element after ${n} tries`)
   }
   async function tap(el:H) {

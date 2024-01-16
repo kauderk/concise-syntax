@@ -970,6 +970,7 @@ async function checkCalibratedCommandContext(next, calibrationState) {
   );
   await calibrationState.write(next);
 }
+let waitingForUserInput = false;
 async function changeExtensionStateCycle(usingContext, overloadedNextState) {
   const { stores } = usingContext;
   const theme = vscode__namespace.workspace.getConfiguration("workbench")?.get("colorTheme");
@@ -977,15 +978,17 @@ async function changeExtensionStateCycle(usingContext, overloadedNextState) {
     return "SC: theme is not a string";
   }
   if (busy || c_busy) {
-    vscode__namespace.window.showInformationMessage(
-      "The extension is busy. Try again in a few seconds."
-    );
-    return;
+    if (!waitingForUserInput)
+      vscode__namespace.window.showInformationMessage(
+        "The extension is busy. Try again in a few seconds."
+      );
+    return "SC: busy";
   }
   if (t_busy) {
-    vscode__namespace.window.showWarningMessage(
-      `The extension is busy changing the color theme...`
-    );
+    if (!waitingForUserInput)
+      vscode__namespace.window.showWarningMessage(
+        `The extension is busy changing the color theme...`
+      );
     return "SC: t_busy";
   }
   t_busy = true;
@@ -1003,11 +1006,13 @@ async function changeExtensionStateCycle(usingContext, overloadedNextState) {
     return "Success: same theme";
   } else {
     await stores.colorThemeKind.write(theme);
+    waitingForUserInput = true;
     const res = await vscode__namespace.window.showInformationMessage(
       "The color theme changed. Shall we calibrate the extension?",
       "Yes",
       "No and deactivate"
     );
+    waitingForUserInput = false;
     const next = res?.includes("Yes") ? state.active : state.inactive;
     if (next == state.inactive) {
       if (_item) {
