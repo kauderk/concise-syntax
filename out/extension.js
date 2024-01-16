@@ -729,7 +729,7 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
     new Promise(
       (reject) => setTimeout(() => {
         reject(new Error("calibrate_window_task timed out "));
-      }, 12e4)
+      }, 5e3)
     )
   ]);
   if (race instanceof Error)
@@ -842,19 +842,37 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
   }
 }
 async function calibrateWindowCommandCycle(usingContext) {
-  const input = await vscode__namespace.window.showInputBox({
+  const task = createTask();
+  const blurEvent = vscode__namespace.window.onDidChangeWindowState((state2) => {
+    vscode__namespace.window.showInformationMessage(
+      `window focus changed to ${state2.focused}`
+    );
+    if (state2.focused === false) {
+      task.resolve(
+        new Error("Window lost focus, calibrate window task was cancelled")
+      );
+    }
+  });
+  const input = vscode__namespace.window.showInputBox({
     placeHolder: "Calibrate Window",
     prompt: `Calibrate Window using session's syntax and theme`,
     value: ""
   });
-  if (!input) {
+  const race = await Promise.race([task.promise, input]);
+  blurEvent.dispose();
+  if (race instanceof Error) {
+    calibrate_window_task.value?.reject(race);
+    return;
+  }
+  if (!race) {
     calibrate_window_task.value?.reject(
       new Error("No window input was provided")
     );
     return;
   }
   try {
-    const table = JSON.parse(input);
+    const table = JSON.parse(race);
+    table["string.begin"].color.toString();
     await updateWriteTextMateRules(
       usingContext.context,
       (textMateRules, nameSuffix) => {

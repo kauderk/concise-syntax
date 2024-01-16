@@ -248,7 +248,7 @@ async function calibrateStateSandbox(
     new Promise((reject) =>
       setTimeout(() => {
         reject(new Error('calibrate_window_task timed out '))
-      }, 120_000)
+      }, 5_000)
     ),
   ])
   if (race instanceof Error) throw race
@@ -396,19 +396,38 @@ async function calibrateCommandCycle(
 }
 export type calibrateWIndowPlaceholder = 'Calibrate Window'
 async function calibrateWindowCommandCycle(usingContext: UsingContext) {
-  const input = await vscode.window.showInputBox({
+  const task = createTask<Error>()
+  const blurEvent = vscode.window.onDidChangeWindowState((state) => {
+    vscode.window.showInformationMessage(
+      `window focus changed to ${state.focused}`
+    )
+    if (state.focused === false) {
+      task.resolve(
+        new Error('Window lost focus, calibrate window task was cancelled')
+      )
+    }
+  })
+  const input = vscode.window.showInputBox({
     placeHolder: 'Calibrate Window' satisfies calibrateWIndowPlaceholder,
     prompt: `Calibrate Window using session's syntax and theme`,
     value: '',
   })
-  if (!input) {
+  const race = await Promise.race([task.promise, input])
+  blurEvent.dispose()
+  if (race instanceof Error) {
+    calibrate_window_task.value?.reject(race)
+    return
+  }
+  if (!race) {
     calibrate_window_task.value?.reject(
       new Error('No window input was provided')
     )
     return
   }
   try {
-    const table: windowColorsTable = JSON.parse(input)
+    const table: windowColorsTable = JSON.parse(race)
+    // panic on a random missing color
+    table['string.begin'].color!.toString()
 
     await updateWriteTextMateRules(
       usingContext.context,
@@ -631,11 +650,12 @@ export function getErrorStore(context: vscode.ExtensionContext) {
 }
 
 type Task = ReturnType<typeof createTask>
-function createTask() {
-  let resolve = (value?: unknown) => {},
-    reject = (value?: unknown) => {}
-  const promise = new Promise((_resolve, _reject) => {
+function createTask<R = unknown, E = R>() {
+  let resolve = (value?: R) => {},
+    reject = (value?: E) => {}
+  const promise = new Promise<R | E>((_resolve, _reject) => {
     reject = _reject
+    // @ts-expect-error
     resolve = _resolve
   })
   return { promise, resolve, reject }
