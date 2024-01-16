@@ -11,7 +11,8 @@ import type { stateObservable, calibrateObservable } from './index'
  */
 export function createSyntaxLifecycle(
   observable: typeof stateObservable | typeof calibrateObservable,
-  state: typeof IState | typeof ICalibrate
+  state: typeof IState | typeof ICalibrate,
+  props?: { activate: () => () => void }
 ) {
   return lifecycle<{ watchForRemoval: H }>({
     dom() {
@@ -53,6 +54,7 @@ export function createSyntaxLifecycle(
             consume()
           }
         },
+        dispose: props?.activate(),
       })
     },
   })

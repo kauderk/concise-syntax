@@ -85,8 +85,7 @@ const contributes = {
     {
       command: "extension.calibrateWindow",
       title: "Calibrate Window",
-      category: "Concise Syntax",
-      enablement: "!extension.disposed && extension.calibrateWindow"
+      category: "Concise Syntax"
     },
     {
       command: "extension.reset",
@@ -552,6 +551,16 @@ function deltaValue(consume) {
     }
   };
 }
+function createTask() {
+  let resolve = (value) => {
+  }, reject = (value) => {
+  };
+  const promise = new Promise((_resolve, _reject) => {
+    reject = _reject;
+    resolve = _resolve;
+  });
+  return { promise, resolve, reject };
+}
 let _item;
 const statusIconLoading = "loading~spin";
 const iconText = "";
@@ -586,8 +595,6 @@ async function ExtensionState_statusBarItem(context, setState) {
   _calibrate.command = calibrateCommand;
   defaultCalibrate(_calibrate);
   const calibrateWIndowCommand = packageJson.contributes.commands[4].command;
-  const next = setState ?? "active";
-  await changeExtensionStateCycle(usingContext, next);
   context.subscriptions.push(
     _item,
     vscode__namespace.commands.registerCommand(
@@ -599,19 +606,26 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrateCommand,
       () => calibrateCommandCycle(uriRemote, usingContext)
     ),
-    vscode__namespace.commands.registerCommand(
-      calibrateWIndowCommand,
-      () => calibrateWindowCommandCycle(usingContext)
-    ),
+    vscode__namespace.commands.registerCommand(calibrateWIndowCommand, async () => {
+      if (!warmup) {
+        warmup = true;
+        return;
+      }
+      vscode__namespace.window.showInformationMessage(calibrateWIndowCommand);
+      await calibrateWindowCommandCycle(usingContext);
+    }),
     vscode__namespace.workspace.onDidChangeConfiguration?.(async (e) => {
       if (e.affectsConfiguration("workbench.colorTheme")) {
-        if (stores.windowState.read() != state.active) {
+        const tryNext = stores.windowState.read();
+        if (!tryNext)
+          return;
+        if (tryNext != state.active) {
           return "SC: windowState is not active";
         }
         if (stores.calibrationState.read() != state.active) {
           return "SC: calibrationState is not active";
         }
-        return changeExtensionStateCycle(usingContext, void 0);
+        return changeExtensionStateCycle(usingContext, tryNext);
       }
     }),
     {
@@ -622,6 +636,11 @@ async function ExtensionState_statusBarItem(context, setState) {
       }
     }
   );
+  let warmup = false;
+  await vscode__namespace.commands.executeCommand(calibrateWIndowCommand);
+  await hold(100);
+  const next = setState ?? "active";
+  await changeExtensionStateCycle(usingContext, next);
 }
 async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRecursiveDiff) {
   const { stores, context, _item: _item2 } = usingContext;
@@ -845,6 +864,12 @@ async function calibrateCommandCycle(uriRemote2, usingContext) {
   try {
     c_busy = true;
     const res = await calibrateStateSandbox(uriRemote2, usingContext, _calibrate);
+    if (res == "Success: calibrateStateSandbox") {
+      const theme = vscode__namespace.workspace.getConfiguration("workbench")?.get("colorTheme");
+      if (typeof theme == "string" && theme !== stores.colorThemeKind.read()) {
+        await stores.colorThemeKind.write(theme);
+      }
+    }
     c_busy = false;
     return res;
   } catch (error) {
@@ -868,11 +893,8 @@ async function calibrateWindowCommandCycle(usingContext) {
     vscode__namespace.window.showInformationMessage(
       `window focus changed to ${state2.focused}`
     );
-    if (state2.focused === false) {
-      task.resolve(
-        new Error("Window lost focus, calibrate window task was cancelled")
-      );
-    }
+    if (state2.focused === false)
+      ;
   });
   const input = vscode__namespace.window.showInputBox({
     placeHolder: "Calibrate Window",
@@ -881,6 +903,10 @@ async function calibrateWindowCommandCycle(usingContext) {
   });
   const race = await Promise.race([task.promise, input]);
   blurEvent.dispose();
+  if (!calibrate_window_task.value) {
+    debugger;
+    return;
+  }
   if (race instanceof Error) {
     debugger;
     calibrate_window_task.value?.reject(race);
@@ -917,12 +943,11 @@ async function calibrateWindowCommandCycle(usingContext) {
         }
       }
     );
-    calibrate_window_task.value?.resolve();
+    calibrate_window_task.value.resolve();
   } catch (error) {
-    vscode__namespace.window.showErrorMessage("Failed to parse window input");
-    calibrate_window_task.value?.reject(
-      new Error("Failed to parse window input")
-    );
+    const r = `Failed to parse window input with error: ${error?.message}`;
+    vscode__namespace.window.showErrorMessage(r);
+    calibrate_window_task.value?.reject(new Error(r));
   }
 }
 function rgbToHexDivergent(rgbString, scalar = 1) {
@@ -950,7 +975,6 @@ async function toggleCommandCycle(usingContext) {
     );
     return;
   }
-  vscode__namespace.workspace.getConfiguration("workbench").get("colorTheme");
   const next = flip(stores.windowState.read());
   await changeExtensionStateCycle(usingContext, next);
 }
@@ -997,46 +1021,42 @@ async function changeExtensionStateCycle(usingContext, overloadedNextState) {
   }
   t_busy = true;
   if (theme === stores.colorThemeKind.read()) {
-    if (overloadedNextState) {
-      await REC_nextWindowStateCycle(
-        overloadedNextState,
-        binary(overloadedNextState),
-        usingContext
-      );
-      t_busy = false;
-      return "Success: overloadedNextState";
-    }
+    await REC_nextWindowStateCycle(
+      overloadedNextState,
+      binary(overloadedNextState),
+      usingContext
+    );
     t_busy = false;
-    return "Success: same theme";
+    return "Success: overloadedNextState";
   } else {
+    if (_item) {
+      await defaultWindowState(_item, overloadedNextState, stores.windowState);
+    }
     waitingForUserInput = true;
-    const res = await vscode__namespace.window.showInformationMessage(
+    vscode__namespace.window.showInformationMessage(
       "The color theme changed. Shall we calibrate the extension?",
       "Yes",
       "No and deactivate"
-    );
-    waitingForUserInput = false;
-    const next = res?.includes("Yes") ? state.active : state.inactive;
-    if (next == state.inactive) {
-      if (_item) {
-        await defaultWindowState(_item, next, stores.windowState);
+    ).then(async (res) => {
+      waitingForUserInput = false;
+      const next = res?.includes("Yes") ? state.active : state.inactive;
+      if (next == state.inactive) {
+        if (_item) {
+          await defaultWindowState(_item, next, stores.windowState);
+        }
+        t_busy = false;
+        return "SC: deactivate";
       }
-      t_busy = false;
-      return "SC: deactivate";
-    }
-    const tryNext = stores.windowState.read();
-    if (!tryNext) {
-      t_busy = false;
-      return "SC: undefined windowState";
-    }
-    const _res = await calibrateCommandCycle(uriRemote, usingContext);
-    if (_res == "Success: calibrateStateSandbox") {
-      await stores.colorThemeKind.write(theme);
-      t_busy = false;
-      return _res;
-    }
-    t_busy = false;
-    return "Failure: calibrateCommandCycle";
+      const tryNext = stores.windowState.read();
+      if (!tryNext) {
+        t_busy = false;
+        return "SC: undefined windowState";
+      }
+      vscode__namespace.commands.executeCommand("extension.calibrate").then(() => {
+        t_busy = false;
+        return "Executed: extension.calibrate command";
+      });
+    });
   }
 }
 function getStores(context) {
@@ -1146,16 +1166,6 @@ function getStateStore(context) {
 }
 function getErrorStore(context) {
   return useState(context, "error");
-}
-function createTask() {
-  let resolve = (value) => {
-  }, reject = (value) => {
-  };
-  const promise = new Promise((_resolve, _reject) => {
-    reject = _reject;
-    resolve = _resolve;
-  });
-  return { promise, resolve, reject };
 }
 function hold(t = 100) {
   return new Promise((resolve) => setTimeout(resolve, t));

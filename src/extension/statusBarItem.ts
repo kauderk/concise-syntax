@@ -17,7 +17,7 @@ import {
 import { Calibrate, calibrateIcon } from 'src/shared/state'
 import { useGlobal, useState } from './utils'
 import path from 'path'
-import { deltaFn, deltaValue } from 'src/shared/utils'
+import { Task, createTask, deltaFn, deltaValue } from 'src/shared/utils'
 import { type windowColorsTable } from 'src/workbench'
 
 /**
@@ -75,9 +75,6 @@ export async function ExtensionState_statusBarItem(
 
   const calibrateWIndowCommand = packageJson.contributes.commands[4].command
 
-  const next = setState ?? 'active'
-  await changeExtensionStateCycle(usingContext, next)
-
   context.subscriptions.push(
     _item,
     vscode.commands.registerCommand(toggleCommand, () =>
@@ -87,18 +84,25 @@ export async function ExtensionState_statusBarItem(
     vscode.commands.registerCommand(calibrateCommand, () =>
       calibrateCommandCycle(uriRemote, usingContext)
     ),
-    vscode.commands.registerCommand(calibrateWIndowCommand, () =>
-      calibrateWindowCommandCycle(usingContext)
-    ),
+    vscode.commands.registerCommand(calibrateWIndowCommand, async () => {
+      if (!warmup) {
+        warmup = true
+        return
+      }
+      vscode.window.showInformationMessage(calibrateWIndowCommand)
+      await calibrateWindowCommandCycle(usingContext)
+    }),
     vscode.workspace.onDidChangeConfiguration?.(async (e) => {
       if (e.affectsConfiguration('workbench.colorTheme')) {
-        if (stores.windowState.read() != state.active) {
+        const tryNext = stores.windowState.read()
+        if (!tryNext) return
+        if (tryNext != state.active) {
           return 'SC: windowState is not active'
         }
         if (stores.calibrationState.read() != state.active) {
           return 'SC: calibrationState is not active'
         }
-        return changeExtensionStateCycle(usingContext, undefined)
+        return changeExtensionStateCycle(usingContext, tryNext)
       }
     }),
     {
@@ -109,6 +113,13 @@ export async function ExtensionState_statusBarItem(
       },
     }
   )
+
+  let warmup = false
+  await vscode.commands.executeCommand(calibrateWIndowCommand)
+  await hold(100)
+  // execute after registering the commands, specially calibrateWIndowCommand
+  const next = setState ?? 'active'
+  await changeExtensionStateCycle(usingContext, next)
 }
 
 async function REC_windowStateSandbox(
@@ -399,6 +410,14 @@ async function calibrateCommandCycle(
     c_busy = true
 
     const res = await calibrateStateSandbox(uriRemote, usingContext, _calibrate)
+    if (res == 'Success: calibrateStateSandbox') {
+      const theme = vscode.workspace
+        .getConfiguration('workbench')
+        ?.get('colorTheme')
+      if (typeof theme == 'string' && theme !== stores.colorThemeKind.read()) {
+        await stores.colorThemeKind.write(theme)
+      }
+    }
 
     c_busy = false
 
@@ -426,9 +445,9 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
       `window focus changed to ${state.focused}`
     )
     if (state.focused === false) {
-      task.resolve(
-        new Error('Window lost focus, calibrate window task was cancelled')
-      )
+      // task.resolve(
+      //   new Error('Window lost focus, calibrate window task was cancelled')
+      // )
     }
   })
   const input = vscode.window.showInputBox({
@@ -438,6 +457,10 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
   })
   const race = await Promise.race([task.promise, input])
   blurEvent.dispose()
+  if (!calibrate_window_task.value) {
+    debugger
+    return
+  }
   if (race instanceof Error) {
     debugger
     calibrate_window_task.value?.reject(race)
@@ -482,12 +505,11 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
       }
     )
 
-    calibrate_window_task.value?.resolve()
+    calibrate_window_task.value.resolve()
   } catch (error: any) {
-    vscode.window.showErrorMessage('Failed to parse window input')
-    calibrate_window_task.value?.reject(
-      new Error('Failed to parse window input')
-    )
+    const r = `Failed to parse window input with error: ${error?.message}`
+    vscode.window.showErrorMessage(r)
+    calibrate_window_task.value?.reject(new Error(r))
   }
 }
 function rgbToHexDivergent(rgbString: string, scalar = 1) {
@@ -517,8 +539,6 @@ async function toggleCommandCycle(usingContext: UsingContext) {
     )
     return
   }
-
-  vscode.workspace.getConfiguration('workbench').get('colorTheme')
 
   const next = flip(stores.windowState.read())
   await changeExtensionStateCycle(usingContext, next)
@@ -558,7 +578,7 @@ async function checkCalibratedCommandContext(
 let waitingForUserInput = false
 async function changeExtensionStateCycle(
   usingContext: UsingContext,
-  overloadedNextState: State | undefined
+  overloadedNextState: State
 ) {
   const { stores } = usingContext
 
@@ -589,47 +609,48 @@ async function changeExtensionStateCycle(
   t_busy = true
 
   if (theme === stores.colorThemeKind.read()) {
-    if (overloadedNextState) {
-      await REC_nextWindowStateCycle(
-        overloadedNextState,
-        binary(overloadedNextState),
-        usingContext
-      )
-      t_busy = false
-      return 'Success: overloadedNextState'
-    }
-    t_busy = false
-    return 'Success: same theme'
-  } else {
-    waitingForUserInput = true
-    const res = await vscode.window.showInformationMessage(
-      'The color theme changed. Shall we calibrate the extension?',
-      'Yes',
-      'No and deactivate'
+    await REC_nextWindowStateCycle(
+      overloadedNextState,
+      binary(overloadedNextState),
+      usingContext
     )
-    waitingForUserInput = false
-    const next = res?.includes('Yes') ? state.active : state.inactive
-    if (next == state.inactive) {
-      if (_item) {
-        await defaultWindowState(_item, next, stores.windowState)
-      }
-      t_busy = false
-      return 'SC: deactivate'
-    }
-    const tryNext = stores.windowState.read()
-    if (!tryNext) {
-      t_busy = false
-      return 'SC: undefined windowState'
-    }
-    const _res = await calibrateCommandCycle(uriRemote, usingContext)
-    if (_res == 'Success: calibrateStateSandbox') {
-      await stores.colorThemeKind.write(theme)
-      t_busy = false
-      return _res
-    }
-
     t_busy = false
-    return 'Failure: calibrateCommandCycle'
+    return 'Success: overloadedNextState'
+  } else {
+    if (_item) {
+      await defaultWindowState(_item, overloadedNextState, stores.windowState)
+    }
+    waitingForUserInput = true
+    // NOTE: it seems like the extension holds the entire client thread
+    // if you await on the "vscode export activate hook"
+    // right now the state is controlled by guard clauses.
+    // so entering this branch multiple times should be impossible
+    vscode.window
+      .showInformationMessage(
+        'The color theme changed. Shall we calibrate the extension?',
+        'Yes',
+        'No and deactivate'
+      )
+      .then(async (res) => {
+        waitingForUserInput = false
+        const next = res?.includes('Yes') ? state.active : state.inactive
+        if (next == state.inactive) {
+          if (_item) {
+            await defaultWindowState(_item, next, stores.windowState)
+          }
+          t_busy = false
+          return 'SC: deactivate'
+        }
+        const tryNext = stores.windowState.read()
+        if (!tryNext) {
+          t_busy = false
+          return 'SC: undefined windowState'
+        }
+        vscode.commands.executeCommand('extension.calibrate').then(() => {
+          t_busy = false
+          return 'Executed: extension.calibrate command'
+        })
+      })
   }
 }
 
@@ -753,18 +774,6 @@ export function getStateStore(context: vscode.ExtensionContext) {
 }
 export function getErrorStore(context: vscode.ExtensionContext) {
   return useState(context, 'error', <'error' | 'throw' | 'unhandled'>{})
-}
-
-type Task = ReturnType<typeof createTask>
-function createTask<R = unknown, E = R>() {
-  let resolve = (value?: R) => {},
-    reject = (value?: E) => {}
-  const promise = new Promise<R | E>((_resolve, _reject) => {
-    reject = _reject
-    // @ts-expect-error
-    resolve = _resolve
-  })
-  return { promise, resolve, reject }
 }
 
 // hold this thread and allow the dom to render the state

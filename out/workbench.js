@@ -38,6 +38,16 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
+  function createTask() {
+    let resolve = (value) => {
+    }, reject = (value) => {
+    };
+    const promise = new Promise((_resolve, _reject) => {
+      reject = _reject;
+      resolve = _resolve;
+    });
+    return { promise, resolve, reject };
+  }
   /*!
   * Toastify js 1.12.0
   * https://github.com/apvarun/toastify-js
@@ -588,7 +598,7 @@ var __publicField = (obj, key, value) => {
   }
   function lifecycle(props) {
     let running = false;
-    let tryFn2 = createTryFunction({ fallback: clean });
+    let tryFn = createTryFunction({ fallback: clean });
     let interval;
     let disposeObserver = deltaFn();
     let disposeActivate = deltaFn();
@@ -598,24 +608,26 @@ var __publicField = (obj, key, value) => {
         return;
       running = true;
       clean();
-      tryFn2(() => {
-        disposeObserver.fn = watchForRemoval(dom.watchForRemoval, reload);
+      tryFn(() => {
+        disposeObserver.fn = watchForRemoval(
+          dom.watchForRemoval,
+          function reload(delay = 5e3) {
+            dispose();
+            interval = setInterval(patch, delay);
+          }
+        );
         disposeActivate.fn = props.activate(dom);
       }, "Lifecycle crashed unexpectedly when activating");
     }
     function dispose() {
       clean();
-      tryFn2(() => {
+      tryFn(() => {
         var _a;
         disposeActivate.consume();
         disposeObserver.consume();
         (_a = props.dispose) == null ? void 0 : _a.call(props);
       }, "Lifecycle crashed unexpectedly when disposing");
       running = false;
-    }
-    function reload(delay = 5e3) {
-      dispose();
-      interval = setInterval(patch, delay);
     }
     function clean() {
       clearInterval(interval);
@@ -631,17 +643,17 @@ var __publicField = (obj, key, value) => {
             "Lifecycle already running, entering an impossible state"
           );
         }
-        if (tryFn2.guard("Lifecycle already crashed therefore not activating again")) {
+        if (tryFn.guard("Lifecycle already crashed therefore not activating again")) {
           return;
         }
-        reload(delay);
+        clean();
+        interval = setInterval(patch, delay);
       },
       dispose() {
-        if (tryFn2.guard("Lifecycle already crashed therefore not disposing again")) {
+        if (tryFn.guard("Lifecycle already crashed therefore not disposing again")) {
           return;
         }
         dispose();
-        clean();
       }
     };
   }
@@ -677,7 +689,7 @@ var __publicField = (obj, key, value) => {
     };
     return tryFunction;
   }
-  function createSyntaxLifecycle(observable, state2) {
+  function createSyntaxLifecycle(observable, state2, props) {
     return lifecycle({
       dom() {
         const statusBar = document.querySelector("footer .right-items");
@@ -719,7 +731,8 @@ var __publicField = (obj, key, value) => {
             if (node.matches(state2.selector)) {
               consume();
             }
-          }
+          },
+          dispose: props == null ? void 0 : props.activate()
         });
       }
     });
@@ -1438,12 +1451,12 @@ var __publicField = (obj, key, value) => {
         color: color(process["bracket.begin"].capture)
       }
     };
-    const colorsTableOutput = {
+    const colorsTable = {
       ...opacitySelectors,
       ...colorsSelectorOnly,
       ...colorsOnly
     };
-    colorsTableOutput[""];
+    colorsTable[""];
     const selectorOnly = {
       closingTagEntity: {
         selector: `${entityTagSelector}:has(+${angleBracketSelector}:last-child)`
@@ -1482,12 +1495,12 @@ var __publicField = (obj, key, value) => {
       }
     }
     checkMissingProps({
-      ...colorsTableOutput,
+      ...colorsTable,
       ...selectorOnly,
       ...ternaryOtherwise
     });
     return {
-      colorsTableOutput,
+      colorsTable,
       payload,
       process(_payload) {
         for (let key in payload) {
@@ -1587,20 +1600,9 @@ var __publicField = (obj, key, value) => {
   const stateObservable = createObservable(void 0);
   const calibrateObservable = createObservable(void 0);
   const sessionKey = `${extensionId}.session.styles`;
-  function cacheProc() {
-    try {
-      const cache = window.localStorage.getItem(sessionKey);
-      if (cache)
-        syntaxStyle.styleIt(cache);
-      else
-        throw new Error("cache is empty");
-    } catch (error) {
-      window.localStorage.removeItem(sessionKey);
-    }
-  }
-  const calibrateStyle = createStyles("calibrate");
-  calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
-  const calibrateWindowStyle = createStyles("calibrate.window");
+  createStyles("calibrate").styleIt(
+    `${ICalibrate.selector}{display: none !important}`
+  );
   let tableTask;
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
     if (!(state2 == calibrate.opened || state2 == calibrate.idle))
@@ -1624,62 +1626,54 @@ var __publicField = (obj, key, value) => {
     BonkersExecuteCommand(
       "Concise Syntax",
       "Calibrate Window",
-      JSON.stringify(snapshot.colorsTableOutput)
-    ).catch(() => toastConsole.error("Failed to run Calibrate Window command")).finally(() => BonkersExecuteCommand.clean()).catch(() => toastConsole.error("Failed to PREVENT_NULL input")).then(() => tableTask.promise).catch(() => toastConsole.error("Failed to get colors table")).then(() => {
+      JSON.stringify(snapshot.colorsTable)
+    ).catch(() => {
+      toastConsole.error("Failed to run Calibrate Window command");
+      BonkersExecuteCommand.shadow(false, getInput());
+    }).then(() => tableTask.promise).catch(() => toastConsole.error("Failed to get colors table")).then(() => {
       const css = parseSymbolColors(lineEditor).process(snapshot.payload);
       window.localStorage.setItem(sessionKey, css);
       syntaxStyle.styleIt(css);
     }).finally(() => tableTask = void 0);
   });
-  function createTask() {
-    let resolve = (value) => {
-    }, reject = (value) => {
-    };
-    const promise = new Promise((_resolve, _reject) => {
-      reject = _reject;
-      resolve = _resolve;
-    });
-    return { promise, resolve, reject };
-  }
+  createStyles("calibrate.window");
   async function BonkersExecuteCommand(displayName, commandName, value) {
-    calibrateWindowStyle.styleIt(`* {pointer-events:none;}`);
-    PREVENT(window);
-    let inputView = document.querySelector("li.action-item.command-center-center");
+    BonkersExecuteCommand.shadow(true);
+    const inputView = await tries(async () => document.querySelector("li.action-item.command-center-center"), 2, 100);
     if (inputView) {
       await tap(inputView);
     } else {
-      const view = document.querySelector(`.menubar-menu-button[aria-label="View"]`);
+      const view = await tries(async () => document.querySelector(`.menubar-menu-button[aria-label="View"]`), 2, 100);
       await tap(view);
-      const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`);
+      const commandPalletOption = await tries(async () => document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`), 2, 100);
       await tap(commandPalletOption);
     }
-    let preventInput = getInput();
-    PREVENT(preventInput);
-    preventInput.value = `>${displayName}`;
-    await hold();
-    let input = getInput();
+    const shadowInput = await tries(async () => getInput(), 3, 100);
+    shadowInput.value = `>${displayName}`;
+    let input = await tries(async () => getInput(), 3, 100);
     input.dispatchEvent(new Event("input"));
-    await tries(async () => {
-      const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
-      command.click();
-      return command;
-    }, 3);
+    const command = await tries(
+      async () => document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`),
+      3,
+      300
+    );
+    command.click();
+    await hold(100);
     input = await tries(async () => {
-      const deltaInput = getInput();
-      if (deltaInput.getAttribute("placeholder") != commandName) {
-        throw new Error("Failed to find command input element");
+      const input2 = getInput();
+      if ((input2 == null ? void 0 : input2.getAttribute("placeholder")) != commandName) {
+        return;
       }
-      if (preventInput !== deltaInput) {
-        toastConsole.warn("BonkersExecuteCommand preventInput !== deltaInput");
-        debugger;
-        PREVENT_NULL(preventInput);
-      }
-      PREVENT_NULL(deltaInput);
-      deltaInput.value = value;
-      deltaInput.dispatchEvent(new Event("input"));
-      await hold(300);
-      return deltaInput;
-    }, 3);
+      input2.value = value;
+      input2.dispatchEvent(new Event("input"));
+      return input2;
+    }, 50, 500);
+    await hold(100);
+    if (shadowInput !== input) {
+      throw new Error("shadowInput!==input");
+    } else {
+      BonkersExecuteCommand.shadow(false, input);
+    }
     input.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Enter",
       code: "Enter",
@@ -1689,46 +1683,43 @@ var __publicField = (obj, key, value) => {
       cancelable: true,
       composed: true
     }));
-    await hold();
-    async function tries(cb, n) {
-      let m = "";
+    await hold(100);
+    async function tries(cb, n, t = 500) {
       for (let i = 0; i < n; i++) {
-        try {
-          return await cb();
-        } catch (error) {
-          m = error.message;
-          await hold(500);
+        if (i == n - 1) {
+          debugger;
         }
+        const res = await cb();
+        if (res)
+          return res;
+        await hold(t);
       }
-      debugger;
-      throw new Error(m || `Failed to find command input element after ${n} tries`);
+      return void 0;
     }
     async function tap(el) {
       el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
-      await hold();
+      await hold(300);
     }
-    function hold(t = 300) {
+    function hold(t) {
       return new Promise((resolve) => setTimeout(resolve, t));
     }
   }
-  BonkersExecuteCommand.clean = (input = getInput()) => {
-    calibrateWindowStyle.dispose();
-    PREVENT_NULL(window);
-    PREVENT_NULL(input);
+  BonkersExecuteCommand.shadow = (block, input) => {
+    return;
   };
   function getInput() {
     return document.querySelector("div.quick-input-box input");
   }
-  function prevent(e2) {
-    e2.preventDefault();
-    e2.stopPropagation();
-    return false;
-  }
-  function PREVENT($0) {
-    $0.onclick = $0.onkeydown = $0.onkeyup = $0.onmousedown = $0.onmouseup = $0.onblur = $0.onfocus = prevent;
-  }
-  function PREVENT_NULL($0) {
-    $0.onclick = $0.onkeydown = $0.onkeyup = $0.onmousedown = $0.onmouseup = $0.onblur = $0.onfocus = null;
+  function cacheProc() {
+    try {
+      const cache = window.localStorage.getItem(sessionKey);
+      if (cache)
+        syntaxStyle.styleIt(cache);
+      else
+        throw new Error("cache is empty");
+    } catch (error) {
+      window.localStorage.removeItem(sessionKey);
+    }
   }
   const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
     if (!value)
@@ -1754,33 +1745,22 @@ var __publicField = (obj, key, value) => {
       calibration.dispose();
     }
   });
-  const syntax = createSyntaxLifecycle(stateObservable, IState);
+  const syntax = createSyntaxLifecycle(stateObservable, IState, {
+    activate() {
+      const unSubscribeState = createStateSubscription();
+      return () => {
+        stateObservable.value = state.inactive;
+        unSubscribeState();
+      };
+    }
+  });
   const calibration = createSyntaxLifecycle(calibrateObservable, ICalibrate);
   const highlight = createHighlightLifeCycle(editorObservable);
-  const deltaDispose = deltaFn();
-  const tryFn = createTryFunction();
-  const conciseSyntax = {
-    activate() {
-      tryFn(() => {
-        deltaDispose.consume();
-        syntax.activate();
-        const unSubscribeState = createStateSubscription();
-        deltaDispose.fn = () => {
-          tryFn(() => {
-            syntax.dispose();
-            stateObservable.value = state.inactive;
-            unSubscribeState();
-          }, "Failed to dispose concise-syntax");
-        };
-      }, "Failed to activate concise-syntax");
-    },
-    dispose: deltaDispose.consume
-  };
   if (window.conciseSyntax) {
     window.conciseSyntax.dispose();
   }
-  window.conciseSyntax = conciseSyntax;
-  conciseSyntax.activate();
-  console.log(extensionId, conciseSyntax);
+  window.conciseSyntax = syntax;
+  syntax.activate();
+  console.log(extensionId, syntax);
 });
 //# sourceMappingURL=workbench.js.map

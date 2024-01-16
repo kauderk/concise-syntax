@@ -31,3 +31,15 @@ export function deltaValue<T>(consume: (value: T) => void) {
     },
   }
 }
+
+export type Task<R = unknown, E = R> = ReturnType<typeof createTask<R, E>>
+export function createTask<R = unknown, E = R>() {
+  let resolve = (value?: R) => {},
+    reject = (value?: E) => {}
+  const promise = new Promise<R | E>((_resolve, _reject) => {
+    reject = _reject
+    // @ts-expect-error
+    resolve = _resolve
+  })
+  return { promise, resolve, reject }
+}

@@ -24,15 +24,19 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
     if (running || !dom.check()) return
     running = true
     clean()
-
     tryFn(() => {
-      disposeObserver.fn = watchForRemoval(dom.watchForRemoval, reload)
+      disposeObserver.fn = watchForRemoval(
+        dom.watchForRemoval,
+        function reload(delay = 5000) {
+          dispose()
+          interval = setInterval(patch, delay)
+        }
+      )
       disposeActivate.fn = props.activate(dom)!
     }, 'Lifecycle crashed unexpectedly when activating')
   }
   function dispose() {
     clean()
-
     tryFn(() => {
       disposeActivate.consume()
       disposeObserver.consume()
@@ -41,10 +45,7 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
     }, 'Lifecycle crashed unexpectedly when disposing')
     running = false
   }
-  function reload(delay = 5000) {
-    dispose()
-    interval = setInterval(patch, delay)
-  }
+
   function clean() {
     clearInterval(interval)
   }
@@ -65,8 +66,8 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
       ) {
         return
       }
-
-      reload(delay)
+      clean()
+      interval = setInterval(patch, delay)
     },
     dispose() {
       if (
@@ -76,7 +77,6 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
       }
 
       dispose()
-      clean()
     },
   }
 }

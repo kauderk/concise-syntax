@@ -6,8 +6,7 @@ import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
 import { addRemoveRootStyles, createStyles, toastConsole } from './shared'
 import { parseSymbolColors } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
-import { deltaFn } from 'src/shared/utils'
-import { createTryFunction } from './lifecycle'
+import { createTask, deltaFn } from 'src/shared/utils'
 import { type calibrateWIndowPlaceholder } from 'src/extension/statusBarItem'
 export type { editorObservable, stateObservable, calibrateObservable }
 
@@ -17,24 +16,14 @@ const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
 const sessionKey = `${extensionId}.session.styles`
 
-function cacheProc() {
-  try {
-    const cache = window.localStorage.getItem(sessionKey)
-    if (cache) syntaxStyle.styleIt(cache)
-    else throw new Error('cache is empty')
-  } catch (error) {
-    window.localStorage.removeItem(sessionKey)
-  }
-}
-const calibrateStyle = createStyles('calibrate')
-calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
-
-const calibrateWindowStyle = createStyles('calibrate.window')
+createStyles('calibrate').styleIt(
+  `${ICalibrate.selector}{display: none !important}`
+)
 
 let tableTask: ReturnType<typeof createTask<'opened' | 'idle'>> | undefined
 export type windowColorsTable = ReturnType<
   typeof parseSymbolColors
->['colorsTableOutput']
+>['colorsTable']
 const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((state) => {
     //#region opened -> idle -> reset
@@ -64,11 +53,12 @@ const createCalibrateSubscription = () =>
     BonkersExecuteCommand(
       'Concise Syntax',
       'Calibrate Window' satisfies calibrateWIndowPlaceholder,
-      JSON.stringify(snapshot.colorsTableOutput)
+      JSON.stringify(snapshot.colorsTable)
     )
-      .catch(() => toastConsole.error('Failed to run Calibrate Window command'))
-      .finally(() => BonkersExecuteCommand.clean())
-      .catch(() => toastConsole.error('Failed to PREVENT_NULL input'))
+      .catch(() => {
+        toastConsole.error('Failed to run Calibrate Window command')
+        BonkersExecuteCommand.shadow(false, getInput())
+      })
       // FIXME: here is where the window should resolve the 'Calibrate Window' task
       // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
       .then(() => tableTask!.promise)
@@ -80,56 +70,47 @@ const createCalibrateSubscription = () =>
       })
       .finally(() => (tableTask = undefined))
   })
-function createTask<R = unknown, E = R>() {
-  let resolve = (value?: R) => {},
-    reject = (value?: E) => {}
-  const promise = new Promise<R | E>((_resolve, _reject) => {
-    reject = _reject
-    // @ts-expect-error
-    resolve = _resolve
-  })
-  return { promise, resolve, reject }
-}
+
+//#region BonkersExecuteCommand
+const calibrateWindowStyle = createStyles('calibrate.window')
 // prettier-ignore
 async function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
-  calibrateWindowStyle.styleIt(`* {pointer-events:none;}`)
-  PREVENT(window)
-  let inputView = document.querySelector("li.action-item.command-center-center") as H
+  BonkersExecuteCommand.shadow(true)
+  const inputView = await tries(async()=>document.querySelector("li.action-item.command-center-center"), 2, 100)
   if (inputView){
     await tap(inputView)
   } else {
-    const view: H = document.querySelector(`.menubar-menu-button[aria-label="View"]`) as H
+    const view = await tries(async()=>document.querySelector(`.menubar-menu-button[aria-label="View"]`), 2, 100)
     await tap(view)
-    const commandPalletOption = document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`) as H
+    const commandPalletOption = await tries(async()=>document.querySelector(`[class="action-item"]:has([aria-label="Command Palette..."])`), 2, 100)
     await tap(commandPalletOption)
   }
-  let preventInput = getInput();
-  PREVENT(preventInput)
-  preventInput.value = `>${displayName}`
-  await hold()
-  let input = getInput();
+
+  const shadowInput = await tries(async()=>getInput(), 3, 100)
+  shadowInput.value = `>${displayName}`
+  
+  let input = await tries(async ()=>getInput(), 3, 100)
   input.dispatchEvent(new Event('input'))
-  await tries(async()=>{
-    const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`) as H
-    command.click()
-    return command
-  }, 3)
+
+  const command = await tries(async()=>document.querySelector<HTMLElement>(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`), 
+                                            3, 300)
+  command.click()
+  await hold(100)
   input = await tries(async ()=>{
-    const deltaInput = getInput();
-    if (deltaInput.getAttribute('placeholder') != commandName) {
-      throw new Error('Failed to find command input element')
+    const input = getInput();
+    if (input?.getAttribute('placeholder') != commandName) {
+      return
     }
-		if(preventInput!==deltaInput){
-			toastConsole.warn('BonkersExecuteCommand preventInput !== deltaInput')
-			debugger
-			PREVENT_NULL(preventInput)
-		}
-    PREVENT_NULL(deltaInput)
-    deltaInput.value = value
-    deltaInput.dispatchEvent(new Event('input'))
-    await hold(300)
-    return deltaInput
-  }, 3)
+    input.value = value
+    input.dispatchEvent(new Event('input'))
+    return input
+  }, 50, 500)
+  await hold(100)
+	if (shadowInput!==input) {
+		throw new Error('shadowInput!==input')
+	} else {
+		BonkersExecuteCommand.shadow(false, input)
+	}
   input.dispatchEvent(new KeyboardEvent('keydown', {
     key: 'Enter',
     code: 'Enter',
@@ -139,52 +120,66 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
     cancelable: true,
     composed: true
   }))
-  await hold()
+  await hold(100)
   
-  async function tries(cb:()=>Promise<H>, n: number){
-    let m = ''
+  async function tries<T>(cb:()=>Promise<T|undefined>, n: number,t=500){
     for (let i = 0; i < n; i++) {
-      try {
-        return await cb()
-      } catch (error: any) {
-        m = error.message
-        await hold(500)
+      if(i==n-1) {
+        debugger
       }
+      const res = await cb()
+      if(res) return res
+      await hold(t)
     }
-		debugger
-    throw new Error(m || `Failed to find command input element after ${n} tries`)
+    return <any>undefined // better stack trace errors
   }
-  async function tap(el:H) {
+  async function tap(el:Element) {
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
-    await hold()
+    await hold(300)
   }
-  function hold(t = 300) {
+  function hold(t:number) {
     return new Promise((resolve)=>setTimeout(resolve, t))
   }
 }
-BonkersExecuteCommand.clean = (input = getInput()) => {
-  calibrateWindowStyle.dispose()
-  PREVENT_NULL(window)
-  PREVENT_NULL(input)
+BonkersExecuteCommand.shadow = (block: boolean, input?: any) => {
+  return
+  const styles = block ? '' : '* {pointer-events:none;}'
+  calibrateWindowStyle.styleIt(styles)
+
+  const shadow = block ? shadowEventListeners : cleanShadowedEvents
+  shadow(window)
+  if (input) {
+    shadow(input) // FIXME: get me out of here
+  }
 }
-type H = HTMLInputElement
-function getInput() {
-  return document.querySelector('div.quick-input-box input') as H
-}
-function prevent(e: Event) {
+const shadowEventListeners = events((e: Event) => {
   e.preventDefault()
   e.stopPropagation()
   return false
+})
+const cleanShadowedEvents = events(null)
+function events(fn: any) {
+  return (el: HTMLElement | Window) => {
+    // prettier-ignore
+    el.onclick=el.onkeydown=el.onkeyup=el.onmousedown=el.onmouseup=el.onblur=el.onfocus=fn
+  }
 }
-function PREVENT($0: HTMLElement | Window) {
-  // prettier-ignore
-  $0.onclick=$0.onkeydown=$0.onkeyup=$0.onmousedown=$0.onmouseup=$0.onblur=$0.onfocus=prevent
-}
-function PREVENT_NULL($0: HTMLElement | Window) {
-  // prettier-ignore
-  $0.onclick=$0.onkeydown=$0.onkeyup=$0.onmousedown=$0.onmouseup=$0.onblur=$0.onfocus=null
+type H = HTMLInputElement | undefined
+function getInput() {
+  return document.querySelector('div.quick-input-box input') as H
 }
 
+//#endregion
+
+function cacheProc() {
+  try {
+    const cache = window.localStorage.getItem(sessionKey)
+    if (cache) syntaxStyle.styleIt(cache)
+    else throw new Error('cache is empty')
+  } catch (error) {
+    window.localStorage.removeItem(sessionKey)
+  }
+}
 const createEditorSubscription = () =>
   editorObservable.$ubscribe((value) => {
     if (!value) return
@@ -213,39 +208,28 @@ const createStateSubscription = () =>
     }
   })
 
-const syntax = createSyntaxLifecycle(stateObservable, IState)
+const syntax = createSyntaxLifecycle(stateObservable, IState, {
+  activate() {
+    const unSubscribeState = createStateSubscription()
+    return () => {
+      stateObservable.value = state.inactive
+      unSubscribeState()
+    }
+  },
+})
+// TODO: merge extension _calibrate and _state icons/bridges
 const calibration = createSyntaxLifecycle(calibrateObservable, ICalibrate)
 const highlight = createHighlightLifeCycle(editorObservable)
 
-const deltaDispose = deltaFn()
-const tryFn = createTryFunction()
-const conciseSyntax = {
-  activate() {
-    tryFn(() => {
-      deltaDispose.consume()
-      syntax.activate()
-      const unSubscribeState = createStateSubscription()
-      deltaDispose.fn = () => {
-        tryFn(() => {
-          syntax.dispose()
-          stateObservable.value = state.inactive
-          unSubscribeState()
-        }, 'Failed to dispose concise-syntax')
-      }
-    }, 'Failed to activate concise-syntax')
-  },
-  dispose: deltaDispose.consume,
-}
-
 // prettier-ignore
-declare global { interface Window { conciseSyntax?: typeof conciseSyntax } }
+declare global { interface Window { conciseSyntax?: typeof syntax } }
 if (window.conciseSyntax) {
   window.conciseSyntax.dispose()
 }
-window.conciseSyntax = conciseSyntax
-conciseSyntax.activate()
+window.conciseSyntax = syntax
+syntax.activate()
 
-console.log(extensionId, conciseSyntax)
+console.log(extensionId, syntax)
 
 /**
  * FIXME

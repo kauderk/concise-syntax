@@ -312,13 +312,13 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
     },
   } satisfies Partial<Record<textMateRulesNames, { color: string | undefined }>>
 
-  const colorsTableOutput = {
+  const colorsTable = {
     ...opacitySelectors,
     ...colorsSelectorOnly,
     ...colorsOnly,
   }
   // Test you are not missing any keys
-  colorsTableOutput['' as textMateRulesNames]
+  colorsTable['' as textMateRulesNames]
 
   const selectorOnly = {
     closingTagEntity: {
@@ -364,13 +364,13 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
     }
   }
   checkMissingProps({
-    ...colorsTableOutput,
+    ...colorsTable,
     ...selectorOnly,
     ...ternaryOtherwise,
   })
 
   return {
-    colorsTableOutput,
+    colorsTable,
     payload,
     process(_payload: typeof payload) {
       // FIXME: avoid mutations...
