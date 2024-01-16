@@ -54,6 +54,12 @@ export function lifecycle<T>(props: LifecycleProps<T>) {
       return running
     },
     activate(delay = 5000) {
+      if (running) {
+        debugger
+        toastConsole.error(
+          'Lifecycle already running, entering an impossible state'
+        )
+      }
       if (
         tryFn.guard('Lifecycle already crashed therefore not activating again')
       ) {

@@ -567,26 +567,27 @@ let calibrate_confirmation_task = deltaValue((t) => {
 let calibrate_window_task = deltaValue((t) => {
   t.resolve();
 });
+let t_busy = false;
+const remoteCalibratePath = path.join(__dirname, calibrationFileName);
+const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
 async function ExtensionState_statusBarItem(context, setState) {
   const stores = getStores(context);
   await stores.windowState.write(setState);
   const usingContext = { stores, context };
   checkDisposedCommandContext(setState);
   if (_item) {
-    return REC_nextWindowStateCycle(setState, binary(setState), usingContext);
+    await changeExtensionStateCycle(usingContext, setState);
   }
   const toggleCommand = packageJson.contributes.commands[2].command;
   _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _item.command = toggleCommand;
-  const remoteCalibratePath = path.join(__dirname, calibrationFileName);
-  const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
   const calibrateCommand = packageJson.contributes.commands[3].command;
   _calibrate = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _calibrate.command = calibrateCommand;
   defaultCalibrate(_calibrate);
   const calibrateWIndowCommand = packageJson.contributes.commands[4].command;
   const next = setState ?? "active";
-  await REC_nextWindowStateCycle(next, binary(next), usingContext);
+  await changeExtensionStateCycle(usingContext, next);
   context.subscriptions.push(
     _item,
     vscode__namespace.commands.registerCommand(
@@ -602,7 +603,17 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrateWIndowCommand,
       () => calibrateWindowCommandCycle(usingContext)
     ),
-    await handleThemeChange(usingContext, uriRemote),
+    vscode__namespace.workspace.onDidChangeConfiguration?.(async (e) => {
+      if (e.affectsConfiguration("workbench.colorTheme")) {
+        if (stores.windowState.read() != state.active) {
+          return "SC: windowState is not active";
+        }
+        if (stores.calibrationState.read() != state.active) {
+          return "SC: calibrationState is not active";
+        }
+        return changeExtensionStateCycle(usingContext, void 0);
+      }
+    }),
     {
       dispose() {
         disposeConfiguration.consume();
@@ -680,7 +691,7 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRe
     return "invalidated";
   }
 }
-async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
+async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
   const { stores } = usingContext;
   if (stores.globalCalibration.read() != state.active) {
     const res = await vscode__namespace.window.showInformationMessage(
@@ -710,13 +721,13 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
     await defaultWindowState(_item, "active", stores.windowState);
   }
   await tryUpdateCalibrateState(calibrate.opening, _calibrate2);
-  const document = await vscode__namespace.workspace.openTextDocument(uriRemote);
+  const document = await vscode__namespace.workspace.openTextDocument(uriRemote2);
   const editor = await vscode__namespace.window.showTextDocument(document, {
     preview: false,
     preserveFocus: false
   });
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
-    if (doc.uri.path === uriRemote.path || editor.document.isClosed) {
+    if (doc.uri.path === uriRemote2.path || editor.document.isClosed) {
       await consume_close(_calibrate2);
       return true;
     }
@@ -730,7 +741,7 @@ async function calibrateStateSandbox(uriRemote, usingContext, _calibrate2) {
     new Promise(
       (reject) => setTimeout(() => {
         reject(new Error("calibrate_window_task timed out "));
-      }, 5e3)
+      }, 5e5)
     )
   ]);
   if (race instanceof Error)
@@ -805,7 +816,7 @@ let defaultWindowState = async function(_item2, next, windowState) {
   }
 };
 const annoyance = defaultWindowState;
-async function calibrateCommandCycle(uriRemote, usingContext) {
+async function calibrateCommandCycle(uriRemote2, usingContext) {
   const { stores } = usingContext;
   if (!_calibrate) {
     vscode__namespace.window.showErrorMessage("No status bar item found");
@@ -831,7 +842,7 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
   }
   try {
     c_busy = true;
-    await calibrateStateSandbox(uriRemote, usingContext, _calibrate);
+    await calibrateStateSandbox(uriRemote2, usingContext, _calibrate);
     c_busy = false;
   } catch (error) {
     debugger;
@@ -839,6 +850,7 @@ async function calibrateCommandCycle(uriRemote, usingContext) {
     if (_item) {
       showCrashIcon(_item, error);
     }
+    calibrate_window_task.consume();
     calibrate_confirmation_task.consume();
     await consume_close(_calibrate);
     vscode__namespace.window.showErrorMessage(
@@ -866,10 +878,12 @@ async function calibrateWindowCommandCycle(usingContext) {
   const race = await Promise.race([task.promise, input]);
   blurEvent.dispose();
   if (race instanceof Error) {
+    debugger;
     calibrate_window_task.value?.reject(race);
     return;
   }
   if (!race) {
+    debugger;
     calibrate_window_task.value?.reject(
       new Error("No window input was provided")
     );
@@ -932,14 +946,9 @@ async function toggleCommandCycle(usingContext) {
     );
     return;
   }
-  if (busy) {
-    vscode__namespace.window.showInformationMessage(
-      "The extension is busy. Try again in a few seconds."
-    );
-    return;
-  }
+  vscode__namespace.workspace.getConfiguration("workbench").get("colorTheme");
   const next = flip(stores.windowState.read());
-  await REC_nextWindowStateCycle(next, next, usingContext);
+  await changeExtensionStateCycle(usingContext, next);
 }
 function defaultCalibrate(_calibrate2) {
   _calibrate2.text = `$(${calibrateIcon})`;
@@ -961,67 +970,62 @@ async function checkCalibratedCommandContext(next, calibrationState) {
   );
   await calibrationState.write(next);
 }
-async function handleThemeChange(usingContext, uriRemote) {
+async function changeExtensionStateCycle(usingContext, overloadedNextState) {
   const { stores } = usingContext;
-  let t_busy = false;
-  async function handler(theme2) {
-    if (typeof theme2 != "string") {
-      return "SC: theme is not a string";
-    }
-    if (busy || c_busy) {
-      vscode__namespace.window.showInformationMessage(
-        `Can't calibrate theme, the extension is busy...`
+  const theme = vscode__namespace.workspace.getConfiguration("workbench")?.get("colorTheme");
+  if (typeof theme != "string") {
+    return "SC: theme is not a string";
+  }
+  if (busy || c_busy) {
+    vscode__namespace.window.showInformationMessage(
+      "The extension is busy. Try again in a few seconds."
+    );
+    return;
+  }
+  if (t_busy) {
+    vscode__namespace.window.showWarningMessage(
+      `The extension is busy changing the color theme...`
+    );
+    return "SC: t_busy";
+  }
+  t_busy = true;
+  if (theme === stores.colorThemeKind.read()) {
+    if (overloadedNextState) {
+      await REC_nextWindowStateCycle(
+        overloadedNextState,
+        binary(overloadedNextState),
+        usingContext
       );
-      return "SC: busy";
-    }
-    if (t_busy) {
-      vscode__namespace.window.showWarningMessage(
-        `The extension is busy changing the color theme...`
-      );
-      return "SC: t_busy";
-    }
-    if (stores.windowState.read() != state.active) {
-      return "SC: windowState is not active";
-    }
-    if (stores.calibrationState.read() != state.active) {
-      return "SC: calibrationState is not active";
-    }
-    t_busy = true;
-    if (theme2 === stores.colorThemeKind.read())
-      ;
-    else {
-      await stores.colorThemeKind.write(theme2);
-      const res = await vscode__namespace.window.showInformationMessage(
-        "The color theme changed. Shall we calibrate the extension?",
-        "Yes",
-        "No and deactivate"
-      );
-      const next = res?.includes("Yes") ? state.active : state.inactive;
-      if (next == state.inactive) {
-        if (_item) {
-          await defaultWindowState(_item, next, stores.windowState);
-        }
-        t_busy = false;
-        return "SC: deactivate";
-      }
-      const tryNext = stores.windowState.read();
-      if (!tryNext) {
-        t_busy = false;
-        return "SC: undefined windowState";
-      }
-      await calibrateCommandCycle(uriRemote, usingContext);
-      await hold();
+      t_busy = false;
+      return "Success: overloadedNextState";
     }
     t_busy = false;
-    return "success";
-  }
-  const theme = () => vscode__namespace.workspace.getConfiguration("workbench")?.get("colorTheme");
-  await handler(theme());
-  return vscode__namespace.workspace.onDidChangeConfiguration?.(async (e) => {
-    if (e.affectsConfiguration("workbench.colorTheme")) {
-      await handler(theme());
+    return "Success: same theme";
+  } else {
+    await stores.colorThemeKind.write(theme);
+    const res = await vscode__namespace.window.showInformationMessage(
+      "The color theme changed. Shall we calibrate the extension?",
+      "Yes",
+      "No and deactivate"
+    );
+    const next = res?.includes("Yes") ? state.active : state.inactive;
+    if (next == state.inactive) {
+      if (_item) {
+        await defaultWindowState(_item, next, stores.windowState);
+      }
+      t_busy = false;
+      return "SC: deactivate";
     }
-  });
+    const tryNext = stores.windowState.read();
+    if (!tryNext) {
+      t_busy = false;
+      return "SC: undefined windowState";
+    }
+    await calibrateCommandCycle(uriRemote, usingContext);
+    await hold();
+    t_busy = false;
+    return "Success: calibrateCommandCycle";
+  }
 }
 function getStores(context) {
   return {

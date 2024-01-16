@@ -31,12 +31,13 @@ calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`)
 
 const calibrateWindowStyle = createStyles('calibrate.window')
 
-let previous_style_color_table_snapshot: any
+let tableTask: ReturnType<typeof createTask<'opened' | 'idle'>> | undefined
 export type windowColorsTable = ReturnType<
   typeof parseSymbolColors
 >['colorsTableOutput']
 const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((state) => {
+    //#region opened -> idle -> reset
     if (!(state == calibrate.opened || state == calibrate.idle)) return
     // prettier-ignore
     // FIXME: use proper uri or shared file path between extension and workbench
@@ -44,49 +45,50 @@ const createCalibrateSubscription = () =>
     if (!lineEditor) {
       return toastConsole.error('Calibrate Editor not found')
     }
+    if (tableTask && state == calibrate.opened) {
+      toastConsole.error('Calibrate Window already opened')
+      return
+    }
 
-    try {
-      syntaxStyle.dispose() // makes sense right...? otherwise it will conflict with parseSymbolColors
-      if (state == calibrate.opened) {
-        const res = parseSymbolColors(lineEditor)
-        const windowColorsTable = JSON.stringify(res.colorsTableOutput)
+    // FIXME: overcomplicated state for the sake of the following async procedure
+    if (!tableTask) {
+      tableTask = createTask()
+    } else if (state == calibrate.idle) {
+      tableTask.resolve(state)
+      return
+    }
+    //#endregion
 
-        BonkersExecuteCommand(
-          'Concise Syntax',
-          'Calibrate Window' satisfies calibrateWIndowPlaceholder,
-          windowColorsTable
-        )
-          .catch(() => {
-            toastConsole.error('Failed to execute Calibrate Window command')
-          })
-          .finally(() => {
-            calibrateWindowStyle.dispose()
-            PREVENT_NULL(window)
-            PREVENT_NULL(getInput())
-          })
-          .catch(() => {
-            toastConsole.error('Failed to PREVENT_NULL input')
-          })
-        previous_style_color_table_snapshot = res.payload
-        // FIXME: here is where the window should resolve the 'Calibrate Window' task
-        // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
-        return
-      }
-      if (!previous_style_color_table_snapshot) {
-        throw new Error('previousPayload is undefined')
-      } else if (state == calibrate.idle) {
-        const res = parseSymbolColors(lineEditor)
-        const css = res.process(previous_style_color_table_snapshot)
+    syntaxStyle.dispose()
+    const snapshot = parseSymbolColors(lineEditor)
+    BonkersExecuteCommand(
+      'Concise Syntax',
+      'Calibrate Window' satisfies calibrateWIndowPlaceholder,
+      JSON.stringify(snapshot.colorsTableOutput)
+    )
+      .catch(() => toastConsole.error('Failed to run Calibrate Window command'))
+      .finally(() => BonkersExecuteCommand.clean())
+      .catch(() => toastConsole.error('Failed to PREVENT_NULL input'))
+      // FIXME: here is where the window should resolve the 'Calibrate Window' task
+      // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
+      .then(() => tableTask!.promise)
+      .catch(() => toastConsole.error('Failed to get colors table'))
+      .then(() => {
+        const css = parseSymbolColors(lineEditor).process(snapshot.payload)
         window.localStorage.setItem(sessionKey, css)
         syntaxStyle.styleIt(css)
-        if (!highlight.running) {
-          highlight.activate(500) // FIXME: find the moment the css finishes loading
-        }
-      }
-    } catch (error) {
-      toastConsole.error('Failed to calibrate editor')
-    }
+      })
   })
+function createTask<R = unknown, E = R>() {
+  let resolve = (value?: R) => {},
+    reject = (value?: E) => {}
+  const promise = new Promise<R | E>((_resolve, _reject) => {
+    reject = _reject
+    // @ts-expect-error
+    resolve = _resolve
+  })
+  return { promise, resolve, reject }
+}
 // prettier-ignore
 async function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
   calibrateWindowStyle.styleIt(`* {pointer-events:none;}`)
@@ -107,8 +109,11 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
   input = getInput();
   input.dispatchEvent(new Event('input'))
   await hold()
-  const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`) as H
-  command.click()
+  await tries(async()=>{
+    const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`) as H
+    command.click()
+    return command
+  },3)
   await hold()
   input = await tries(async ()=>{
     const input = getInput();
@@ -120,9 +125,7 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
     await hold(100)
     return input
   }, 3)
-  calibrateWindowStyle.dispose()
-  PREVENT_NULL(window)
-  PREVENT_NULL(input)
+  BonkersExecuteCommand.clean()
   input.dispatchEvent(new KeyboardEvent('keydown', {
     key: 'Enter',
     code: 'Enter',
@@ -133,11 +136,6 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
     composed: true
   }))
   await hold()
-
-  if (command) {
-    return true
-  }
-
   
   async function tries(cb:()=>Promise<H>, n: number){
     let m = ''
@@ -158,6 +156,11 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
   function hold(t = 300) {
     return new Promise((resolve)=>setTimeout(resolve, t))
   }
+}
+BonkersExecuteCommand.clean = (input = getInput()) => {
+  calibrateWindowStyle.dispose()
+  PREVENT_NULL(window)
+  PREVENT_NULL(input)
 }
 type H = HTMLInputElement
 function getInput() {
@@ -185,24 +188,19 @@ const createEditorSubscription = () =>
   })
 
 const syntaxStyle = createStyles('hide')
+let deltaSubscribers = deltaFn()
 // Just use the "using" keyword...
 const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
-      if (!calibration.running) {
-        addRemoveRootStyles(true)
-        calibration.activate(500)
-        let unSubscribers = [createCalibrateSubscription()]
-
-        cacheProc()
-        if (!highlight.running) {
-          highlight.activate(500) // FIXME: find the moment the css finishes loading
-          unSubscribers.push(createEditorSubscription())
-        }
-
-        return () => unSubscribers.forEach((un) => un())
-      }
+      addRemoveRootStyles(true)
+      cacheProc()
+      calibration.activate(500)
+      highlight.activate(500) // FIXME: find the moment the css finishes loading
+      const _ = [createCalibrateSubscription(), createEditorSubscription()]
+      deltaSubscribers.fn = () => _.forEach((un) => un())
     } else {
+      deltaSubscribers.consume()
       addRemoveRootStyles(false)
       syntaxStyle.dispose()
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow
@@ -237,7 +235,6 @@ const conciseSyntax = {
 // prettier-ignore
 declare global { interface Window { conciseSyntax?: typeof conciseSyntax } }
 if (window.conciseSyntax) {
-  debugger
   window.conciseSyntax.dispose()
 }
 window.conciseSyntax = conciseSyntax

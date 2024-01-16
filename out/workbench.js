@@ -625,6 +625,12 @@ var __publicField = (obj, key, value) => {
         return running;
       },
       activate(delay = 5e3) {
+        if (running) {
+          debugger;
+          toastConsole.error(
+            "Lifecycle already running, entering an impossible state"
+          );
+        }
         if (tryFn2.guard("Lifecycle already crashed therefore not activating again")) {
           return;
         }
@@ -1595,7 +1601,7 @@ var __publicField = (obj, key, value) => {
   const calibrateStyle = createStyles("calibrate");
   calibrateStyle.styleIt(`${ICalibrate.selector}{display: none !important}`);
   const calibrateWindowStyle = createStyles("calibrate.window");
-  let previous_style_color_table_snapshot;
+  let tableTask;
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
     if (!(state2 == calibrate.opened || state2 == calibrate.idle))
       return;
@@ -1603,42 +1609,38 @@ var __publicField = (obj, key, value) => {
     if (!lineEditor) {
       return toastConsole.error("Calibrate Editor not found");
     }
-    try {
-      syntaxStyle.dispose();
-      if (state2 == calibrate.opened) {
-        const res = parseSymbolColors(lineEditor);
-        const windowColorsTable = JSON.stringify(res.colorsTableOutput);
-        BonkersExecuteCommand(
-          "Concise Syntax",
-          "Calibrate Window",
-          windowColorsTable
-        ).catch(() => {
-          toastConsole.error("Failed to execute Calibrate Window command");
-        }).finally(() => {
-          calibrateWindowStyle.dispose();
-          PREVENT_NULL(window);
-          PREVENT_NULL(getInput());
-        }).catch(() => {
-          toastConsole.error("Failed to PREVENT_NULL input");
-        });
-        previous_style_color_table_snapshot = res.payload;
-        return;
-      }
-      if (!previous_style_color_table_snapshot) {
-        throw new Error("previousPayload is undefined");
-      } else if (state2 == calibrate.idle) {
-        const res = parseSymbolColors(lineEditor);
-        const css = res.process(previous_style_color_table_snapshot);
-        window.localStorage.setItem(sessionKey, css);
-        syntaxStyle.styleIt(css);
-        if (!highlight.running) {
-          highlight.activate(500);
-        }
-      }
-    } catch (error) {
-      toastConsole.error("Failed to calibrate editor");
+    if (tableTask && state2 == calibrate.opened) {
+      toastConsole.error("Calibrate Window already opened");
+      return;
     }
+    if (!tableTask) {
+      tableTask = createTask();
+    } else if (state2 == calibrate.idle) {
+      tableTask.resolve(state2);
+      return;
+    }
+    syntaxStyle.dispose();
+    const snapshot = parseSymbolColors(lineEditor);
+    BonkersExecuteCommand(
+      "Concise Syntax",
+      "Calibrate Window",
+      JSON.stringify(snapshot.colorsTableOutput)
+    ).catch(() => toastConsole.error("Failed to run Calibrate Window command")).finally(() => BonkersExecuteCommand.clean()).catch(() => toastConsole.error("Failed to PREVENT_NULL input")).then(() => tableTask.promise).catch(() => toastConsole.error("Failed to get colors table")).then(() => {
+      const css = parseSymbolColors(lineEditor).process(snapshot.payload);
+      window.localStorage.setItem(sessionKey, css);
+      syntaxStyle.styleIt(css);
+    });
   });
+  function createTask() {
+    let resolve = (value) => {
+    }, reject = (value) => {
+    };
+    const promise = new Promise((_resolve, _reject) => {
+      reject = _reject;
+      resolve = _resolve;
+    });
+    return { promise, resolve, reject };
+  }
   async function BonkersExecuteCommand(displayName, commandName, value) {
     calibrateWindowStyle.styleIt(`* {pointer-events:none;}`);
     PREVENT(window);
@@ -1658,8 +1660,11 @@ var __publicField = (obj, key, value) => {
     input = getInput();
     input.dispatchEvent(new Event("input"));
     await hold();
-    const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
-    command.click();
+    await tries(async () => {
+      const command = document.querySelector(`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`);
+      command.click();
+      return command;
+    }, 3);
     await hold();
     input = await tries(async () => {
       const input2 = getInput();
@@ -1671,9 +1676,7 @@ var __publicField = (obj, key, value) => {
       await hold(100);
       return input2;
     }, 3);
-    calibrateWindowStyle.dispose();
-    PREVENT_NULL(window);
-    PREVENT_NULL(input);
+    BonkersExecuteCommand.clean();
     input.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Enter",
       code: "Enter",
@@ -1684,9 +1687,6 @@ var __publicField = (obj, key, value) => {
       composed: true
     }));
     await hold();
-    if (command) {
-      return true;
-    }
     async function tries(cb, n) {
       let m = "";
       for (let i = 0; i < n; i++) {
@@ -1707,6 +1707,11 @@ var __publicField = (obj, key, value) => {
       return new Promise((resolve) => setTimeout(resolve, t));
     }
   }
+  BonkersExecuteCommand.clean = (input = getInput()) => {
+    calibrateWindowStyle.dispose();
+    PREVENT_NULL(window);
+    PREVENT_NULL(input);
+  };
   function getInput() {
     return document.querySelector("div.quick-input-box input");
   }
@@ -1728,20 +1733,17 @@ var __publicField = (obj, key, value) => {
     return "Symbol.dispose";
   });
   const syntaxStyle = createStyles("hide");
+  let deltaSubscribers = deltaFn();
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
-      if (!calibration.running) {
-        addRemoveRootStyles(true);
-        calibration.activate(500);
-        let unSubscribers = [createCalibrateSubscription()];
-        cacheProc();
-        if (!highlight.running) {
-          highlight.activate(500);
-          unSubscribers.push(createEditorSubscription());
-        }
-        return () => unSubscribers.forEach((un) => un());
-      }
+      addRemoveRootStyles(true);
+      cacheProc();
+      calibration.activate(500);
+      highlight.activate(500);
+      const _ = [createCalibrateSubscription(), createEditorSubscription()];
+      deltaSubscribers.fn = () => _.forEach((un) => un());
     } else {
+      deltaSubscribers.consume();
       addRemoveRootStyles(false);
       syntaxStyle.dispose();
       highlight.dispose();
@@ -1771,7 +1773,6 @@ var __publicField = (obj, key, value) => {
     dispose: deltaDispose.consume
   };
   if (window.conciseSyntax) {
-    debugger;
     window.conciseSyntax.dispose();
   }
   window.conciseSyntax = conciseSyntax;
