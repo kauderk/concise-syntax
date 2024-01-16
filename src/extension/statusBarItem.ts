@@ -216,7 +216,7 @@ async function calibrateStateSandbox(
     checkCalibratedCommandContext(next, stores.calibrationState)
 
     if (next == state.inactive && stores.windowState.read() != state.active) {
-      return
+      return 'SC: inactive globalCalibration'
     }
   } else {
     // seems dumb but if "globalCalibration" is active, then "calibrationState" should be active too
@@ -278,6 +278,8 @@ async function calibrateStateSandbox(
   taskProgress.progress.report({ message: 'calibrated you may close the file' })
 
   setTimeout(calibrate_confirmation_task.consume, 5_000)
+
+  return 'Success: calibrateStateSandbox'
 }
 
 //#region module
@@ -368,14 +370,15 @@ async function calibrateCommandCycle(
   const { stores } = usingContext
 
   if (!_calibrate) {
-    vscode.window.showErrorMessage('No status bar item found')
-    return
+    const r = 'SC: No status bar item found (calibrate)'
+    vscode.window.showErrorMessage(r)
+    return r
   }
   if (stores.extensionState.read() == 'disposed') {
     vscode.window.showInformationMessage(
       'The extension is disposed. Mount it to use this command.'
     )
-    return
+    return 'SC: disposed'
   }
   if (c_busy || busy) {
     // FIXME: if any showInformationMessage you are waiting for is hidden to the notification area
@@ -383,21 +386,23 @@ async function calibrateCommandCycle(
     vscode.window.showInformationMessage(
       'The extension is busy. Try again in a few seconds.'
     )
-    return
+    return 'SC: busy'
   }
   if (calibrate_window_task.value) {
     vscode.window.showInformationMessage(
       'The extension is busy with a window task. Try again later'
     )
-    return
+    return 'SC: pending calibrate_window_task'
   }
 
   try {
     c_busy = true
 
-    await calibrateStateSandbox(uriRemote, usingContext, _calibrate)
+    const res = await calibrateStateSandbox(uriRemote, usingContext, _calibrate)
 
     c_busy = false
+
+    return res
   } catch (error: any) {
     debugger
     c_busy = false
@@ -410,6 +415,7 @@ async function calibrateCommandCycle(
     vscode.window.showErrorMessage(
       `Error: failed to execute calibrate command with error: ${error?.message}`
     )
+    return error instanceof Error ? error : new Error('Unknown error')
   }
 }
 export type calibrateWIndowPlaceholder = 'Calibrate Window'
@@ -595,7 +601,6 @@ async function changeExtensionStateCycle(
     t_busy = false
     return 'Success: same theme'
   } else {
-    await stores.colorThemeKind.write(theme)
     waitingForUserInput = true
     const res = await vscode.window.showInformationMessage(
       'The color theme changed. Shall we calibrate the extension?',
@@ -616,11 +621,15 @@ async function changeExtensionStateCycle(
       t_busy = false
       return 'SC: undefined windowState'
     }
-    await calibrateCommandCycle(uriRemote, usingContext)
-    await hold()
+    const _res = await calibrateCommandCycle(uriRemote, usingContext)
+    if (_res == 'Success: calibrateStateSandbox') {
+      await stores.colorThemeKind.write(theme)
+      t_busy = false
+      return _res
+    }
 
     t_busy = false
-    return 'Success: calibrateCommandCycle'
+    return 'Failure: calibrateCommandCycle'
   }
 }
 

@@ -703,7 +703,7 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
     await stores.globalCalibration.write(next);
     checkCalibratedCommandContext(next, stores.calibrationState);
     if (next == state.inactive && stores.windowState.read() != state.active) {
-      return;
+      return "SC: inactive globalCalibration";
     }
   } else {
     checkCalibratedCommandContext(state.active, stores.calibrationState);
@@ -755,6 +755,7 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
   await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
   taskProgress.progress.report({ message: "calibrated you may close the file" });
   setTimeout(calibrate_confirmation_task.consume, 5e3);
+  return "Success: calibrateStateSandbox";
 }
 async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursiveDiff) {
   if (!_item) {
@@ -819,31 +820,33 @@ const annoyance = defaultWindowState;
 async function calibrateCommandCycle(uriRemote2, usingContext) {
   const { stores } = usingContext;
   if (!_calibrate) {
-    vscode__namespace.window.showErrorMessage("No status bar item found");
-    return;
+    const r = "SC: No status bar item found (calibrate)";
+    vscode__namespace.window.showErrorMessage(r);
+    return r;
   }
   if (stores.extensionState.read() == "disposed") {
     vscode__namespace.window.showInformationMessage(
       "The extension is disposed. Mount it to use this command."
     );
-    return;
+    return "SC: disposed";
   }
   if (c_busy || busy) {
     vscode__namespace.window.showInformationMessage(
       "The extension is busy. Try again in a few seconds."
     );
-    return;
+    return "SC: busy";
   }
   if (calibrate_window_task.value) {
     vscode__namespace.window.showInformationMessage(
       "The extension is busy with a window task. Try again later"
     );
-    return;
+    return "SC: pending calibrate_window_task";
   }
   try {
     c_busy = true;
-    await calibrateStateSandbox(uriRemote2, usingContext, _calibrate);
+    const res = await calibrateStateSandbox(uriRemote2, usingContext, _calibrate);
     c_busy = false;
+    return res;
   } catch (error) {
     debugger;
     c_busy = false;
@@ -856,6 +859,7 @@ async function calibrateCommandCycle(uriRemote2, usingContext) {
     vscode__namespace.window.showErrorMessage(
       `Error: failed to execute calibrate command with error: ${error?.message}`
     );
+    return error instanceof Error ? error : new Error("Unknown error");
   }
 }
 async function calibrateWindowCommandCycle(usingContext) {
@@ -1005,7 +1009,6 @@ async function changeExtensionStateCycle(usingContext, overloadedNextState) {
     t_busy = false;
     return "Success: same theme";
   } else {
-    await stores.colorThemeKind.write(theme);
     waitingForUserInput = true;
     const res = await vscode__namespace.window.showInformationMessage(
       "The color theme changed. Shall we calibrate the extension?",
@@ -1026,10 +1029,14 @@ async function changeExtensionStateCycle(usingContext, overloadedNextState) {
       t_busy = false;
       return "SC: undefined windowState";
     }
-    await calibrateCommandCycle(uriRemote, usingContext);
-    await hold();
+    const _res = await calibrateCommandCycle(uriRemote, usingContext);
+    if (_res == "Success: calibrateStateSandbox") {
+      await stores.colorThemeKind.write(theme);
+      t_busy = false;
+      return _res;
+    }
     t_busy = false;
-    return "Success: calibrateCommandCycle";
+    return "Failure: calibrateCommandCycle";
   }
 }
 function getStores(context) {
