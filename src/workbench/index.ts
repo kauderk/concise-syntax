@@ -51,8 +51,6 @@ const createCalibrateSubscription = () =>
         const res = parseSymbolColors(lineEditor)
         const windowColorsTable = JSON.stringify(res.colorsTableOutput)
 
-        const bonkers = blurOutWindow()
-        bonkers?.take()
         BonkersExecuteCommand(
           'Concise Syntax',
           'Calibrate Window' satisfies calibrateWIndowPlaceholder,
@@ -63,7 +61,6 @@ const createCalibrateSubscription = () =>
           })
           .finally(() => {
             calibrateWindowStyle.dispose()
-            bonkers?.recover()
             PREVENT_NULL(window)
             PREVENT_NULL(getInput())
           })
@@ -92,7 +89,7 @@ const createCalibrateSubscription = () =>
   })
 // prettier-ignore
 async function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
-  calibrateWindowStyle.styleIt(`* {pointer-events:none;} .split-view-view {outline: 1px solid red;}`)
+  calibrateWindowStyle.styleIt(`* {pointer-events:none;}`)
   PREVENT(window)
   let inputView = document.querySelector("li.action-item.command-center-center") as H
   if (inputView){
@@ -160,39 +157,6 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
   }
   function hold(t = 300) {
     return new Promise((resolve)=>setTimeout(resolve, t))
-  }
-}
-function blurOutWindow() {
-  debugger
-  // https://stackoverflow.com/questions/63040475/uncaught-referenceerror-geteventlisteners-is-not-defined
-  const eventListeners = window.getEventListeners?.(window)
-  if (!eventListeners) return
-
-  const freezeListeners = ['focusin', 'focusout', 'focus', 'blur'].map(
-    (name) => eventListeners[name]
-  )
-  return {
-    take() {
-      debugger
-      for (const events of freezeListeners) {
-        if (!events) continue
-        for (const event of events) {
-          if (!event) continue
-          window.removeEventListener(event.type, event.listener)
-        }
-      }
-    },
-    recover() {
-      debugger
-      for (const events of freezeListeners) {
-        if (!events) continue
-        for (const event of events) {
-          if (!event) continue
-          window.addEventListener(event.type, event.listener, event)
-        }
-      }
-      freezeListeners.length = 0
-    },
   }
 }
 type H = HTMLInputElement
@@ -272,8 +236,6 @@ const conciseSyntax = {
 
 // prettier-ignore
 declare global { interface Window { conciseSyntax?: typeof conciseSyntax } }
-// prettier-ignore
-declare global { interface Window { getEventListeners?: (node:unknown)=> Record<string, ({ type: string, listener: EventListenerOrEventListenerObject, useCapture: boolean, once: boolean, passive: boolean }|undefined)[]> }}
 if (window.conciseSyntax) {
   debugger
   window.conciseSyntax.dispose()

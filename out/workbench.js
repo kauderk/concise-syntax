@@ -1608,8 +1608,6 @@ var __publicField = (obj, key, value) => {
       if (state2 == calibrate.opened) {
         const res = parseSymbolColors(lineEditor);
         const windowColorsTable = JSON.stringify(res.colorsTableOutput);
-        const bonkers = blurOutWindow();
-        bonkers == null ? void 0 : bonkers.take();
         BonkersExecuteCommand(
           "Concise Syntax",
           "Calibrate Window",
@@ -1618,7 +1616,6 @@ var __publicField = (obj, key, value) => {
           toastConsole.error("Failed to execute Calibrate Window command");
         }).finally(() => {
           calibrateWindowStyle.dispose();
-          bonkers == null ? void 0 : bonkers.recover();
           PREVENT_NULL(window);
           PREVENT_NULL(getInput());
         }).catch(() => {
@@ -1643,7 +1640,7 @@ var __publicField = (obj, key, value) => {
     }
   });
   async function BonkersExecuteCommand(displayName, commandName, value) {
-    calibrateWindowStyle.styleIt(`* {pointer-events:none;} .split-view-view {outline: 1px solid red;}`);
+    calibrateWindowStyle.styleIt(`* {pointer-events:none;}`);
     PREVENT(window);
     let inputView = document.querySelector("li.action-item.command-center-center");
     if (inputView) {
@@ -1709,43 +1706,6 @@ var __publicField = (obj, key, value) => {
     function hold(t = 300) {
       return new Promise((resolve) => setTimeout(resolve, t));
     }
-  }
-  function blurOutWindow() {
-    var _a;
-    debugger;
-    const eventListeners = (_a = window.getEventListeners) == null ? void 0 : _a.call(window, window);
-    if (!eventListeners)
-      return;
-    const freezeListeners = ["focusin", "focusout", "focus", "blur"].map(
-      (name) => eventListeners[name]
-    );
-    return {
-      take() {
-        debugger;
-        for (const events of freezeListeners) {
-          if (!events)
-            continue;
-          for (const event of events) {
-            if (!event)
-              continue;
-            window.removeEventListener(event.type, event.listener);
-          }
-        }
-      },
-      recover() {
-        debugger;
-        for (const events of freezeListeners) {
-          if (!events)
-            continue;
-          for (const event of events) {
-            if (!event)
-              continue;
-            window.addEventListener(event.type, event.listener, event);
-          }
-        }
-        freezeListeners.length = 0;
-      }
-    };
   }
   function getInput() {
     return document.querySelector("div.quick-input-box input");
