@@ -602,7 +602,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrateWIndowCommand,
       () => calibrateWindowCommandCycle(usingContext)
     ),
-    await handleThemeChange(usingContext),
+    await handleThemeChange(usingContext, uriRemote),
     {
       dispose() {
         disposeConfiguration.consume();
@@ -796,7 +796,11 @@ let defaultWindowState = async function(_item2, next, windowState) {
     _calibrate?.hide();
     _item2.hide();
   } else {
-    _calibrate?.show();
+    if (next == state.active) {
+      _calibrate?.show();
+    } else {
+      _calibrate?.hide();
+    }
     _item2.show();
   }
 };
@@ -957,58 +961,67 @@ async function checkCalibratedCommandContext(next, calibrationState) {
   );
   await calibrationState.write(next);
 }
-async function handleThemeChange(usingContext) {
+async function handleThemeChange(usingContext, uriRemote) {
   const { stores } = usingContext;
   let t_busy = false;
-  async function handler(e) {
-    const kind = e?.kind;
-    if (typeof kind != "number") {
-      return;
+  async function handler(theme2) {
+    if (typeof theme2 != "string") {
+      return "SC: theme is not a string";
     }
     if (busy || c_busy) {
       vscode__namespace.window.showInformationMessage(
         `Can't calibrate theme, the extension is busy...`
       );
-      return;
+      return "SC: busy";
     }
     if (t_busy) {
       vscode__namespace.window.showWarningMessage(
         `The extension is busy changing the color theme...`
       );
-      return;
+      return "SC: t_busy";
+    }
+    if (stores.windowState.read() != state.active) {
+      return "SC: windowState is not active";
+    }
+    if (stores.calibrationState.read() != state.active) {
+      return "SC: calibrationState is not active";
     }
     t_busy = true;
-    debugger;
-    if (kind === stores.colorThemeKind.read())
+    if (theme2 === stores.colorThemeKind.read())
       ;
     else {
-      await stores.colorThemeKind.write(kind);
+      await stores.colorThemeKind.write(theme2);
       const res = await vscode__namespace.window.showInformationMessage(
-        "The color theme changed. Shall re calibrate the extension settings?",
+        "The color theme changed. Shall we calibrate the extension?",
         "Yes",
-        "No"
+        "No and deactivate"
       );
-      if (!res?.includes("Yes"))
-        return;
+      const next = res?.includes("Yes") ? state.active : state.inactive;
+      if (next == state.inactive) {
+        if (_item) {
+          await defaultWindowState(_item, next, stores.windowState);
+        }
+        t_busy = false;
+        return "SC: deactivate";
+      }
       const tryNext = stores.windowState.read();
-      if (!tryNext)
-        return;
-      await REC_nextWindowStateCycle(tryNext, binary(tryNext), usingContext);
+      if (!tryNext) {
+        t_busy = false;
+        return "SC: undefined windowState";
+      }
+      await calibrateCommandCycle(uriRemote, usingContext);
       await hold();
     }
     t_busy = false;
+    return "success";
   }
-  await handler(vscode__namespace.window.activeColorTheme);
-  const dispose = vscode__namespace.window.onDidChangeActiveColorTheme?.(handler)?.dispose;
-  if (!dispose) {
-    console.error("Missing onDidChangeActiveColorTheme API");
-  }
-  return {
-    dispose() {
-      if (!dispose)
-        return;
+  const theme = () => vscode__namespace.workspace.getConfiguration("workbench")?.get("colorTheme");
+  await handler(theme());
+  return vscode__namespace.workspace.onDidChangeConfiguration?.(async (e) => {
+    if (e.affectsConfiguration("workbench.colorTheme")) {
+      await handler(theme());
     }
-  };
+  });
 }
 function getStores(context) {
   return {
@@ -1022,6 +1035,7 @@ function getStores(context) {
   };
 }
 async function wipeAllState(context) {
+  await updateSettingsCycle(context, state.inactive);
   const states = getStores(context);
   for (const iterator of Object.values(states)) {
     await iterator.write(void 0);

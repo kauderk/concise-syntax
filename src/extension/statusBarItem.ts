@@ -88,7 +88,7 @@ export async function ExtensionState_statusBarItem(
     vscode.commands.registerCommand(calibrateWIndowCommand, () =>
       calibrateWindowCommandCycle(usingContext)
     ),
-    await handleThemeChange(usingContext),
+    await handleThemeChange(usingContext, uriRemote),
     {
       dispose() {
         disposeConfiguration.consume()
@@ -337,7 +337,11 @@ let defaultWindowState = async function (
     _calibrate?.hide()
     _item.hide()
   } else {
-    _calibrate?.show()
+    if (next == state.active) {
+      _calibrate?.show()
+    } else {
+      _calibrate?.hide()
+    }
     _item.show()
   }
 }
@@ -534,64 +538,81 @@ async function checkCalibratedCommandContext(
   await calibrationState.write(next)
 }
 
-async function handleThemeChange(usingContext: UsingContext) {
+async function handleThemeChange(
+  usingContext: UsingContext,
+  uriRemote: vscode.Uri
+) {
   const { stores } = usingContext
 
   let t_busy = false
-  async function handler(e?: { kind: unknown }) {
-    const kind = e?.kind
-    if (typeof kind != 'number') {
+  async function handler(theme?: string) {
+    if (typeof theme != 'string') {
       // vscode.window.showInformationMessage(
       //   `Can't change the color theme because the kind is not a number`
       // )
-      return
+      return 'SC: theme is not a string'
     }
     if (busy || c_busy) {
       vscode.window.showInformationMessage(
         `Can't calibrate theme, the extension is busy...`
       )
-      return
+      return 'SC: busy'
     }
     if (t_busy) {
       vscode.window.showWarningMessage(
         `The extension is busy changing the color theme...`
       )
-      return
+      return 'SC: t_busy'
+    }
+    if (stores.windowState.read() != state.active) {
+      return 'SC: windowState is not active'
+    }
+    if (stores.calibrationState.read() != state.active) {
+      return 'SC: calibrationState is not active'
     }
     t_busy = true
 
-    debugger
-    if ((kind as any) === stores.colorThemeKind.read()) {
+    if (theme === stores.colorThemeKind.read()) {
       // noop
     } else {
-      await stores.colorThemeKind.write(kind as any)
+      await stores.colorThemeKind.write(theme)
       const res = await vscode.window.showInformationMessage(
-        'The color theme changed. Shall re calibrate the extension settings?',
+        'The color theme changed. Shall we calibrate the extension?',
         'Yes',
-        'No'
+        'No and deactivate'
       )
-      if (!res?.includes('Yes')) return
-
+      const next = res?.includes('Yes') ? state.active : state.inactive
+      if (next == state.inactive) {
+        if (_item) {
+          await defaultWindowState(_item, next, stores.windowState)
+        }
+        t_busy = false
+        return 'SC: deactivate'
+      }
       const tryNext = stores.windowState.read()
-      if (!tryNext) return
-      await REC_nextWindowStateCycle(tryNext, binary(tryNext), usingContext)
+      if (!tryNext) {
+        t_busy = false
+        return 'SC: undefined windowState'
+      }
+      await calibrateCommandCycle(uriRemote, usingContext)
       await hold()
     }
 
     t_busy = false
+    return 'success'
   }
-  // @ts-expect-error
-  await handler(vscode.window.activeColorTheme)
-  // @ts-expect-error
-  const dispose = vscode.window.onDidChangeActiveColorTheme?.(handler)?.dispose
-  if (!dispose) {
-    console.error('Missing onDidChangeActiveColorTheme API')
-  }
-  return {
-    dispose() {
-      if (!dispose) return
-    },
-  }
+
+  const theme = () =>
+    vscode.workspace.getConfiguration('workbench')?.get('colorTheme') as
+      | string
+      | undefined
+  await handler(theme())
+
+  return vscode.workspace.onDidChangeConfiguration?.(async (e) => {
+    if (e.affectsConfiguration('workbench.colorTheme')) {
+      await handler(theme())
+    }
+  })
 }
 
 function getStores(context: vscode.ExtensionContext) {
@@ -608,6 +629,7 @@ function getStores(context: vscode.ExtensionContext) {
 type Stores = ReturnType<typeof getStores>
 
 export async function wipeAllState(context: vscode.ExtensionContext) {
+  await updateSettingsCycle(context, state.inactive)
   const states = getStores(context)
   for (const iterator of Object.values(states)) {
     await iterator.write(undefined as any)
