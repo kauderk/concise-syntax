@@ -602,6 +602,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrateWIndowCommand,
       () => calibrateWindowCommandCycle(usingContext)
     ),
+    await handleThemeChange(usingContext),
     {
       dispose() {
         disposeConfiguration.consume();
@@ -956,6 +957,59 @@ async function checkCalibratedCommandContext(next, calibrationState) {
   );
   await calibrationState.write(next);
 }
+async function handleThemeChange(usingContext) {
+  const { stores } = usingContext;
+  let t_busy = false;
+  async function handler(e) {
+    const kind = e?.kind;
+    if (typeof kind != "number") {
+      return;
+    }
+    if (busy || c_busy) {
+      vscode__namespace.window.showInformationMessage(
+        `Can't calibrate theme, the extension is busy...`
+      );
+      return;
+    }
+    if (t_busy) {
+      vscode__namespace.window.showWarningMessage(
+        `The extension is busy changing the color theme...`
+      );
+      return;
+    }
+    t_busy = true;
+    debugger;
+    if (kind === stores.colorThemeKind.read())
+      ;
+    else {
+      await stores.colorThemeKind.write(kind);
+      const res = await vscode__namespace.window.showInformationMessage(
+        "The color theme changed. Shall re calibrate the extension settings?",
+        "Yes",
+        "No"
+      );
+      if (!res?.includes("Yes"))
+        return;
+      const tryNext = stores.windowState.read();
+      if (!tryNext)
+        return;
+      await REC_nextWindowStateCycle(tryNext, binary(tryNext), usingContext);
+      await hold();
+    }
+    t_busy = false;
+  }
+  await handler(vscode__namespace.window.activeColorTheme);
+  const dispose = vscode__namespace.window.onDidChangeActiveColorTheme?.(handler)?.dispose;
+  if (!dispose) {
+    console.error("Missing onDidChangeActiveColorTheme API");
+  }
+  return {
+    dispose() {
+      if (!dispose)
+        return;
+    }
+  };
+}
 function getStores(context) {
   return {
     extensionState: getStateStore(context),
@@ -963,7 +1017,8 @@ function getStores(context) {
     globalInvalidation: getGlobalAnyInvalidate(context),
     globalCalibration: getGlobalAnyCalibrate(context),
     calibrationState: getAnyCalibrate(context),
-    textMateRules: getTextMateRules(context)
+    textMateRules: getTextMateRules(context),
+    colorThemeKind: getColorThemeKind(context)
   };
 }
 async function wipeAllState(context) {
@@ -1040,6 +1095,9 @@ function binary(state2) {
 }
 function flip(next) {
   return next == "active" ? "inactive" : "active";
+}
+function getColorThemeKind(context) {
+  return useState(context, "colorThemeKind");
 }
 function getAnyCalibrate(context) {
   return useState(context, "calibrate");

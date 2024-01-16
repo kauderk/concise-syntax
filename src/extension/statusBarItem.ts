@@ -88,6 +88,7 @@ export async function ExtensionState_statusBarItem(
     vscode.commands.registerCommand(calibrateWIndowCommand, () =>
       calibrateWindowCommandCycle(usingContext)
     ),
+    await handleThemeChange(usingContext),
     {
       dispose() {
         disposeConfiguration.consume()
@@ -532,6 +533,67 @@ async function checkCalibratedCommandContext(
   // https://stackoverflow.com/a/74468400
   await calibrationState.write(next)
 }
+
+async function handleThemeChange(usingContext: UsingContext) {
+  const { stores } = usingContext
+
+  let t_busy = false
+  async function handler(e?: { kind: unknown }) {
+    const kind = e?.kind
+    if (typeof kind != 'number') {
+      // vscode.window.showInformationMessage(
+      //   `Can't change the color theme because the kind is not a number`
+      // )
+      return
+    }
+    if (busy || c_busy) {
+      vscode.window.showInformationMessage(
+        `Can't calibrate theme, the extension is busy...`
+      )
+      return
+    }
+    if (t_busy) {
+      vscode.window.showWarningMessage(
+        `The extension is busy changing the color theme...`
+      )
+      return
+    }
+    t_busy = true
+
+    debugger
+    if ((kind as any) === stores.colorThemeKind.read()) {
+      // noop
+    } else {
+      await stores.colorThemeKind.write(kind as any)
+      const res = await vscode.window.showInformationMessage(
+        'The color theme changed. Shall re calibrate the extension settings?',
+        'Yes',
+        'No'
+      )
+      if (!res?.includes('Yes')) return
+
+      const tryNext = stores.windowState.read()
+      if (!tryNext) return
+      await REC_nextWindowStateCycle(tryNext, binary(tryNext), usingContext)
+      await hold()
+    }
+
+    t_busy = false
+  }
+  // @ts-expect-error
+  await handler(vscode.window.activeColorTheme)
+  // @ts-expect-error
+  const dispose = vscode.window.onDidChangeActiveColorTheme?.(handler)?.dispose
+  if (!dispose) {
+    console.error('Missing onDidChangeActiveColorTheme API')
+  }
+  return {
+    dispose() {
+      if (!dispose) return
+    },
+  }
+}
+
 function getStores(context: vscode.ExtensionContext) {
   return {
     extensionState: getStateStore(context),
@@ -540,6 +602,7 @@ function getStores(context: vscode.ExtensionContext) {
     globalCalibration: getGlobalAnyCalibrate(context),
     calibrationState: getAnyCalibrate(context),
     textMateRules: getTextMateRules(context),
+    colorThemeKind: getColorThemeKind(context),
   }
 }
 type Stores = ReturnType<typeof getStores>
@@ -630,6 +693,9 @@ function flip(next?: State) {
   return next == 'active' ? 'inactive' : 'active'
 }
 
+export function getColorThemeKind(context: vscode.ExtensionContext) {
+  return useState(context, 'colorThemeKind', <string>{})
+}
 export function getAnyCalibrate(context: vscode.ExtensionContext) {
   return useState(context, 'calibrate', <State>{})
 }
