@@ -85,7 +85,8 @@ const contributes = {
     {
       command: "extension.calibrateWindow",
       title: "Calibrate Window",
-      category: "Concise Syntax"
+      category: "Concise Syntax",
+      enablement: "!extension.disposed && extension.calibrateWindow"
     },
     {
       command: "extension.reset",
@@ -606,14 +607,10 @@ async function ExtensionState_statusBarItem(context, setState) {
       calibrateCommand,
       () => calibrateCommandCycle(uriRemote, usingContext)
     ),
-    vscode__namespace.commands.registerCommand(calibrateWIndowCommand, async () => {
-      if (!warmup) {
-        warmup = true;
-        return;
-      }
-      vscode__namespace.window.showInformationMessage(calibrateWIndowCommand);
-      await calibrateWindowCommandCycle(usingContext);
-    }),
+    vscode__namespace.commands.registerCommand(
+      calibrateWIndowCommand,
+      async () => calibrateWindowCommandCycle(usingContext)
+    ),
     vscode__namespace.workspace.onDidChangeConfiguration?.(async (e) => {
       if (e.affectsConfiguration("workbench.colorTheme")) {
         const tryNext = stores.windowState.read();
@@ -636,9 +633,6 @@ async function ExtensionState_statusBarItem(context, setState) {
       }
     }
   );
-  let warmup = false;
-  await vscode__namespace.commands.executeCommand(calibrateWIndowCommand);
-  await hold(100);
   const next = setState ?? "active";
   await changeExtensionStateCycle(usingContext, next);
 }
@@ -760,7 +754,7 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
     new Promise(
       (reject) => setTimeout(() => {
         reject(new Error("calibrate_window_task timed out "));
-      }, 5e5)
+      }, 5e3)
     )
   ]);
   if (race instanceof Error)
@@ -904,16 +898,13 @@ async function calibrateWindowCommandCycle(usingContext) {
   const race = await Promise.race([task.promise, input]);
   blurEvent.dispose();
   if (!calibrate_window_task.value) {
-    debugger;
     return;
   }
   if (race instanceof Error) {
-    debugger;
     calibrate_window_task.value?.reject(race);
     return;
   }
   if (!race) {
-    debugger;
     calibrate_window_task.value?.reject(
       new Error("No window input was provided")
     );

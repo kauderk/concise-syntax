@@ -50,7 +50,8 @@ declare const data: {
       {
         "command": "extension.calibrateWindow",
         "title": "Calibrate Window",
-        "category": "Concise Syntax"
+        "category": "Concise Syntax",
+        "enablement": "!extension.disposed && extension.calibrateWindow"
       },
       {
         "command": "extension.reset",

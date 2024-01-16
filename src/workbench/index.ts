@@ -104,9 +104,10 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
     input.value = value
     input.dispatchEvent(new Event('input'))
     return input
-  }, 50, 500)
+  }, 4, 500)
   await hold(100)
 	if (shadowInput!==input) {
+		debugger
 		throw new Error('shadowInput!==input')
 	} else {
 		BonkersExecuteCommand.shadow(false, input)
@@ -142,7 +143,6 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
   }
 }
 BonkersExecuteCommand.shadow = (block: boolean, input?: any) => {
-  return
   const styles = block ? '' : '* {pointer-events:none;}'
   calibrateWindowStyle.styleIt(styles)
 

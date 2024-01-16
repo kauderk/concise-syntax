@@ -1636,7 +1636,7 @@ var __publicField = (obj, key, value) => {
       syntaxStyle.styleIt(css);
     }).finally(() => tableTask = void 0);
   });
-  createStyles("calibrate.window");
+  const calibrateWindowStyle = createStyles("calibrate.window");
   async function BonkersExecuteCommand(displayName, commandName, value) {
     BonkersExecuteCommand.shadow(true);
     const inputView = await tries(async () => document.querySelector("li.action-item.command-center-center"), 2, 100);
@@ -1667,9 +1667,10 @@ var __publicField = (obj, key, value) => {
       input2.value = value;
       input2.dispatchEvent(new Event("input"));
       return input2;
-    }, 50, 500);
+    }, 4, 500);
     await hold(100);
     if (shadowInput !== input) {
+      debugger;
       throw new Error("shadowInput!==input");
     } else {
       BonkersExecuteCommand.shadow(false, input);
@@ -1705,8 +1706,25 @@ var __publicField = (obj, key, value) => {
     }
   }
   BonkersExecuteCommand.shadow = (block, input) => {
-    return;
+    const styles2 = block ? "" : "* {pointer-events:none;}";
+    calibrateWindowStyle.styleIt(styles2);
+    const shadow = block ? shadowEventListeners : cleanShadowedEvents;
+    shadow(window);
+    if (input) {
+      shadow(input);
+    }
   };
+  const shadowEventListeners = events((e2) => {
+    e2.preventDefault();
+    e2.stopPropagation();
+    return false;
+  });
+  const cleanShadowedEvents = events(null);
+  function events(fn) {
+    return (el) => {
+      el.onclick = el.onkeydown = el.onkeyup = el.onmousedown = el.onmouseup = el.onblur = el.onfocus = fn;
+    };
+  }
   function getInput() {
     return document.querySelector("div.quick-input-box input");
   }

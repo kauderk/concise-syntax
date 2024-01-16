@@ -84,14 +84,9 @@ export async function ExtensionState_statusBarItem(
     vscode.commands.registerCommand(calibrateCommand, () =>
       calibrateCommandCycle(uriRemote, usingContext)
     ),
-    vscode.commands.registerCommand(calibrateWIndowCommand, async () => {
-      if (!warmup) {
-        warmup = true
-        return
-      }
-      vscode.window.showInformationMessage(calibrateWIndowCommand)
-      await calibrateWindowCommandCycle(usingContext)
-    }),
+    vscode.commands.registerCommand(calibrateWIndowCommand, async () =>
+      calibrateWindowCommandCycle(usingContext)
+    ),
     vscode.workspace.onDidChangeConfiguration?.(async (e) => {
       if (e.affectsConfiguration('workbench.colorTheme')) {
         const tryNext = stores.windowState.read()
@@ -114,9 +109,6 @@ export async function ExtensionState_statusBarItem(
     }
   )
 
-  let warmup = false
-  await vscode.commands.executeCommand(calibrateWIndowCommand)
-  await hold(100)
   // execute after registering the commands, specially calibrateWIndowCommand
   const next = setState ?? 'active'
   await changeExtensionStateCycle(usingContext, next)
@@ -272,7 +264,7 @@ async function calibrateStateSandbox(
     new Promise((reject) =>
       setTimeout(() => {
         reject(new Error('calibrate_window_task timed out '))
-      }, 500_000)
+      }, 5_000)
     ),
   ])
   if (race instanceof Error) throw race
@@ -458,16 +450,13 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
   const race = await Promise.race([task.promise, input])
   blurEvent.dispose()
   if (!calibrate_window_task.value) {
-    debugger
     return
   }
   if (race instanceof Error) {
-    debugger
     calibrate_window_task.value?.reject(race)
     return
   }
   if (!race) {
-    debugger
     calibrate_window_task.value?.reject(
       new Error('No window input was provided')
     )
