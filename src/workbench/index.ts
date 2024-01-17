@@ -128,8 +128,14 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
     ],
   ] as const satisfies ObserverTasks
   
+  // TODO: pass OR branch types
   const branchTasks = [
-		[
+    [
+      'li.action-item.command-center-center',
+      tapVsCode,
+      [widgetSelector, commandWidgetTasks]
+    ],
+    [
       `.menubar-menu-button[aria-label="View"]`,
       tapVsCode,
       [
@@ -138,17 +144,12 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
         [widgetSelector, commandWidgetTasks]
       ]
     ],
-    [
-      'li.action-item.command-center-center',
-      tapVsCode,
-      [widgetSelector, commandWidgetTasks]
-    ],
   ] as const satisfies BranchObserverTasks
   
-  debugger
   return await Promise.race([
+    // TODO: resolve when the last task is completed
     REC_ObservableTaskTree(document.body, branchTasks),
-    new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')), 5_000))
+    new Promise((resolve)=>setTimeout(()=>resolve(new Error('timeout')), 5_000))
   ])
 
   function tapVsCode(el:Element) {

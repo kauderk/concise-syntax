@@ -7,10 +7,14 @@ export type ObserverTasks = [
 export type BranchObserver = [
   selector: string,
   task: (element: HTMLElement & { value: any }) => void | Error,
-  branchSelector: [string, ObserverTasks] | BranchObserver
+  branchSelector: Branch
 ]
+type Branch = BranchObserver | [string, ObserverTasks]
 export type BranchObserverTasks = BranchObserver[]
 
+/**
+ I'm positive this could be a 10 line function, but I'm not sure how to do it.
+ */
 export function REC_ObservableTaskTree(
   target: HTMLElement,
   tasks: BranchObserverTasks,
@@ -18,9 +22,7 @@ export function REC_ObservableTaskTree(
 ) {
   const task = createTask<undefined, Error>()
   let step = 0
-  let findNewBranch:
-    | (() => [Element | null, [string, ObserverTasks] | BranchObserver] | void)
-    | undefined
+  let findNewBranch: (() => [Element | null, Branch] | void) | undefined
 
   const observer = new MutationObserver(async (record) => {
     if (findNewBranch) {
@@ -60,7 +62,14 @@ export function REC_ObservableTaskTree(
 
     if (nextBranch.length == 3) {
       return handleBranch(node, selector, o_task, () => {
-        return nextMatch(branch)
+        const [selector] = branch
+
+        const nextTarget = document.querySelector(selector)
+        if (nextTarget instanceof HTMLElement) {
+          return nextMatch(nextTarget, branch)
+        } else {
+          return findMatchFunc(selector, branch)
+        }
       })
     } else {
       return handleBranch(node, selector, o_task, () => {
@@ -74,31 +83,52 @@ export function REC_ObservableTaskTree(
       })
     }
   }
-  function nextMatch(branch: BranchObserver | [string, ObserverTasks]) {
+  function nextMatch(node: HTMLElement, tree: Branch) {
+    if (tree.length !== 3) {
+      // ts-expect-error
+      const rec = REC_ObservableTaskTree(node, tree[1])
+      return 'recursive tree'
+    }
+
+    const [self_selector, o_task, branch] = tree
+    const res = handleBranch(node, self_selector, o_task, () => 'next')
+    if (!res) {
+      debugger
+      throw new Error('failed to handle branch')
+    }
+
     const [selector, newTasks] = branch
 
     const nextTarget = document.querySelector(selector)
     if (nextTarget instanceof HTMLElement) {
-      // @ts-expect-error
+      // ts-expect-error
       const rec = REC_ObservableTaskTree(nextTarget, newTasks)
       return 'recursive'
     } else {
-      debugger
-      // @ts-expect-error hijack this recursive function
-      findNewBranch = () => [document.querySelector(selector), newTasks]
-      target = document.body
-      step = 0
-      // @ts-expect-error
-      tasks = newTasks
-      observe()
-      return 'findNewBranch'
+      // ts-expect-error
+      return findMatchFunc(selector, newTasks)
     }
   }
+  // prettier-ignore
+  function findMatchFunc(selector: string, newTasks: Branch) {
+		if(findNewBranch){
+			debugger
+		}
+    findNewBranch = () => [document.querySelector(selector), newTasks]
+    target = document.body
+    step = 0
+    // ts-expect-error
+    tasks = newTasks
+    observe()
+    return 'findNewBranch' as const
+  }
+
   function handleBranch(
     node: Element,
     selector: string,
     o_task: any,
-    thenable: () => void | 'next' | 'findNewBranch' | 'finish' | 'recursive'
+    // prettier-ignore
+    thenable: () => 'next' | 'findNewBranch' | 'finish' | 'recursive' | 'recursive tree'
   ) {
     if (!node.matches(selector)) return
 
@@ -117,9 +147,13 @@ export function REC_ObservableTaskTree(
           ? error
           : new Error('unknown error', { cause: error })
       )
+      return 'error'
     }
   }
   function unplug() {
+    if (observing === false) {
+      debugger
+    }
     observing = false
     observer.disconnect()
   }
@@ -141,24 +175,14 @@ export function REC_ObservableTaskTree(
     unplug()
     task.resolve()
 
-    if (tree.length !== 3) {
-      // @ts-expect-error
-      const rec = REC_ObservableTaskTree(node, tree)
-      return 'recursive tree'
-    }
-
-    const [selector, o_task, branch] = tree
-    const res = handleBranch(node, selector, o_task, () => 'next')
-    if (!res) {
-      debugger
-      throw new Error('failed to handle branch')
-    }
-
-    return nextMatch(branch)
+    return nextMatch(node, tree)
   }
 
-  let observing = false
+  let observing: boolean | undefined = undefined
   const observe = () => {
+    if (observing) {
+      debugger
+    }
     observing = true
     observer.observe(target, {
       childList: true,
@@ -167,29 +191,20 @@ export function REC_ObservableTaskTree(
     })
   }
 
-  debugger
-
-  for (const [selector] of tasks) {
+  for (let i = 0; i < tasks.length; i++) {
+    const [selector] = tasks[i]
     if (!selector || selector.length == 1) {
       debugger
       throw new Error(`invalid selector: ${selector}`)
     }
     const node = target.querySelector(selector)
     const res = stepForward(node)
-    if (step == -1) {
-      return task
-    }
-    if (!res) {
-      observe()
-      return task
-    }
-    if (handleNewBranch()) {
+    if (res?.match(/recursive|error/)) {
       return task
     }
   }
 
   if (step > -1 && step < tasks.length && !observing) {
-    debugger
     observe()
   } else {
     debugger

@@ -1634,7 +1634,13 @@ var __publicField = (obj, key, value) => {
       const [selector, o_task, branch] = nextBranch;
       if (nextBranch.length == 3) {
         return handleBranch(node, selector, o_task, () => {
-          return nextMatch(branch);
+          const [selector2] = branch;
+          const nextTarget = document.querySelector(selector2);
+          if (nextTarget instanceof HTMLElement) {
+            return nextMatch(nextTarget, branch);
+          } else {
+            return findMatchFunc(selector2, branch);
+          }
         });
       } else {
         return handleBranch(node, selector, o_task, () => {
@@ -1648,21 +1654,36 @@ var __publicField = (obj, key, value) => {
         });
       }
     }
-    function nextMatch(branch) {
+    function nextMatch(node, tree) {
+      if (tree.length !== 3) {
+        REC_ObservableTaskTree(node, tree[1]);
+        return "recursive tree";
+      }
+      const [self_selector, o_task, branch] = tree;
+      const res = handleBranch(node, self_selector, o_task, () => "next");
+      if (!res) {
+        debugger;
+        throw new Error("failed to handle branch");
+      }
       const [selector, newTasks] = branch;
       const nextTarget = document.querySelector(selector);
       if (nextTarget instanceof HTMLElement) {
         REC_ObservableTaskTree(nextTarget, newTasks);
         return "recursive";
       } else {
-        debugger;
-        findNewBranch = () => [document.querySelector(selector), newTasks];
-        target = document.body;
-        step = 0;
-        tasks = newTasks;
-        observe();
-        return "findNewBranch";
+        return findMatchFunc(selector, newTasks);
       }
+    }
+    function findMatchFunc(selector, newTasks) {
+      if (findNewBranch) {
+        debugger;
+      }
+      findNewBranch = () => [document.querySelector(selector), newTasks];
+      target = document.body;
+      step = 0;
+      tasks = newTasks;
+      observe();
+      return "findNewBranch";
     }
     function handleBranch(node, selector, o_task, thenable) {
       if (!node.matches(selector))
@@ -1680,9 +1701,13 @@ var __publicField = (obj, key, value) => {
         task.reject(
           error instanceof Error ? error : new Error("unknown error", { cause: error })
         );
+        return "error";
       }
     }
     function unplug() {
+      if (observing === false) {
+        debugger;
+      }
       observing = false;
       observer.disconnect();
     }
@@ -1703,20 +1728,13 @@ var __publicField = (obj, key, value) => {
       findNewBranch = void 0;
       unplug();
       task.resolve();
-      if (tree.length !== 3) {
-        REC_ObservableTaskTree(node, tree);
-        return "recursive tree";
-      }
-      const [selector, o_task, branch] = tree;
-      const res = handleBranch(node, selector, o_task, () => "next");
-      if (!res) {
-        debugger;
-        throw new Error("failed to handle branch");
-      }
-      return nextMatch(branch);
+      return nextMatch(node, tree);
     }
-    let observing = false;
+    let observing = void 0;
     const observe = () => {
+      if (observing) {
+        debugger;
+      }
       observing = true;
       observer.observe(target, {
         childList: true,
@@ -1724,27 +1742,19 @@ var __publicField = (obj, key, value) => {
         attributes: true
       });
     };
-    debugger;
-    for (const [selector] of tasks) {
+    for (let i = 0; i < tasks.length; i++) {
+      const [selector] = tasks[i];
       if (!selector || selector.length == 1) {
         debugger;
         throw new Error(`invalid selector: ${selector}`);
       }
       const node = target.querySelector(selector);
       const res = stepForward(node);
-      if (step == -1) {
-        return task;
-      }
-      if (!res) {
-        observe();
-        return task;
-      }
-      if (handleNewBranch()) {
+      if (res == null ? void 0 : res.match(/recursive|error/)) {
         return task;
       }
     }
     if (step > -1 && step < tasks.length && !observing) {
-      debugger;
       observe();
     } else {
       debugger;
@@ -1842,6 +1852,11 @@ var __publicField = (obj, key, value) => {
     ];
     const branchTasks = [
       [
+        "li.action-item.command-center-center",
+        tapVsCode,
+        [widgetSelector, commandWidgetTasks]
+      ],
+      [
         `.menubar-menu-button[aria-label="View"]`,
         tapVsCode,
         [
@@ -1849,17 +1864,12 @@ var __publicField = (obj, key, value) => {
           tapVsCode,
           [widgetSelector, commandWidgetTasks]
         ]
-      ],
-      [
-        "li.action-item.command-center-center",
-        tapVsCode,
-        [widgetSelector, commandWidgetTasks]
       ]
     ];
-    debugger;
     return await Promise.race([
+      // TODO: resolve when the last task is completed
       REC_ObservableTaskTree(document.body, branchTasks),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5e3))
+      new Promise((resolve) => setTimeout(() => resolve(new Error("timeout")), 5e3))
     ]);
     function tapVsCode(el) {
       el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));

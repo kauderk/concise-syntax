@@ -261,11 +261,11 @@ async function calibrateStateSandbox(
 
   const race = await Promise.race([
     calibrate_window_task.value.promise,
-    // new Promise((reject) =>
-    //   setTimeout(() => {
-    //     reject(new Error('calibrate_window_task timed out '))
-    //   }, 500_000)
-    // ),
+    new Promise((reject) =>
+      setTimeout(() => {
+        reject(new Error('calibrate_window_task timed out '))
+      }, 5_000)
+    ),
   ])
   if (race instanceof Error) throw race
   taskProgress.progress.report({ message: 'calibrating syntax and theme' })
