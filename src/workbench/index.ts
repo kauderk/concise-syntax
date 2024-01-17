@@ -8,7 +8,11 @@ import { parseSymbolColors } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 import { createTask, deltaFn } from 'src/shared/utils'
 import { type calibrateWIndowPlaceholder } from 'src/extension/statusBarItem'
-import { ObserverTasks, createObservableTask } from './observableTask'
+import {
+  BranchObserverTasks,
+  ObserverTasks,
+  createObservableTask,
+} from './observableTask'
 export type { editorObservable, stateObservable, calibrateObservable }
 
 const editorObservable = createObservable<undefined | string>(undefined)
@@ -77,65 +81,78 @@ const calibrateWindowStyle = createStyles('calibrate.window')
 // prettier-ignore
 async function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
   BonkersExecuteCommand.shadow(true)
-  const inputView = await tries(async()=>document.querySelector("li.action-item.command-center-center"), 2, 100)
-	await inputView.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
+  const widgetSelector = '.quick-input-widget'
+  const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`
+  let shadowInput: any
   
-	const widgetSelector = '.quick-input-widget'
-	const target = await tries(async()=>document.querySelector(widgetSelector),2,100)
+  const commandWidgetTasks = [
+    [
+      `${inputSelector}`,
+      (el) => {
+        shadowEventListeners(shadowInput=el)
+        el.value = `>${displayName}`
+        el.dispatchEvent(new Event('input'))
+      },
+    ],
+    [
+      `.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`,
+      (el) => el.click(),
+    ],
+    [
+      `${inputSelector}[placeholder="${commandName}"]`,
+      (el) => {
+        el.value = value
+        el.dispatchEvent(new Event('input'))
+      },
+    ],
+    [
+      `${inputSelector}[title="${commandName}"][aria-describedby="quickInput_message"]`,
+      (el) => {
+        if (shadowInput !== el) {
+          return new Error('shadowInput!==target')
+        } else {
+          BonkersExecuteCommand.shadow(false, el)
+        }
+        el.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          })
+        )
+      },
+    ],
+  ] as const satisfies ObserverTasks
+  
+  const branchTasks = [
+    [
+      'li.action-item.command-center-center',
+      tapVsCode,
+      [widgetSelector, commandWidgetTasks]
+    ],
+    [
+      `.menubar-menu-button[aria-label="View"]`,
+      tapVsCode,
+      [
+        `[class="action-item"]:has([aria-label="Command Palette..."])`,
+        tapVsCode,
+        [widgetSelector, commandWidgetTasks]
+      ]
+    ],
+  ] as const satisfies BranchObserverTasks
+  
+  // return await Promise.race([
+  //   createObservableTask(target,commandWidgetTasks),
+  //   new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')), 5_000))
+  // ])
 
-	const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`
-
-	let shadowInput: any
-
-	const tasks = [
-		// ['li.action-item.command-center-center', tap],
-		// [`.menubar-menu-button[aria-label="View"]`,()=>{}],
-		// [`[class="action-item"]:has([aria-label="Command Palette..."])`,()=>{}],
-		[
-			`${inputSelector}`,
-			(el) => {
-				shadowEventListeners(shadowInput=el)
-				el.value = `>${displayName}`
-				el.dispatchEvent(new Event('input'))
-			},
-		],
-		[
-			`.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`,
-			(el) => el.click(),
-		],
-		[
-			`${inputSelector}[placeholder="${commandName}"]`,
-			(el) => {
-				el.value = value
-				el.dispatchEvent(new Event('input'))
-			},
-		],
-		[
-			`${inputSelector}[title="${commandName}"][aria-describedby="quickInput_message"]`,
-			(el) => {
-				if (shadowInput !== el) {
-					debugger
-					return new Error('shadowInput!==target')
-				} else {
-					BonkersExecuteCommand.shadow(false, el)
-				}
-				el.dispatchEvent(
-					new KeyboardEvent('keydown', {
-						key: 'Enter',
-						code: 'Enter',
-						keyCode: 13,
-						which: 13,
-						bubbles: true,
-						cancelable: true,
-						composed: true,
-					})
-				)
-			},
-		],
-	] as const satisfies ObserverTasks
-	
-	await createObservableTask(target,tasks)
-
+  function tapVsCode(el:Element) {
+    el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
+  }
   async function tries<T>(cb:()=>Promise<T|undefined>, n: number,t=500){
     for (let i = 0; i < n; i++) {
       if(i==n-1) { debugger }
