@@ -116,12 +116,19 @@ export function REC_ObservableTaskTree(
     const [branch, tree] = findNewBranch() ?? []
 
     if (branch instanceof HTMLElement && tree) {
+      debugger
+      findNewBranch = undefined
       const task_tree = Array.isArray(tree[1]) ? tree[1] : tree[2]
+
       if (!Array.isArray(task_tree)) {
         debugger
         throw new Error('task_tree is not an array')
       }
-      findNewBranch = undefined
+      if (step == -1 && task_tree.length === 3) {
+        debugger
+        return console.log('Potential new branch found but step is -1')
+      }
+
       unplug()
       task.resolve()
       const rec = REC_ObservableTaskTree(branch, task_tree)
@@ -140,14 +147,20 @@ export function REC_ObservableTaskTree(
     })
 
   debugger
+
   for (const [selector] of tasks) {
     const node = target.querySelector(selector)
-    if (step === 0) {
+    if (step != -1) {
+      let attempt = step
       if (node) {
         stepForward(node)
       }
       if (handleNewBranch()) {
         return task
+      }
+      if (attempt === step) {
+        console.log('step not changed', step)
+        break
       }
     } else {
       break
@@ -155,6 +168,7 @@ export function REC_ObservableTaskTree(
   }
 
   if (!findNewBranch) {
+    // why?
     observe()
   } else {
     debugger

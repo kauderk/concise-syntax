@@ -1681,12 +1681,17 @@ var __publicField = (obj, key, value) => {
       }
       const [branch, tree] = findNewBranch() ?? [];
       if (branch instanceof HTMLElement && tree) {
+        debugger;
+        findNewBranch = void 0;
         const task_tree = Array.isArray(tree[1]) ? tree[1] : tree[2];
         if (!Array.isArray(task_tree)) {
           debugger;
           throw new Error("task_tree is not an array");
         }
-        findNewBranch = void 0;
+        if (step == -1 && task_tree.length === 3) {
+          debugger;
+          return console.log("Potential new branch found but step is -1");
+        }
         unplug();
         task.resolve();
         const rec = REC_ObservableTaskTree(branch, task_tree);
@@ -1703,12 +1708,17 @@ var __publicField = (obj, key, value) => {
     debugger;
     for (const [selector] of tasks) {
       const node = target.querySelector(selector);
-      if (step === 0) {
+      if (step != -1) {
+        let attempt = step;
         if (node) {
           stepForward(node);
         }
         if (handleNewBranch()) {
           return task;
+        }
+        if (attempt === step) {
+          console.log("step not changed", step);
+          break;
         }
       } else {
         break;
@@ -1811,11 +1821,6 @@ var __publicField = (obj, key, value) => {
     ];
     const branchTasks = [
       [
-        "li.action-item.command-center-center",
-        tapVsCode,
-        [widgetSelector, commandWidgetTasks]
-      ],
-      [
         `.menubar-menu-button[aria-label="View"]`,
         tapVsCode,
         [
@@ -1823,6 +1828,11 @@ var __publicField = (obj, key, value) => {
           tapVsCode,
           [widgetSelector, commandWidgetTasks]
         ]
+      ],
+      [
+        "li.action-item.command-center-center",
+        tapVsCode,
+        [widgetSelector, commandWidgetTasks]
       ]
     ];
     debugger;

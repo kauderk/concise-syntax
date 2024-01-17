@@ -129,12 +129,7 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
   ] as const satisfies ObserverTasks
   
   const branchTasks = [
-    [
-      'li.action-item.command-center-center',
-      tapVsCode,
-      [widgetSelector, commandWidgetTasks]
-    ],
-    [
+		[
       `.menubar-menu-button[aria-label="View"]`,
       tapVsCode,
       [
@@ -142,6 +137,11 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
         tapVsCode,
         [widgetSelector, commandWidgetTasks]
       ]
+    ],
+    [
+      'li.action-item.command-center-center',
+      tapVsCode,
+      [widgetSelector, commandWidgetTasks]
     ],
   ] as const satisfies BranchObserverTasks
   
@@ -153,18 +153,6 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
 
   function tapVsCode(el:Element) {
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
-  }
-  async function tries<T>(cb:()=>Promise<T|undefined>, n: number,t=500){
-    for (let i = 0; i < n; i++) {
-      if(i==n-1) { debugger }
-      const res = await cb()
-      if(res) return res
-      await hold(t)
-    }
-    return <any>undefined // better stack trace errors
-  }
-  function hold(t:number) {
-    return new Promise((resolve)=>setTimeout(resolve, t))
   }
 }
 BonkersExecuteCommand.shadow = (block: boolean, input?: any) => {
