@@ -1605,7 +1605,7 @@ var __publicField = (obj, key, value) => {
         handleNewBranch();
         return;
       }
-      if (step == -1 || step == Infinity || step == -Infinity) {
+      if (step == -1) {
         debugger;
         return;
       }
@@ -1634,21 +1634,34 @@ var __publicField = (obj, key, value) => {
       const [selector, o_task, branch] = nextBranch;
       if (nextBranch.length == 3) {
         return handleBranch(node, selector, o_task, () => {
-          const [selector2] = branch;
-          findNewBranch = () => [document.querySelector(selector2), branch];
-          step = Infinity;
-          return true;
+          return nextMatch(branch);
         });
       } else {
         return handleBranch(node, selector, o_task, () => {
           step++;
           if (!_tasks[step]) {
-            step = -Infinity;
             unplug();
             task.resolve();
+            return "finish";
           }
-          return true;
+          return "next";
         });
+      }
+    }
+    function nextMatch(branch) {
+      const [selector, newTasks] = branch;
+      const nextTarget = document.querySelector(selector);
+      if (nextTarget instanceof HTMLElement) {
+        REC_ObservableTaskTree(nextTarget, newTasks);
+        return "recursive";
+      } else {
+        debugger;
+        findNewBranch = () => [document.querySelector(selector), newTasks];
+        target = document.body;
+        step = 0;
+        tasks = newTasks;
+        observe();
+        return "findNewBranch";
       }
     }
     function handleBranch(node, selector, o_task, thenable) {
@@ -1676,12 +1689,12 @@ var __publicField = (obj, key, value) => {
     function handleNewBranch() {
       if (!findNewBranch)
         return;
-      const [branch, tree] = findNewBranch() ?? [];
-      if (!(branch instanceof HTMLElement) || !tree)
+      const [node, tree] = findNewBranch() ?? [];
+      if (!(node instanceof HTMLElement) || !tree)
         return;
-      if (step != Infinity) {
+      if (step == -1) {
         debugger;
-        throw new Error("step is not Infinity");
+        throw new Error(`invalid step: ${step}`);
       }
       if (!Array.isArray(tree)) {
         debugger;
@@ -1691,27 +1704,16 @@ var __publicField = (obj, key, value) => {
       unplug();
       task.resolve();
       if (tree.length !== 3) {
-        REC_ObservableTaskTree(branch, tree);
-        return true;
+        REC_ObservableTaskTree(node, tree);
+        return "recursive tree";
       }
-      const [selector, o_task, _branch] = tree;
-      const res = handleBranch(branch, selector, o_task, () => true);
+      const [selector, o_task, branch] = tree;
+      const res = handleBranch(node, selector, o_task, () => "next");
       if (!res) {
         debugger;
         throw new Error("failed to handle branch");
       }
-      const [_selector, newTasks] = _branch;
-      const nextTarget = document.querySelector(_selector);
-      if (nextTarget instanceof HTMLElement) {
-        REC_ObservableTaskTree(nextTarget, newTasks);
-      } else {
-        findNewBranch = () => [document.querySelector(_selector), newTasks];
-        target = document.body;
-        step = 0;
-        tasks = newTasks;
-        observe();
-      }
-      return true;
+      return nextMatch(branch);
     }
     let observing = false;
     const observe = () => {
@@ -1724,9 +1726,13 @@ var __publicField = (obj, key, value) => {
     };
     debugger;
     for (const [selector] of tasks) {
+      if (!selector || selector.length == 1) {
+        debugger;
+        throw new Error(`invalid selector: ${selector}`);
+      }
       const node = target.querySelector(selector);
       const res = stepForward(node);
-      if (step == -1 || step == -Infinity) {
+      if (step == -1) {
         return task;
       }
       if (!res) {
@@ -1737,10 +1743,10 @@ var __publicField = (obj, key, value) => {
         return task;
       }
     }
-    if (step != -1 || step != Infinity || step != -Infinity) {
+    if (step > -1 && step < tasks.length && !observing) {
       debugger;
       observe();
-    } else if (!observing) {
+    } else {
       debugger;
       throw new Error(`impossible step : ${step}`);
     }

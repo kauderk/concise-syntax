@@ -27,7 +27,7 @@ export function REC_ObservableTaskTree(
       handleNewBranch()
       return
     }
-    if (step == -1 || step == Infinity || step == -Infinity) {
+    if (step == -1) {
       debugger
       return
     }
@@ -60,29 +60,45 @@ export function REC_ObservableTaskTree(
 
     if (nextBranch.length == 3) {
       return handleBranch(node, selector, o_task, () => {
-        const [selector] = branch
-        findNewBranch = () => [document.querySelector(selector), branch]
-        step = Infinity
-        return true
+        return nextMatch(branch)
       })
     } else {
       return handleBranch(node, selector, o_task, () => {
         step++
         if (!_tasks[step]) {
-          step = -Infinity
           unplug()
           task.resolve()
-          // maybe should return false?
+          return 'finish'
         }
-        return true
+        return 'next'
       })
+    }
+  }
+  function nextMatch(branch: BranchObserver | [string, ObserverTasks]) {
+    const [selector, newTasks] = branch
+
+    const nextTarget = document.querySelector(selector)
+    if (nextTarget instanceof HTMLElement) {
+      // @ts-expect-error
+      const rec = REC_ObservableTaskTree(nextTarget, newTasks)
+      return 'recursive'
+    } else {
+      debugger
+      // @ts-expect-error hijack this recursive function
+      findNewBranch = () => [document.querySelector(selector), newTasks]
+      target = document.body
+      step = 0
+      // @ts-expect-error
+      tasks = newTasks
+      observe()
+      return 'findNewBranch'
     }
   }
   function handleBranch(
     node: Element,
     selector: string,
     o_task: any,
-    thenable: () => void | true
+    thenable: () => void | 'next' | 'findNewBranch' | 'finish' | 'recursive'
   ) {
     if (!node.matches(selector)) return
 
@@ -109,12 +125,12 @@ export function REC_ObservableTaskTree(
   }
   function handleNewBranch() {
     if (!findNewBranch) return
-    const [branch, tree] = findNewBranch() ?? []
-    if (!(branch instanceof HTMLElement) || !tree) return
+    const [node, tree] = findNewBranch() ?? []
+    if (!(node instanceof HTMLElement) || !tree) return
 
-    if (step != Infinity) {
+    if (step == -1) {
       debugger
-      throw new Error('step is not Infinity')
+      throw new Error(`invalid step: ${step}`)
     }
     if (!Array.isArray(tree)) {
       debugger
@@ -126,31 +142,19 @@ export function REC_ObservableTaskTree(
     task.resolve()
 
     if (tree.length !== 3) {
-      const rec = REC_ObservableTaskTree(branch, tree)
-      return true
+      // @ts-expect-error
+      const rec = REC_ObservableTaskTree(node, tree)
+      return 'recursive tree'
     }
 
-    const [selector, o_task, _branch] = tree
-    const res = handleBranch(branch, selector, o_task, () => true)
+    const [selector, o_task, branch] = tree
+    const res = handleBranch(node, selector, o_task, () => 'next')
     if (!res) {
       debugger
       throw new Error('failed to handle branch')
     }
 
-    const [_selector, newTasks] = _branch
-    const nextTarget = document.querySelector(_selector)
-    if (nextTarget instanceof HTMLElement) {
-      const rec = REC_ObservableTaskTree(nextTarget, newTasks)
-    } else {
-      // hijack this recursive function
-      findNewBranch = () => [document.querySelector(_selector), newTasks]
-      target = document.body
-      step = 0
-      tasks = newTasks
-      observe()
-    }
-
-    return true
+    return nextMatch(branch)
   }
 
   let observing = false
@@ -166,9 +170,13 @@ export function REC_ObservableTaskTree(
   debugger
 
   for (const [selector] of tasks) {
+    if (!selector || selector.length == 1) {
+      debugger
+      throw new Error(`invalid selector: ${selector}`)
+    }
     const node = target.querySelector(selector)
     const res = stepForward(node)
-    if (step == -1 || step == -Infinity) {
+    if (step == -1) {
       return task
     }
     if (!res) {
@@ -180,10 +188,10 @@ export function REC_ObservableTaskTree(
     }
   }
 
-  if (step != -1 || step != Infinity || step != -Infinity) {
+  if (step > -1 && step < tasks.length && !observing) {
     debugger
     observe()
-  } else if (!observing) {
+  } else {
     debugger
     throw new Error(`impossible step : ${step}`)
   }
