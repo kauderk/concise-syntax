@@ -1606,7 +1606,8 @@ var __publicField = (obj, key, value) => {
         return;
       }
       if (step == -1 || step == Infinity || step == -Infinity) {
-        return console.log("reaching the end of the tree", { step });
+        debugger;
+        return;
       }
       for (const mutation of record) {
         if (mutation.type == "attributes") {
@@ -1626,11 +1627,7 @@ var __publicField = (obj, key, value) => {
       }
     });
     function stepForward(node, _tasks = tasks) {
-      if (!(node instanceof HTMLElement)) {
-        return;
-      }
-      if (!_tasks[step]) {
-        console.log("no task", { step, tasks: _tasks });
+      if (!(node instanceof HTMLElement) || !_tasks[step]) {
         return;
       }
       const nextBranch = _tasks[step];
@@ -1673,65 +1670,58 @@ var __publicField = (obj, key, value) => {
       }
     }
     function unplug() {
+      observing = false;
       observer.disconnect();
     }
     function handleNewBranch() {
-      if (!findNewBranch) {
-        return console.log("No new branch found");
-      }
+      if (!findNewBranch)
+        return;
       const [branch, tree] = findNewBranch() ?? [];
-      if (branch instanceof HTMLElement && tree) {
+      if (!(branch instanceof HTMLElement) || !tree)
+        return;
+      if (step != Infinity) {
         debugger;
-        if (step != Infinity) {
-          debugger;
-          throw new Error("step is not Infinity");
-        }
-        if (!Array.isArray(tree)) {
-          debugger;
-          throw new Error("task_tree is not an array");
-        }
-        findNewBranch = void 0;
+        throw new Error("step is not Infinity");
+      }
+      if (!Array.isArray(tree)) {
         debugger;
-        if (tree.length === 3) {
-          debugger;
-          unplug();
-          task.resolve();
-          const [selector, o_task, _branch] = tree;
-          const res = handleBranch(branch, selector, o_task, () => {
-            return true;
-          });
-          if (!res) {
-            throw new Error("failed to handle branch");
-          }
-          const [_selector, newTasks] = _branch;
-          const nextTarget = document.querySelector(_selector);
-          if (nextTarget instanceof HTMLElement) {
-            const rec2 = REC_ObservableTaskTree(nextTarget, newTasks);
-            console.log("Walked down the tree", rec2);
-            return true;
-          } else {
-            findNewBranch = () => [document.querySelector(_selector), newTasks];
-            target = document.body;
-            step = 0;
-            tasks = newTasks;
-            observe();
-          }
-          return true;
-        }
-        debugger;
-        unplug();
-        task.resolve();
-        const rec = REC_ObservableTaskTree(branch, tree);
-        console.log("Walked down the tree", rec);
+        throw new Error("task_tree is not an array");
+      }
+      findNewBranch = void 0;
+      unplug();
+      task.resolve();
+      if (tree.length !== 3) {
+        REC_ObservableTaskTree(branch, tree);
         return true;
       }
-      return console.log("No branch found");
+      const [selector, o_task, _branch] = tree;
+      const res = handleBranch(branch, selector, o_task, () => true);
+      if (!res) {
+        debugger;
+        throw new Error("failed to handle branch");
+      }
+      const [_selector, newTasks] = _branch;
+      const nextTarget = document.querySelector(_selector);
+      if (nextTarget instanceof HTMLElement) {
+        REC_ObservableTaskTree(nextTarget, newTasks);
+      } else {
+        findNewBranch = () => [document.querySelector(_selector), newTasks];
+        target = document.body;
+        step = 0;
+        tasks = newTasks;
+        observe();
+      }
+      return true;
     }
-    const observe = () => observer.observe(target, {
-      childList: true,
-      subtree: true,
-      attributes: true
-    });
+    let observing = false;
+    const observe = () => {
+      observing = true;
+      observer.observe(target, {
+        childList: true,
+        subtree: true,
+        attributes: true
+      });
+    };
     debugger;
     for (const [selector] of tasks) {
       const node = target.querySelector(selector);
@@ -1750,11 +1740,10 @@ var __publicField = (obj, key, value) => {
     if (step != -1 || step != Infinity || step != -Infinity) {
       debugger;
       observe();
-    } else {
+    } else if (!observing) {
       debugger;
       throw new Error(`impossible step : ${step}`);
     }
-    debugger;
     return task;
   }
   const editorObservable = createObservable(void 0);
