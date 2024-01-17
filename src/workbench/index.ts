@@ -11,7 +11,7 @@ import { type calibrateWIndowPlaceholder } from 'src/extension/statusBarItem'
 import {
   BranchObserverTasks,
   ObserverTasks,
-  createObservableTask,
+  REC_ObservableTaskTree,
 } from './observableTask'
 export type { editorObservable, stateObservable, calibrateObservable }
 
@@ -145,10 +145,11 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
     ],
   ] as const satisfies BranchObserverTasks
   
-  // return await Promise.race([
-  //   createObservableTask(target,commandWidgetTasks),
-  //   new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')), 5_000))
-  // ])
+  debugger
+  return await Promise.race([
+    REC_ObservableTaskTree(document.body, branchTasks),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')), 5_000))
+  ])
 
   function tapVsCode(el:Element) {
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
@@ -167,7 +168,7 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
   }
 }
 BonkersExecuteCommand.shadow = (block: boolean, input?: any) => {
-  const styles = block ? '' : '* {pointer-events:none;}'
+  const styles = block ? '* {pointer-events:none;}' : ''
   calibrateWindowStyle.styleIt(styles)
 
   const shadow = block ? shadowEventListeners : cleanShadowedEvents

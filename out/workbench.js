@@ -1596,6 +1596,131 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
+  function REC_ObservableTaskTree(target, tasks, root) {
+    const task = createTask();
+    let step = 0;
+    let findNewBranch;
+    const observer = new MutationObserver(async (record) => {
+      if (findNewBranch) {
+        handleNewBranch();
+        return;
+      }
+      if (step === -1) {
+        return console.log("step -1");
+      }
+      for (const mutation of record) {
+        if (mutation.type == "attributes") {
+          if (stepForward(mutation.target)) {
+            return;
+          }
+        }
+        for (const node2 of mutation.addedNodes) {
+          if (stepForward(node2)) {
+            return;
+          }
+        }
+      }
+      const node = document.querySelector(tasks[step][0]);
+      if (stepForward(node)) {
+        return;
+      }
+    });
+    function stepForward(node) {
+      if (!(node instanceof HTMLElement)) {
+        return;
+      }
+      if (!tasks[step]) {
+        console.log("no task", step, tasks);
+        return;
+      }
+      const nextBranch = tasks[step];
+      const [selector, o_task, branch] = nextBranch;
+      if (nextBranch.length === 3) {
+        return handleBranch(node, selector, o_task, () => {
+          const [selector2] = branch;
+          findNewBranch = () => [document.querySelector(selector2), branch];
+          step = -1;
+          return true;
+        });
+      } else {
+        return handleBranch(node, selector, o_task, () => {
+          step++;
+          if (!tasks[step]) {
+            unplug();
+            task.resolve();
+          }
+          return true;
+        });
+      }
+    }
+    function handleBranch(node, selector, o_task, thenable) {
+      if (!node.matches(selector))
+        return;
+      try {
+        const res = o_task(node);
+        if (res instanceof Error) {
+          throw res;
+        } else {
+          return thenable();
+        }
+      } catch (error) {
+        unplug();
+        task.reject(
+          error instanceof Error ? error : new Error("unknown error", { cause: error })
+        );
+        return;
+      }
+    }
+    function unplug() {
+      step = -1;
+      observer.disconnect();
+    }
+    function handleNewBranch() {
+      if (!findNewBranch) {
+        return console.log("No new branch found");
+      }
+      const [branch, tree] = findNewBranch() ?? [];
+      if (branch instanceof HTMLElement && tree) {
+        const task_tree = Array.isArray(tree[1]) ? tree[1] : tree[2];
+        if (!Array.isArray(task_tree)) {
+          debugger;
+          throw new Error("task_tree is not an array");
+        }
+        findNewBranch = void 0;
+        unplug();
+        task.resolve();
+        const rec = REC_ObservableTaskTree(branch, task_tree);
+        console.log("Walked down the tree", rec);
+        return true;
+      }
+      return console.log("No branch found");
+    }
+    const observe = () => observer.observe(target, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+    debugger;
+    for (const [selector] of tasks) {
+      const node = target.querySelector(selector);
+      if (step === 0) {
+        if (node) {
+          stepForward(node);
+        }
+        if (handleNewBranch()) {
+          return task;
+        }
+      } else {
+        break;
+      }
+    }
+    if (!findNewBranch) {
+      observe();
+    } else {
+      debugger;
+    }
+    return task;
+  }
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
   const calibrateObservable = createObservable(void 0);
@@ -1639,9 +1764,78 @@ var __publicField = (obj, key, value) => {
   const calibrateWindowStyle = createStyles("calibrate.window");
   async function BonkersExecuteCommand(displayName, commandName, value) {
     BonkersExecuteCommand.shadow(true);
+    const widgetSelector = ".quick-input-widget";
+    const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`;
+    let shadowInput;
+    const commandWidgetTasks = [
+      [
+        `${inputSelector}`,
+        (el) => {
+          shadowEventListeners(shadowInput = el);
+          el.value = `>${displayName}`;
+          el.dispatchEvent(new Event("input"));
+        }
+      ],
+      [
+        `.quick-input-list [aria-label*="${displayName}: ${commandName}"] label`,
+        (el) => el.click()
+      ],
+      [
+        `${inputSelector}[placeholder="${commandName}"]`,
+        (el) => {
+          el.value = value;
+          el.dispatchEvent(new Event("input"));
+        }
+      ],
+      [
+        `${inputSelector}[title="${commandName}"][aria-describedby="quickInput_message"]`,
+        (el) => {
+          if (shadowInput !== el) {
+            return new Error("shadowInput!==target");
+          } else {
+            BonkersExecuteCommand.shadow(false, el);
+          }
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "Enter",
+              code: "Enter",
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true,
+              composed: true
+            })
+          );
+        }
+      ]
+    ];
+    const branchTasks = [
+      [
+        "li.action-item.command-center-center",
+        tapVsCode,
+        [widgetSelector, commandWidgetTasks]
+      ],
+      [
+        `.menubar-menu-button[aria-label="View"]`,
+        tapVsCode,
+        [
+          `[class="action-item"]:has([aria-label="Command Palette..."])`,
+          tapVsCode,
+          [widgetSelector, commandWidgetTasks]
+        ]
+      ]
+    ];
+    debugger;
+    return await Promise.race([
+      REC_ObservableTaskTree(document.body, branchTasks),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5e3))
+    ]);
+    function tapVsCode(el) {
+      el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
+    }
   }
   BonkersExecuteCommand.shadow = (block, input) => {
-    const styles2 = block ? "" : "* {pointer-events:none;}";
+    const styles2 = block ? "* {pointer-events:none;}" : "";
     calibrateWindowStyle.styleIt(styles2);
     const shadow = block ? shadowEventListeners : cleanShadowedEvents;
     shadow(window);
