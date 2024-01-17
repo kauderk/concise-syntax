@@ -9,7 +9,7 @@ export type BranchObserver = [
   task: (element: HTMLElement & { value: any }) => void | Error,
   branchSelector: [string, ObserverTasks] | BranchObserver
 ]
-export type BranchObserverTasks = [BranchObserver, BranchObserver]
+export type BranchObserverTasks = BranchObserver[]
 
 export function REC_ObservableTaskTree(
   target: HTMLElement,
@@ -28,8 +28,8 @@ export function REC_ObservableTaskTree(
       handleNewBranch()
       return
     }
-    if (step === -1) {
-      return console.log('step -1')
+    if (step == -1 || step == Infinity || step == -Infinity) {
+      return console.log('reaching the end of the tree', { step })
     }
 
     for (const mutation of record) {
@@ -50,30 +50,32 @@ export function REC_ObservableTaskTree(
     }
   })
 
-  function stepForward(node: Node | null) {
+  function stepForward(node: Node | null, _tasks = tasks) {
     if (!(node instanceof HTMLElement)) {
       return
     }
-    if (!tasks[step]) {
-      console.log('no task', step, tasks)
+    if (!_tasks[step]) {
+      console.log('no task', { step, tasks: _tasks })
       return
     }
 
-    const nextBranch = tasks[step]
+    const nextBranch = _tasks[step]
     const [selector, o_task, branch] = nextBranch
-    if (nextBranch.length === 3) {
+    if (nextBranch.length == 3) {
       return handleBranch(node, selector, o_task, () => {
         const [selector] = branch
         findNewBranch = () => [document.querySelector(selector), branch]
-        step = -1
+        step = Infinity
         return true
       })
     } else {
       return handleBranch(node, selector, o_task, () => {
         step++
-        if (!tasks[step]) {
+        if (!_tasks[step]) {
+          step = -Infinity
           unplug()
           task.resolve()
+          // maybe should return false?
         }
         return true
       })
@@ -93,20 +95,18 @@ export function REC_ObservableTaskTree(
         throw res
       } else {
         return thenable()
-        // return true
       }
     } catch (error) {
+      step = -1
       unplug()
       task.reject(
         error instanceof Error
           ? error
           : new Error('unknown error', { cause: error })
       )
-      return
     }
   }
   function unplug() {
-    step = -1
     observer.disconnect()
   }
   function handleNewBranch() {
@@ -117,21 +117,50 @@ export function REC_ObservableTaskTree(
 
     if (branch instanceof HTMLElement && tree) {
       debugger
-      findNewBranch = undefined
-      const task_tree = Array.isArray(tree[1]) ? tree[1] : tree[2]
-
-      if (!Array.isArray(task_tree)) {
+      if (step != Infinity) {
+        debugger
+        throw new Error('step is not Infinity')
+      }
+      if (!Array.isArray(tree)) {
         debugger
         throw new Error('task_tree is not an array')
       }
-      if (step == -1 && task_tree.length === 3) {
+      findNewBranch = undefined
+
+      debugger
+
+      if (tree.length === 3) {
         debugger
-        return console.log('Potential new branch found but step is -1')
+        unplug()
+        task.resolve()
+        const [selector, o_task, _branch] = tree
+        const res = handleBranch(branch, selector, o_task, () => {
+          return true
+        })
+        if (!res) {
+          throw new Error('failed to handle branch')
+        }
+        const [_selector, newTasks] = _branch
+        const nextTarget = document.querySelector(_selector)
+        if (nextTarget instanceof HTMLElement) {
+          const rec = REC_ObservableTaskTree(nextTarget, newTasks)
+          console.log('Walked down the tree', rec)
+          return true
+        } else {
+          // hijack this recursive function
+          findNewBranch = () => [document.querySelector(_selector), newTasks]
+          target = document.body
+          step = 0
+          tasks = newTasks
+          observe()
+        }
+        return true
       }
+      debugger
 
       unplug()
       task.resolve()
-      const rec = REC_ObservableTaskTree(branch, task_tree)
+      const rec = REC_ObservableTaskTree(branch, tree)
       console.log('Walked down the tree', rec)
       return true
     }
@@ -150,29 +179,28 @@ export function REC_ObservableTaskTree(
 
   for (const [selector] of tasks) {
     const node = target.querySelector(selector)
-    if (step != -1) {
-      let attempt = step
-      if (node) {
-        stepForward(node)
-      }
-      if (handleNewBranch()) {
-        return task
-      }
-      if (attempt === step) {
-        console.log('step not changed', step)
-        break
-      }
-    } else {
-      break
+    const res = stepForward(node)
+    if (step == -1 || step == -Infinity) {
+      return task
+    }
+    if (!res) {
+      observe()
+      return task
+    }
+    if (handleNewBranch()) {
+      return task
     }
   }
+  if (step != -1 || step != Infinity || step != -Infinity) {
+    debugger
 
-  if (!findNewBranch) {
-    // why?
     observe()
   } else {
     debugger
+    throw new Error(`impossible step : ${step}`)
   }
+
+  debugger
 
   return task
 }
