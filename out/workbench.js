@@ -1639,12 +1639,14 @@ var __publicField = (obj, key, value) => {
     const observer = new MutationObserver(async (record) => {
       if (panicked) {
         debugger;
+        unplug();
         return;
       }
       if (step == -1) {
         return panic(errors.invalid_step);
       }
       if (findNewBranch) {
+        debugger;
         const [node2, tree] = findNewBranch() ?? [];
         if (!(node2 instanceof HTMLElement) || !tree)
           return;
@@ -1675,6 +1677,7 @@ var __publicField = (obj, key, value) => {
     });
     let panicked = false;
     function panic(error, f) {
+      debugger;
       panicked = true;
       unplug();
       outParameters.taskPromise.reject(error);
@@ -1739,15 +1742,17 @@ var __publicField = (obj, key, value) => {
       }
     }
     function setFindMatchFunc(selector, newDomTasks) {
+      toastConsole.log("look I get executed...");
+      debugger;
       if (findNewBranch) {
         return panic(errors.findNewBranch_is_busy);
       }
+      unplug();
       findNewBranch = () => [document.querySelector(selector), newDomTasks];
       target = document.body;
       step = 0;
       domTasks = newDomTasks;
-      observe();
-      return "findNewBranch";
+      return observe("findNewBranch");
     }
     function handleBranch(node, selector, dom_task, thenable) {
       if (!node.matches(selector))
@@ -1783,7 +1788,7 @@ var __publicField = (obj, key, value) => {
     }
     outParameters.unplug = unplug;
     let observing = void 0;
-    const observe = () => {
+    const observe = (ret) => {
       if (observing) {
         return panic(errors.observing_was_set_to_true);
       }
@@ -1793,6 +1798,7 @@ var __publicField = (obj, key, value) => {
         subtree: true,
         attributes: true
       });
+      return ret;
     };
     for (let i = 0; i < domTasks.length; i++) {
       const [selector] = domTasks[i];
@@ -1809,8 +1815,7 @@ var __publicField = (obj, key, value) => {
       }
     }
     if (step > -1 && step < domTasks.length && !observing) {
-      observe();
-      return "return observe";
+      return observe("return observe");
     } else {
       return panic(errors.invalid_step);
     }

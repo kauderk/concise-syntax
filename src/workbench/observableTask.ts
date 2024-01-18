@@ -1,3 +1,5 @@
+import { toastConsole } from './shared'
+
 export type ObserverTasks = [
   selector: string,
   task: (element: HTMLElement & { value: any }) => void | Error
@@ -70,18 +72,20 @@ function REC_ObservableTaskTree(
   }
 ) {
   let step = 0
+  // TODO: figure out why this isn't getting called anymore...
   let findNewBranch: (() => [Element | null, Branch] | void) | undefined
 
   const observer = new MutationObserver(async (record) => {
     if (panicked) {
       debugger
+      unplug()
       return
     }
-
     if (step == -1) {
       return panic(errors.invalid_step, step)
     }
     if (findNewBranch) {
+      debugger
       const [node, tree] = findNewBranch() ?? []
       if (!(node instanceof HTMLElement) || !tree) return
 
@@ -114,6 +118,7 @@ function REC_ObservableTaskTree(
   })
   let panicked = false
   function panic(error: FnError, f?: any) {
+    debugger
     panicked = true
     unplug()
     outParameters.taskPromise.reject(error)
@@ -186,18 +191,20 @@ function REC_ObservableTaskTree(
     }
   }
   function setFindMatchFunc(selector: string, newDomTasks: Branch) {
+    toastConsole.log('look I get executed...')
+    debugger
     if (findNewBranch) {
       return panic(errors.findNewBranch_is_busy)
     }
     // TODO: find another way to recycle the REC function
     // FIXME: avoid resetting the parameters
+    unplug()
     findNewBranch = () => [document.querySelector(selector), newDomTasks]
     target = document.body
     step = 0
-    // @ts-expect-error
+    // ts-expect-error
     domTasks = newDomTasks
-    observe()
-    return 'findNewBranch' as const
+    return observe('findNewBranch') // FIXME: this error checking is getting ridiculous
   }
 
   function handleBranch(
@@ -244,7 +251,7 @@ function REC_ObservableTaskTree(
   outParameters.unplug = unplug
 
   let observing: boolean | undefined = undefined
-  const observe = () => {
+  const observe = <const T>(ret: T) => {
     if (observing) {
       return panic(errors.observing_was_set_to_true)
     }
@@ -254,6 +261,7 @@ function REC_ObservableTaskTree(
       subtree: true,
       attributes: true,
     })
+    return ret
   }
 
   for (let i = 0; i < domTasks.length; i++) {
@@ -272,8 +280,7 @@ function REC_ObservableTaskTree(
   }
 
   if (step > -1 && step < domTasks.length && !observing) {
-    observe()
-    return 'return observe'
+    return observe('return observe') // FIXME: this error checking is getting ridiculous
   } else {
     return panic(errors.invalid_step, step)
   }
