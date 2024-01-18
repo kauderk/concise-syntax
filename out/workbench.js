@@ -1604,16 +1604,33 @@ var __publicField = (obj, key, value) => {
     invalid_step: "",
     invalid_selector: "",
     invalid_return_value: "",
-    failed_next_o_task: ""
+    failed_next_dom_task: "",
+    timeout_exceeded: "",
+    panic_next_recursive_tree: "",
+    panic_next_tree: "",
+    outsider_rejected: ""
   });
   const createResult = () => createTask();
-  const work_REC_ObservableTaskTree = (target, tasks) => {
-    const result = createResult();
-    REC_ObservableTaskTree(target, tasks, result);
-    hold();
-    return result;
+  const work_REC_ObservableTaskTree = (target, domTasks) => {
+    debugger;
+    const taskPromise = createResult();
+    const res = REC_ObservableTaskTree(target, domTasks, taskPromise);
+    if (res == "finish" || res == "panic" || res == "error")
+      ;
+    else {
+      const timeout = setTimeout(() => {
+        taskPromise.reject(errors.timeout_exceeded);
+      }, 3e3);
+      taskPromise.promise.finally(() => clearTimeout(timeout));
+    }
+    return {
+      promise: taskPromise.promise,
+      reject() {
+        taskPromise.reject(errors.outsider_rejected);
+      }
+    };
   };
-  function REC_ObservableTaskTree(target, tasks, Result) {
+  function REC_ObservableTaskTree(target, domTasks, taskPromise) {
     let step = 0;
     let findNewBranch;
     const observer = new MutationObserver(async (record) => {
@@ -1633,7 +1650,7 @@ var __publicField = (obj, key, value) => {
         }
         findNewBranch = void 0;
         unplug();
-        return nextMatch(node2, tree);
+        return findMatchOrREC(node2, tree);
       }
       for (const mutation of record) {
         if (mutation.type == "attributes") {
@@ -1647,7 +1664,7 @@ var __publicField = (obj, key, value) => {
           }
         }
       }
-      const node = document.querySelector(tasks[step][0]);
+      const node = document.querySelector(domTasks[step][0]);
       if (stepForward(node)) {
         return;
       }
@@ -1657,72 +1674,79 @@ var __publicField = (obj, key, value) => {
       panicked = true;
       observing = false;
       observer.disconnect();
-      Result.reject(error);
+      observer.takeRecords();
+      taskPromise.reject(error);
       return "panic";
     }
-    function stepForward(node, _tasks = tasks) {
+    function stepForward(node, _tasks = domTasks) {
       if (!(node instanceof HTMLElement) || !_tasks[step]) {
         return;
       }
       const nextBranch = _tasks[step];
-      const [selector, o_task, branch] = nextBranch;
+      const [selector, dom_task, branch] = nextBranch;
       if (nextBranch.length == 3) {
-        return handleBranch(node, selector, o_task, () => {
+        return handleBranch(node, selector, dom_task, () => {
           const [selector2] = branch;
           const nextTarget = document.querySelector(selector2);
           if (nextTarget instanceof HTMLElement) {
-            return nextMatch(nextTarget, branch);
+            return findMatchOrREC(nextTarget, branch);
           } else {
-            return findMatchFunc(selector2, branch);
+            return setFindMatchFunc(selector2, branch);
           }
         });
       } else {
-        return handleBranch(node, selector, o_task, () => {
+        return handleBranch(node, selector, dom_task, () => {
           step++;
           if (!_tasks[step]) {
             unplug();
-            Result.resolve("finish");
+            taskPromise.resolve("finish");
             return "finish";
           }
           return "next";
         });
       }
     }
-    function nextMatch(node, tree) {
+    function findMatchOrREC(node, tree) {
       if (tree.length !== 3) {
-        REC_ObservableTaskTree(node, tree[1], Result);
-        return "recursive tree";
+        const rec = REC_ObservableTaskTree(node, tree[1], taskPromise);
+        if (!rec || rec == "panic") {
+          return panic(errors.panic_next_tree);
+        }
+        return "next tree";
       }
-      const [self_selector, o_task, branch] = tree;
-      const res = handleBranch(node, self_selector, o_task, () => "next");
+      const [self_selector, dom_task, branch] = tree;
+      const res = handleBranch(node, self_selector, dom_task, () => "next");
       if (!res || res == "error" || res == "panic") {
-        return panic(errors.failed_next_o_task);
+        return panic(errors.failed_next_dom_task);
       }
       const [selector, newTasks] = branch;
       const nextTarget = document.querySelector(selector);
       if (nextTarget instanceof HTMLElement) {
-        REC_ObservableTaskTree(nextTarget, newTasks, Result);
-        return "recursive";
+        const rec = REC_ObservableTaskTree(nextTarget, newTasks, taskPromise);
+        if (!rec || rec == "panic") {
+          return panic(errors.panic_next_recursive_tree);
+        }
+        return "recursive tree";
       } else {
-        return findMatchFunc(selector, newTasks);
+        return setFindMatchFunc(selector, newTasks);
       }
     }
-    function findMatchFunc(selector, newTasks) {
+    function setFindMatchFunc(selector, newDomTasks) {
       if (findNewBranch) {
         return panic(errors.findNewBranch_is_busy);
       }
-      findNewBranch = () => [document.querySelector(selector), newTasks];
+      findNewBranch = () => [document.querySelector(selector), newDomTasks];
       target = document.body;
       step = 0;
-      tasks = newTasks;
+      domTasks = newDomTasks;
       observe();
       return "findNewBranch";
     }
-    function handleBranch(node, selector, o_task, thenable) {
+    function handleBranch(node, selector, dom_task, thenable) {
       if (!node.matches(selector))
         return;
       try {
-        const res = o_task(node);
+        const res = dom_task(node);
         if (res instanceof Error) {
           throw res;
         } else {
@@ -1731,7 +1755,7 @@ var __publicField = (obj, key, value) => {
       } catch (error) {
         step = -1;
         unplug();
-        Result.reject(
+        taskPromise.reject(
           error instanceof Error ? error : new Error("unknown error", { cause: error })
         );
         return "error";
@@ -1739,15 +1763,16 @@ var __publicField = (obj, key, value) => {
     }
     function unplug() {
       if (observing === false) {
-        return panic(errors.observing_was_set_to_true);
+        return panic(errors.observing_was_set_to_false);
       }
       observing = false;
       observer.disconnect();
+      observer.takeRecords();
     }
     let observing = void 0;
     const observe = () => {
       if (observing) {
-        return panic(errors.observing_was_set_to_false);
+        return panic(errors.observing_was_set_to_true);
       }
       observing = true;
       observer.observe(target, {
@@ -1756,19 +1781,20 @@ var __publicField = (obj, key, value) => {
         attributes: true
       });
     };
-    for (let i = 0; i < tasks.length; i++) {
-      const [selector] = tasks[i];
+    for (let i = 0; i < domTasks.length; i++) {
+      const [selector] = domTasks[i];
       if (!selector || selector.length == 1) {
         return panic(errors.invalid_selector);
       }
       const node = target.querySelector(selector);
       const res = stepForward(node);
-      if (res == null ? void 0 : res.match(/recursive|error/)) {
-        return;
+      if (res && !(res == "findNewBranch" || res == "next")) {
+        return res;
       }
     }
-    if (step > -1 && step < tasks.length && !observing) {
+    if (step > -1 && step < domTasks.length && !observing) {
       observe();
+      return "return observe";
     } else {
       return panic(errors.invalid_step);
     }

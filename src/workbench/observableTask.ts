@@ -18,19 +18,39 @@ const errors = createStructByNames({
   invalid_step: '',
   invalid_selector: '',
   invalid_return_value: '',
-  failed_next_o_task: '',
+  failed_next_dom_task: '',
+  timeout_exceeded: '',
+  panic_next_recursive_tree: '',
+  panic_next_tree: '',
+  outsider_rejected: '',
 })
 type FnError = (typeof errors)[keyof typeof errors]
-const createResult = () => createTask<'finish', FnError | Error | void>()
+export type Falsy = 0 | -0 | 0n | '' | false | null | undefined // javascript :D
+const createResult = () => createTask<'finish', FnError | Error | Falsy>()
 
 export const work_REC_ObservableTaskTree = (
   target: HTMLElement,
-  tasks: BranchObserverTasks
+  domTasks: BranchObserverTasks
 ) => {
-  const result = createResult()
-  REC_ObservableTaskTree(target, tasks, result)
-  hold()
-  return result
+  debugger
+  const taskPromise = createResult()
+
+  const res = REC_ObservableTaskTree(target, domTasks, taskPromise)
+  if (res == 'finish' || res == 'panic' || res == 'error') {
+    // noop
+  } else {
+    const timeout = setTimeout(() => {
+      taskPromise.reject(errors.timeout_exceeded)
+    }, 3_000)
+    taskPromise.promise.finally(() => clearTimeout(timeout))
+  }
+
+  return {
+    promise: taskPromise.promise,
+    reject() {
+      taskPromise.reject(errors.outsider_rejected)
+    },
+  }
 }
 
 export { work_REC_ObservableTaskTree as REC_ObservableTaskTree }
@@ -39,8 +59,8 @@ export { work_REC_ObservableTaskTree as REC_ObservableTaskTree }
  */
 function REC_ObservableTaskTree(
   target: HTMLElement,
-  tasks: BranchObserverTasks,
-  Result: ReturnType<typeof createResult>
+  domTasks: BranchObserverTasks,
+  taskPromise: ReturnType<typeof createResult>
 ) {
   let step = 0
   let findNewBranch: (() => [Element | null, Branch] | void) | undefined
@@ -64,7 +84,7 @@ function REC_ObservableTaskTree(
 
       findNewBranch = undefined
       unplug()
-      return nextMatch(node, tree)
+      return findMatchOrREC(node, tree)
     }
 
     for (const mutation of record) {
@@ -79,7 +99,7 @@ function REC_ObservableTaskTree(
         }
       }
     }
-    const node = document.querySelector(tasks[step][0])
+    const node = document.querySelector(domTasks[step][0])
     if (stepForward(node)) {
       return
     }
@@ -89,76 +109,82 @@ function REC_ObservableTaskTree(
     panicked = true
     observing = false
     observer.disconnect()
-    Result.reject(error)
+    observer.takeRecords()
+    taskPromise.reject(error)
     return 'panic' as const
   }
 
-  function stepForward(node: Node | null, _tasks = tasks) {
+  function stepForward(node: Node | null, _tasks = domTasks) {
     if (!(node instanceof HTMLElement) || !_tasks[step]) {
       return
     }
 
     const nextBranch = _tasks[step]
-    const [selector, o_task, branch] = nextBranch
+    const [selector, dom_task, branch] = nextBranch
 
     if (nextBranch.length == 3) {
-      return handleBranch(node, selector, o_task, () => {
+      return handleBranch(node, selector, dom_task, () => {
         const [selector] = branch
-
         const nextTarget = document.querySelector(selector)
         if (nextTarget instanceof HTMLElement) {
-          return nextMatch(nextTarget, branch)
+          return findMatchOrREC(nextTarget, branch)
         } else {
-          return findMatchFunc(selector, branch)
+          return setFindMatchFunc(selector, branch)
         }
       })
     } else {
-      return handleBranch(node, selector, o_task, () => {
+      return handleBranch(node, selector, dom_task, () => {
         step++
         if (!_tasks[step]) {
           unplug()
-          Result.resolve('finish')
+          taskPromise.resolve('finish')
           return 'finish'
         }
         return 'next'
       })
     }
   }
-  function nextMatch(node: HTMLElement, tree: Branch) {
+  function findMatchOrREC(node: HTMLElement, tree: Branch) {
     if (tree.length !== 3) {
       // ts-expect-error
-      const rec = REC_ObservableTaskTree(node, tree[1], Result)
-      return 'recursive tree'
+      const rec = REC_ObservableTaskTree(node, tree[1], taskPromise)
+      if (!rec || rec == 'panic') {
+        return panic(errors.panic_next_tree)
+      }
+      return 'next tree'
     }
 
-    const [self_selector, o_task, branch] = tree
-    const res = handleBranch(node, self_selector, o_task, () => 'next')
+    const [self_selector, dom_task, branch] = tree
+    const res = handleBranch(node, self_selector, dom_task, () => 'next')
     if (!res || res == 'error' || res == 'panic') {
-      return panic(errors.failed_next_o_task)
+      return panic(errors.failed_next_dom_task)
     }
 
     const [selector, newTasks] = branch
-
     const nextTarget = document.querySelector(selector)
     if (nextTarget instanceof HTMLElement) {
       // ts-expect-error
-      const rec = REC_ObservableTaskTree(nextTarget, newTasks, Result)
-      return 'recursive'
+      const rec = REC_ObservableTaskTree(nextTarget, newTasks, taskPromise)
+      if (!rec || rec == 'panic') {
+        return panic(errors.panic_next_recursive_tree)
+      }
+      return 'recursive tree'
     } else {
       // ts-expect-error
-      return findMatchFunc(selector, newTasks)
+      return setFindMatchFunc(selector, newTasks)
     }
   }
-  // prettier-ignore
-  function findMatchFunc(selector: string, newTasks: Branch) {
-		if (findNewBranch) {
-			return panic(errors.findNewBranch_is_busy)
-		}
-    findNewBranch = () => [document.querySelector(selector), newTasks]
+  function setFindMatchFunc(selector: string, newDomTasks: Branch) {
+    if (findNewBranch) {
+      return panic(errors.findNewBranch_is_busy)
+    }
+    // TODO: find another way to recycle the REC function
+    // FIXME: avoid resetting the parameters
+    findNewBranch = () => [document.querySelector(selector), newDomTasks]
     target = document.body
     step = 0
     // ts-expect-error
-    tasks = newTasks
+    domTasks = newDomTasks
     observe()
     return 'findNewBranch' as const
   }
@@ -166,14 +192,14 @@ function REC_ObservableTaskTree(
   function handleBranch(
     node: Element,
     selector: string,
-    o_task: any,
+    dom_task: any,
     // prettier-ignore
-    thenable: () => 'next' | 'findNewBranch' | 'finish' | 'recursive' | 'recursive tree' | 'panic'
+    thenable: () => 'next' | 'findNewBranch' | 'finish' | 'recursive tree' | 'next tree' | 'panic'
   ) {
     if (!node.matches(selector)) return
 
     try {
-      const res = o_task(node as any)
+      const res = dom_task(node as any)
       if (res instanceof Error) {
         throw res
       } else {
@@ -182,7 +208,7 @@ function REC_ObservableTaskTree(
     } catch (error) {
       step = -1
       unplug()
-      Result.reject(
+      taskPromise.reject(
         error instanceof Error
           ? error
           : new Error('unknown error', { cause: error })
@@ -193,16 +219,17 @@ function REC_ObservableTaskTree(
 
   function unplug() {
     if (observing === false) {
-      return panic(errors.observing_was_set_to_true)
+      return panic(errors.observing_was_set_to_false)
     }
     observing = false
     observer.disconnect()
+    observer.takeRecords()
   }
 
   let observing: boolean | undefined = undefined
   const observe = () => {
     if (observing) {
-      return panic(errors.observing_was_set_to_false)
+      return panic(errors.observing_was_set_to_true)
     }
     observing = true
     observer.observe(target, {
@@ -212,20 +239,21 @@ function REC_ObservableTaskTree(
     })
   }
 
-  for (let i = 0; i < tasks.length; i++) {
-    const [selector] = tasks[i]
+  for (let i = 0; i < domTasks.length; i++) {
+    const [selector] = domTasks[i]
     if (!selector || selector.length == 1) {
       return panic(errors.invalid_selector, selector)
     }
     const node = target.querySelector(selector)
     const res = stepForward(node)
-    if (res?.match(/recursive|error/)) {
-      return
+    if (res && !(res == 'findNewBranch' || res == 'next')) {
+      return res
     }
   }
 
-  if (step > -1 && step < tasks.length && !observing) {
+  if (step > -1 && step < domTasks.length && !observing) {
     observe()
+    return 'return observe'
   } else {
     return panic(errors.invalid_step, step)
   }
