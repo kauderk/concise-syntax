@@ -22,7 +22,7 @@ const errors = createStructByNames({
   timeout_exceeded: '',
   panic_next_recursive_tree: '',
   panic_next_tree: '',
-  outsider_rejected: '',
+  promise_task_rejected: '',
 })
 type FnError = (typeof errors)[keyof typeof errors]
 export type Falsy = 0 | -0 | 0n | '' | false | null | undefined // javascript :D
@@ -35,20 +35,22 @@ export const work_REC_ObservableTaskTree = (
   debugger
   const taskPromise = createResult()
 
-  const res = REC_ObservableTaskTree(target, domTasks, taskPromise)
+  let outParameters = { unplug() {}, taskPromise }
+  const res = REC_ObservableTaskTree(target, domTasks, outParameters)
   if (res == 'finish' || res == 'panic' || res == 'error') {
     // noop
   } else {
     const timeout = setTimeout(() => {
       taskPromise.reject(errors.timeout_exceeded)
-    }, 3_000)
+    }, 500_000)
     taskPromise.promise.finally(() => clearTimeout(timeout))
   }
 
   return {
     promise: taskPromise.promise,
     reject() {
-      taskPromise.reject(errors.outsider_rejected)
+      outParameters.unplug()
+      taskPromise.reject(errors.promise_task_rejected)
     },
   }
 }
@@ -60,7 +62,11 @@ export { work_REC_ObservableTaskTree as REC_ObservableTaskTree }
 function REC_ObservableTaskTree(
   target: HTMLElement,
   domTasks: BranchObserverTasks,
-  taskPromise: ReturnType<typeof createResult>
+  // TODO: find a better way to collapse the recursive stack over time...
+  outParameters: {
+    unplug: Function
+    taskPromise: ReturnType<typeof createResult>
+  }
 ) {
   let step = 0
   let findNewBranch: (() => [Element | null, Branch] | void) | undefined
@@ -82,9 +88,10 @@ function REC_ObservableTaskTree(
         return panic(errors.task_tree_is_not_an_array)
       }
 
-      findNewBranch = undefined
-      unplug()
-      return findMatchOrREC(node, tree)
+      return tryUnplug(() => {
+        findNewBranch = undefined
+        findMatchOrREC(node, tree)
+      })
     }
 
     for (const mutation of record) {
@@ -107,10 +114,8 @@ function REC_ObservableTaskTree(
   let panicked = false
   function panic(error: FnError, f?: any) {
     panicked = true
-    observing = false
-    observer.disconnect()
-    observer.takeRecords()
-    taskPromise.reject(error)
+    unplug()
+    outParameters.taskPromise.reject(error)
     return 'panic' as const
   }
 
@@ -136,9 +141,10 @@ function REC_ObservableTaskTree(
       return handleBranch(node, selector, dom_task, () => {
         step++
         if (!_tasks[step]) {
-          unplug()
-          taskPromise.resolve('finish')
-          return 'finish'
+          return tryUnplug(() => {
+            outParameters.taskPromise.resolve('finish')
+            return 'finish' as const
+          })
         }
         return 'next'
       })
@@ -146,8 +152,8 @@ function REC_ObservableTaskTree(
   }
   function findMatchOrREC(node: HTMLElement, tree: Branch) {
     if (tree.length !== 3) {
-      // ts-expect-error
-      const rec = REC_ObservableTaskTree(node, tree[1], taskPromise)
+      // @ts-expect-error
+      const rec = REC_ObservableTaskTree(node, tree[1], outParameters)
       if (!rec || rec == 'panic') {
         return panic(errors.panic_next_tree)
       }
@@ -163,14 +169,14 @@ function REC_ObservableTaskTree(
     const [selector, newTasks] = branch
     const nextTarget = document.querySelector(selector)
     if (nextTarget instanceof HTMLElement) {
-      // ts-expect-error
-      const rec = REC_ObservableTaskTree(nextTarget, newTasks, taskPromise)
+      // @ts-expect-error
+      const rec = REC_ObservableTaskTree(nextTarget, newTasks, outParameters)
       if (!rec || rec == 'panic') {
         return panic(errors.panic_next_recursive_tree)
       }
       return 'recursive tree'
     } else {
-      // ts-expect-error
+      // @ts-expect-error
       return setFindMatchFunc(selector, newTasks)
     }
   }
@@ -183,7 +189,7 @@ function REC_ObservableTaskTree(
     findNewBranch = () => [document.querySelector(selector), newDomTasks]
     target = document.body
     step = 0
-    // ts-expect-error
+    // @ts-expect-error
     domTasks = newDomTasks
     observe()
     return 'findNewBranch' as const
@@ -206,25 +212,31 @@ function REC_ObservableTaskTree(
         return thenable()
       }
     } catch (error) {
-      step = -1
-      unplug()
-      taskPromise.reject(
-        error instanceof Error
-          ? error
-          : new Error('unknown error', { cause: error })
-      )
-      return 'error'
+      return tryUnplug(() => {
+        step = -1
+        outParameters.taskPromise.reject(
+          error instanceof Error
+            ? error
+            : new Error('unknown error', { cause: error })
+        )
+        return 'error' as const
+      })
     }
   }
 
-  function unplug() {
+  function tryUnplug<T>(thenable: () => T) {
     if (observing === false) {
       return panic(errors.observing_was_set_to_false)
     }
+    unplug()
+    return thenable()
+  }
+  function unplug() {
     observing = false
     observer.disconnect()
     observer.takeRecords()
   }
+  outParameters.unplug = unplug
 
   let observing: boolean | undefined = undefined
   const observe = () => {
@@ -246,7 +258,10 @@ function REC_ObservableTaskTree(
     }
     const node = target.querySelector(selector)
     const res = stepForward(node)
-    if (res && !(res == 'findNewBranch' || res == 'next')) {
+    if (!res) {
+      break // TODO: pass OR branch types
+    }
+    if (!(res == 'findNewBranch' || res == 'next')) {
       return res
     }
   }

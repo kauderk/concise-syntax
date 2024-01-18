@@ -85,7 +85,8 @@ const contributes = {
     {
       command: "extension.calibrateWindow",
       title: "Calibrate Window",
-      category: "Concise Syntax"
+      category: "Concise Syntax",
+      enablement: "!extension.disposed && extension.calibrateWindow"
     },
     {
       command: "extension.reset",
@@ -753,7 +754,7 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
     new Promise(
       (reject) => setTimeout(() => {
         reject(new Error("calibrate_window_task timed out "));
-      }, 5e3)
+      }, 5e8)
     )
   ]);
   if (race instanceof Error)
@@ -868,12 +869,12 @@ async function calibrateCommandCycle(uriRemote2, usingContext) {
   } catch (error) {
     debugger;
     c_busy = false;
-    if (_item) {
-      showCrashIcon(_item, error);
-    }
     calibrate_window_task.consume();
     calibrate_confirmation_task.consume();
     await consume_close(_calibrate);
+    if (_item) {
+      showCrashIcon(_item, error);
+    }
     vscode__namespace.window.showErrorMessage(
       `Error: failed to execute calibrate command with error: ${error?.message}`
     );

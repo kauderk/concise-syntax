@@ -1608,29 +1608,32 @@ var __publicField = (obj, key, value) => {
     timeout_exceeded: "",
     panic_next_recursive_tree: "",
     panic_next_tree: "",
-    outsider_rejected: ""
+    promise_task_rejected: ""
   });
   const createResult = () => createTask();
   const work_REC_ObservableTaskTree = (target, domTasks) => {
     debugger;
     const taskPromise = createResult();
-    const res = REC_ObservableTaskTree(target, domTasks, taskPromise);
+    let outParameters = { unplug() {
+    }, taskPromise };
+    const res = REC_ObservableTaskTree(target, domTasks, outParameters);
     if (res == "finish" || res == "panic" || res == "error")
       ;
     else {
       const timeout = setTimeout(() => {
         taskPromise.reject(errors.timeout_exceeded);
-      }, 3e3);
+      }, 5e5);
       taskPromise.promise.finally(() => clearTimeout(timeout));
     }
     return {
       promise: taskPromise.promise,
       reject() {
-        taskPromise.reject(errors.outsider_rejected);
+        outParameters.unplug();
+        taskPromise.reject(errors.promise_task_rejected);
       }
     };
   };
-  function REC_ObservableTaskTree(target, domTasks, taskPromise) {
+  function REC_ObservableTaskTree(target, domTasks, outParameters) {
     let step = 0;
     let findNewBranch;
     const observer = new MutationObserver(async (record) => {
@@ -1648,9 +1651,10 @@ var __publicField = (obj, key, value) => {
         if (!Array.isArray(tree)) {
           return panic(errors.task_tree_is_not_an_array);
         }
-        findNewBranch = void 0;
-        unplug();
-        return findMatchOrREC(node2, tree);
+        return tryUnplug(() => {
+          findNewBranch = void 0;
+          findMatchOrREC(node2, tree);
+        });
       }
       for (const mutation of record) {
         if (mutation.type == "attributes") {
@@ -1672,10 +1676,8 @@ var __publicField = (obj, key, value) => {
     let panicked = false;
     function panic(error, f) {
       panicked = true;
-      observing = false;
-      observer.disconnect();
-      observer.takeRecords();
-      taskPromise.reject(error);
+      unplug();
+      outParameters.taskPromise.reject(error);
       return "panic";
     }
     function stepForward(node, _tasks = domTasks) {
@@ -1698,9 +1700,10 @@ var __publicField = (obj, key, value) => {
         return handleBranch(node, selector, dom_task, () => {
           step++;
           if (!_tasks[step]) {
-            unplug();
-            taskPromise.resolve("finish");
-            return "finish";
+            return tryUnplug(() => {
+              outParameters.taskPromise.resolve("finish");
+              return "finish";
+            });
           }
           return "next";
         });
@@ -1708,7 +1711,7 @@ var __publicField = (obj, key, value) => {
     }
     function findMatchOrREC(node, tree) {
       if (tree.length !== 3) {
-        const rec = REC_ObservableTaskTree(node, tree[1], taskPromise);
+        const rec = REC_ObservableTaskTree(node, tree[1], outParameters);
         if (!rec || rec == "panic") {
           return panic(errors.panic_next_tree);
         }
@@ -1722,7 +1725,7 @@ var __publicField = (obj, key, value) => {
       const [selector, newTasks] = branch;
       const nextTarget = document.querySelector(selector);
       if (nextTarget instanceof HTMLElement) {
-        const rec = REC_ObservableTaskTree(nextTarget, newTasks, taskPromise);
+        const rec = REC_ObservableTaskTree(nextTarget, newTasks, outParameters);
         if (!rec || rec == "panic") {
           return panic(errors.panic_next_recursive_tree);
         }
@@ -1753,22 +1756,28 @@ var __publicField = (obj, key, value) => {
           return thenable();
         }
       } catch (error) {
-        step = -1;
-        unplug();
-        taskPromise.reject(
-          error instanceof Error ? error : new Error("unknown error", { cause: error })
-        );
-        return "error";
+        return tryUnplug(() => {
+          step = -1;
+          outParameters.taskPromise.reject(
+            error instanceof Error ? error : new Error("unknown error", { cause: error })
+          );
+          return "error";
+        });
       }
     }
-    function unplug() {
+    function tryUnplug(thenable) {
       if (observing === false) {
         return panic(errors.observing_was_set_to_false);
       }
+      unplug();
+      return thenable();
+    }
+    function unplug() {
       observing = false;
       observer.disconnect();
       observer.takeRecords();
     }
+    outParameters.unplug = unplug;
     let observing = void 0;
     const observe = () => {
       if (observing) {
@@ -1788,7 +1797,10 @@ var __publicField = (obj, key, value) => {
       }
       const node = target.querySelector(selector);
       const res = stepForward(node);
-      if (res && !(res == "findNewBranch" || res == "next")) {
+      if (!res) {
+        break;
+      }
+      if (!(res == "findNewBranch" || res == "next")) {
         return res;
       }
     }
@@ -1824,6 +1836,11 @@ var __publicField = (obj, key, value) => {
   );
   let tableTask;
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
+    if (state2 == calibrate.error) {
+      debugger;
+      tableTask == null ? void 0 : tableTask.reject(calibrate.error);
+      return;
+    }
     if (!(state2 == calibrate.opened || state2 == calibrate.idle))
       return;
     const lineEditor = document.querySelector(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`);
@@ -1849,11 +1866,22 @@ var __publicField = (obj, key, value) => {
     ).catch(() => {
       toastConsole.error("Failed to run Calibrate Window command");
       BonkersExecuteCommand.shadow(false, getInput());
-    }).then(() => tableTask.promise).catch(() => toastConsole.error("Failed to get colors table")).then(() => {
+    }).then(
+      () => (
+        // prettier-ignore
+        tableTask.promise.then((_) => {
+          debugger;
+          return _;
+        })
+      )
+    ).then(() => {
       const css = parseSymbolColors(lineEditor).process(snapshot.payload);
       window.localStorage.setItem(sessionKey, css);
       syntaxStyle.styleIt(css);
-    }).finally(() => tableTask = void 0);
+    }).catch(() => toastConsole.error("Failed to get colors table")).finally(() => {
+      debugger;
+      tableTask = void 0;
+    });
   });
   const calibrateWindowStyle = createStyles("calibrate.window");
   function BonkersExecuteCommand(displayName, commandName, value) {

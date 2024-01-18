@@ -25,13 +25,18 @@ createStyles('calibrate').styleIt(
   `${ICalibrate.selector}{display: none !important}`
 )
 
-let tableTask: ReturnType<typeof createTask<'opened' | 'idle'>> | undefined
+let tableTask: ReturnType<typeof createTask<Calibrate>> | undefined
 export type windowColorsTable = ReturnType<
   typeof parseSymbolColors
 >['colorsTable']
 const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((state) => {
     //#region opened -> idle -> reset
+    if (state == calibrate.error) {
+      debugger
+      tableTask?.reject(calibrate.error)
+      return
+    }
     if (!(state == calibrate.opened || state == calibrate.idle)) return
     // prettier-ignore
     // FIXME: use proper uri or shared file path between extension and workbench
@@ -66,14 +71,20 @@ const createCalibrateSubscription = () =>
       })
       // FIXME: here is where the window should resolve the 'Calibrate Window' task
       // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
-      .then(() => tableTask!.promise)
-      .catch(() => toastConsole.error('Failed to get colors table'))
+      .then(() =>
+        // prettier-ignore
+        tableTask!.promise.then(_=>{debugger;return _})
+      )
       .then(() => {
         const css = parseSymbolColors(lineEditor).process(snapshot.payload)
         window.localStorage.setItem(sessionKey, css)
         syntaxStyle.styleIt(css)
       })
-      .finally(() => (tableTask = undefined))
+      .catch(() => toastConsole.error('Failed to get colors table'))
+      .finally(() => {
+        debugger
+        tableTask = undefined
+      })
   })
 
 //#region BonkersExecuteCommand

@@ -264,7 +264,7 @@ async function calibrateStateSandbox(
     new Promise((reject) =>
       setTimeout(() => {
         reject(new Error('calibrate_window_task timed out '))
-      }, 5_000)
+      }, 500_000_000)
     ),
   ])
   if (race instanceof Error) throw race
@@ -417,12 +417,13 @@ async function calibrateCommandCycle(
   } catch (error: any) {
     debugger
     c_busy = false
+    calibrate_window_task.consume()
+    calibrate_confirmation_task.consume()
+    // TODO: merge state icon states...
+    await consume_close(_calibrate) // the order matters
     if (_item) {
       showCrashIcon(_item, error)
     }
-    calibrate_window_task.consume()
-    calibrate_confirmation_task.consume()
-    await consume_close(_calibrate)
     vscode.window.showErrorMessage(
       `Error: failed to execute calibrate command with error: ${error?.message}`
     )
