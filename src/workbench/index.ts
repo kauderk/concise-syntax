@@ -60,15 +60,30 @@ const createCalibrateSubscription = () =>
       'Calibrate Window' satisfies calibrateWIndowPlaceholder,
       JSON.stringify(snapshot.colorsTable)
     )
-      .catch(() => {
+      .catch((_) => {
+        if (_ instanceof Error) {
+          _
+        } else if (typeof _ == 'string') {
+          _
+          if (_ == 'hell') {
+          }
+          // _;
+          // _ = "a"
+        } else if (_ === undefined) {
+          _
+        } else if (!_) {
+          _
+        } else {
+          _
+        }
         toastConsole.error('Failed to run Calibrate Window command')
         BonkersExecuteCommand.shadow(false, getInput())
       })
       // FIXME: here is where the window should resolve the 'Calibrate Window' task
       // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
-      .then(() => tableTask!.promise)
-      .catch(() => toastConsole.error('Failed to get colors table'))
-      .then(() => {
+      .then((_) => tableTask!.promise)
+      .catch((_) => toastConsole.error('Failed to get colors table'))
+      .then((_) => {
         const css = parseSymbolColors(lineEditor).process(snapshot.payload)
         window.localStorage.setItem(sessionKey, css)
         syntaxStyle.styleIt(css)
@@ -79,7 +94,7 @@ const createCalibrateSubscription = () =>
 //#region BonkersExecuteCommand
 const calibrateWindowStyle = createStyles('calibrate.window')
 // prettier-ignore
-async function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
+function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
   BonkersExecuteCommand.shadow(true)
   const widgetSelector = '.quick-input-widget'
   const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`
@@ -146,11 +161,7 @@ async function BonkersExecuteCommand(displayName: string, commandName: string, v
     ],
   ] as const satisfies BranchObserverTasks
   
-  return await Promise.race([
-    // TODO: resolve when the last task is completed
-    REC_ObservableTaskTree(document.body, branchTasks),
-    new Promise((resolve)=>setTimeout(()=>resolve(new Error('timeout')), 5_000))
-  ])
+  return REC_ObservableTaskTree(document.body, branchTasks).promise
 
   function tapVsCode(el:Element) {
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
@@ -242,6 +253,7 @@ if (window.conciseSyntax) {
 }
 window.conciseSyntax = syntax
 syntax.activate()
+cacheProc()
 
 console.log(extensionId, syntax)
 

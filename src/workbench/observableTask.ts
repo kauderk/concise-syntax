@@ -1,5 +1,3 @@
-import { createTask } from 'src/shared/utils'
-
 export type ObserverTasks = [
   selector: string,
   task: (element: HTMLElement & { value: any }) => void | Error
@@ -12,22 +10,56 @@ export type BranchObserver = [
 type Branch = BranchObserver | [string, ObserverTasks]
 export type BranchObserverTasks = BranchObserver[]
 
+const errors = createStructByNames({
+  observing_was_set_to_true: '',
+  observing_was_set_to_false: '',
+  findNewBranch_is_busy: '',
+})
+type FnError = (typeof errors)[keyof typeof errors]
+
+export class Unknown {} // https://stackoverflow.com/questions/61685819/typescript-does-not-recognize-a-union-of-type-unknown-and-type-promiseunknown#comment109112699_61685819
+const Result = createTask<
+  'finish' | 'recursive',
+  FnError | Error | (Unknown & undefined)
+>()
+
+Result.promise.catch((e) => {})
 /**
  I'm positive this could be a 10 line function, but I'm not sure how to do it.
  */
 export function REC_ObservableTaskTree(
   target: HTMLElement,
-  tasks: BranchObserverTasks,
-  root?: boolean
+  tasks: BranchObserverTasks
+  // Result = Result
 ) {
-  const task = createTask<undefined, Error>()
   let step = 0
   let findNewBranch: (() => [Element | null, Branch] | void) | undefined
 
   const observer = new MutationObserver(async (record) => {
-    if (findNewBranch) {
-      handleNewBranch()
+    if (panicked) {
+      debugger
       return
+    }
+
+    if (findNewBranch) {
+      const [node, tree] = findNewBranch() ?? []
+      if (!(node instanceof HTMLElement) || !tree) return
+
+      if (step == -1) {
+        debugger
+        throw new Error(`invalid step: ${step}`)
+      }
+      if (!Array.isArray(tree)) {
+        debugger
+        throw new Error('task_tree is not an array')
+      }
+
+      findNewBranch = undefined
+      unplug()
+      Result.resolve('recursive')
+
+      // TODO: do something with the result
+      return nextMatch(node, tree)
     }
     if (step == -1) {
       debugger
@@ -51,6 +83,13 @@ export function REC_ObservableTaskTree(
       return
     }
   })
+  let panicked = false
+  function panic(error: FnError) {
+    panicked = true
+    observing = false
+    observer.disconnect()
+    Result.reject(error)
+  }
 
   function stepForward(node: Node | null, _tasks = tasks) {
     if (!(node instanceof HTMLElement) || !_tasks[step]) {
@@ -76,7 +115,7 @@ export function REC_ObservableTaskTree(
         step++
         if (!_tasks[step]) {
           unplug()
-          task.resolve()
+          Result.resolve('finish')
           return 'finish'
         }
         return 'next'
@@ -85,7 +124,7 @@ export function REC_ObservableTaskTree(
   }
   function nextMatch(node: HTMLElement, tree: Branch) {
     if (tree.length !== 3) {
-      // ts-expect-error
+      // @ts-expect-error
       const rec = REC_ObservableTaskTree(node, tree[1])
       return 'recursive tree'
     }
@@ -101,23 +140,23 @@ export function REC_ObservableTaskTree(
 
     const nextTarget = document.querySelector(selector)
     if (nextTarget instanceof HTMLElement) {
-      // ts-expect-error
+      // @ts-expect-error
       const rec = REC_ObservableTaskTree(nextTarget, newTasks)
       return 'recursive'
     } else {
-      // ts-expect-error
+      // @ts-expect-error
       return findMatchFunc(selector, newTasks)
     }
   }
   // prettier-ignore
   function findMatchFunc(selector: string, newTasks: Branch) {
 		if(findNewBranch){
-			debugger
+			return panic(errors.findNewBranch_is_busy)
 		}
     findNewBranch = () => [document.querySelector(selector), newTasks]
     target = document.body
     step = 0
-    // ts-expect-error
+    // @ts-expect-error
     tasks = newTasks
     observe()
     return 'findNewBranch' as const
@@ -142,46 +181,28 @@ export function REC_ObservableTaskTree(
     } catch (error) {
       step = -1
       unplug()
-      task.reject(
+      Result.reject(
         error instanceof Error
           ? error
           : new Error('unknown error', { cause: error })
       )
+      panic(errors.observing_was_set_to_false)
       return 'error'
     }
   }
+
   function unplug() {
     if (observing === false) {
-      debugger
+      return panic(errors.observing_was_set_to_true)
     }
     observing = false
     observer.disconnect()
-  }
-  function handleNewBranch() {
-    if (!findNewBranch) return
-    const [node, tree] = findNewBranch() ?? []
-    if (!(node instanceof HTMLElement) || !tree) return
-
-    if (step == -1) {
-      debugger
-      throw new Error(`invalid step: ${step}`)
-    }
-    if (!Array.isArray(tree)) {
-      debugger
-      throw new Error('task_tree is not an array')
-    }
-
-    findNewBranch = undefined
-    unplug()
-    task.resolve()
-
-    return nextMatch(node, tree)
   }
 
   let observing: boolean | undefined = undefined
   const observe = () => {
     if (observing) {
-      debugger
+      return panic(errors.observing_was_set_to_false)
     }
     observing = true
     observer.observe(target, {
@@ -200,7 +221,7 @@ export function REC_ObservableTaskTree(
     const node = target.querySelector(selector)
     const res = stepForward(node)
     if (res?.match(/recursive|error/)) {
-      return task
+      return Result
     }
   }
 
@@ -211,5 +232,36 @@ export function REC_ObservableTaskTree(
     throw new Error(`impossible step : ${step}`)
   }
 
-  return task
+  return Result
 }
+
+function createTask<R = unknown, E = unknown>() {
+  let resolve = (value: R) => {},
+    reject = (value: E) => {}
+  const promise = new Promise((_resolve, _reject) => {
+    reject = _reject
+    resolve = _resolve
+  }) as CatchPromise<R, E>
+  return { promise, resolve, reject }
+}
+
+// I don't like typescript enums...
+function createStructByNames<const keys extends Record<string, ''>>(
+  keys: keys
+) {
+  return Object.keys(keys).reduce((acc, key, i) => {
+    // @ts-expect-error
+    acc[key] = key
+    return acc
+  }, <{ [key in keyof keys]: key }>{})
+}
+
+// https://stackoverflow.com/a/71092111
+export type CatchPromise<T, F = unknown> = {
+  catch<TResult = never>(
+    onrejected?:
+      | ((reason: F) => TResult | PromiseLike<TResult>)
+      | undefined
+      | null
+  ): Promise<T | TResult>
+} & Promise<T>

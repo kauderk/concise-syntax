@@ -38,7 +38,7 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
-  function createTask() {
+  function createTask$1() {
     let resolve = (value) => {
     }, reject = (value) => {
     };
@@ -1596,14 +1596,38 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
-  function REC_ObservableTaskTree(target, tasks, root) {
-    const task = createTask();
+  const errors = createStructByNames({
+    observing_was_set_to_true: "",
+    observing_was_set_to_false: "",
+    findNewBranch_is_busy: ""
+  });
+  const Result = createTask();
+  Result.promise.catch((e2) => {
+  });
+  function REC_ObservableTaskTree(target, tasks) {
     let step = 0;
     let findNewBranch;
     const observer = new MutationObserver(async (record) => {
-      if (findNewBranch) {
-        handleNewBranch();
+      if (panicked) {
+        debugger;
         return;
+      }
+      if (findNewBranch) {
+        const [node2, tree] = findNewBranch() ?? [];
+        if (!(node2 instanceof HTMLElement) || !tree)
+          return;
+        if (step == -1) {
+          debugger;
+          throw new Error(`invalid step: ${step}`);
+        }
+        if (!Array.isArray(tree)) {
+          debugger;
+          throw new Error("task_tree is not an array");
+        }
+        findNewBranch = void 0;
+        unplug();
+        Result.resolve("recursive");
+        return nextMatch(node2, tree);
       }
       if (step == -1) {
         debugger;
@@ -1626,6 +1650,13 @@ var __publicField = (obj, key, value) => {
         return;
       }
     });
+    let panicked = false;
+    function panic(error) {
+      panicked = true;
+      observing = false;
+      observer.disconnect();
+      Result.reject(error);
+    }
     function stepForward(node, _tasks = tasks) {
       if (!(node instanceof HTMLElement) || !_tasks[step]) {
         return;
@@ -1647,7 +1678,7 @@ var __publicField = (obj, key, value) => {
           step++;
           if (!_tasks[step]) {
             unplug();
-            task.resolve();
+            Result.resolve("finish");
             return "finish";
           }
           return "next";
@@ -1676,7 +1707,7 @@ var __publicField = (obj, key, value) => {
     }
     function findMatchFunc(selector, newTasks) {
       if (findNewBranch) {
-        debugger;
+        return panic(errors.findNewBranch_is_busy);
       }
       findNewBranch = () => [document.querySelector(selector), newTasks];
       target = document.body;
@@ -1698,42 +1729,24 @@ var __publicField = (obj, key, value) => {
       } catch (error) {
         step = -1;
         unplug();
-        task.reject(
+        Result.reject(
           error instanceof Error ? error : new Error("unknown error", { cause: error })
         );
+        panic(errors.observing_was_set_to_false);
         return "error";
       }
     }
     function unplug() {
       if (observing === false) {
-        debugger;
+        return panic(errors.observing_was_set_to_true);
       }
       observing = false;
       observer.disconnect();
     }
-    function handleNewBranch() {
-      if (!findNewBranch)
-        return;
-      const [node, tree] = findNewBranch() ?? [];
-      if (!(node instanceof HTMLElement) || !tree)
-        return;
-      if (step == -1) {
-        debugger;
-        throw new Error(`invalid step: ${step}`);
-      }
-      if (!Array.isArray(tree)) {
-        debugger;
-        throw new Error("task_tree is not an array");
-      }
-      findNewBranch = void 0;
-      unplug();
-      task.resolve();
-      return nextMatch(node, tree);
-    }
     let observing = void 0;
     const observe = () => {
       if (observing) {
-        debugger;
+        return panic(errors.observing_was_set_to_false);
       }
       observing = true;
       observer.observe(target, {
@@ -1751,7 +1764,7 @@ var __publicField = (obj, key, value) => {
       const node = target.querySelector(selector);
       const res = stepForward(node);
       if (res == null ? void 0 : res.match(/recursive|error/)) {
-        return task;
+        return Result;
       }
     }
     if (step > -1 && step < tasks.length && !observing) {
@@ -1760,7 +1773,23 @@ var __publicField = (obj, key, value) => {
       debugger;
       throw new Error(`impossible step : ${step}`);
     }
-    return task;
+    return Result;
+  }
+  function createTask() {
+    let resolve = (value) => {
+    }, reject = (value) => {
+    };
+    const promise = new Promise((_resolve, _reject) => {
+      reject = _reject;
+      resolve = _resolve;
+    });
+    return { promise, resolve, reject };
+  }
+  function createStructByNames(keys) {
+    return Object.keys(keys).reduce((acc, key, i) => {
+      acc[key] = key;
+      return acc;
+    }, {});
   }
   const editorObservable = createObservable(void 0);
   const stateObservable = createObservable(void 0);
@@ -1782,7 +1811,7 @@ var __publicField = (obj, key, value) => {
       return;
     }
     if (!tableTask) {
-      tableTask = createTask();
+      tableTask = createTask$1();
     } else if (state2 == calibrate.idle) {
       tableTask.resolve(state2);
       return;
@@ -1793,17 +1822,17 @@ var __publicField = (obj, key, value) => {
       "Concise Syntax",
       "Calibrate Window",
       JSON.stringify(snapshot.colorsTable)
-    ).catch(() => {
+    ).catch((_) => {
       toastConsole.error("Failed to run Calibrate Window command");
       BonkersExecuteCommand.shadow(false, getInput());
-    }).then(() => tableTask.promise).catch(() => toastConsole.error("Failed to get colors table")).then(() => {
+    }).then((_) => tableTask.promise).catch((_) => toastConsole.error("Failed to get colors table")).then((_) => {
       const css = parseSymbolColors(lineEditor).process(snapshot.payload);
       window.localStorage.setItem(sessionKey, css);
       syntaxStyle.styleIt(css);
     }).finally(() => tableTask = void 0);
   });
   const calibrateWindowStyle = createStyles("calibrate.window");
-  async function BonkersExecuteCommand(displayName, commandName, value) {
+  function BonkersExecuteCommand(displayName, commandName, value) {
     BonkersExecuteCommand.shadow(true);
     const widgetSelector = ".quick-input-widget";
     const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`;
@@ -1866,11 +1895,7 @@ var __publicField = (obj, key, value) => {
         ]
       ]
     ];
-    return await Promise.race([
-      // TODO: resolve when the last task is completed
-      REC_ObservableTaskTree(document.body, branchTasks),
-      new Promise((resolve) => setTimeout(() => resolve(new Error("timeout")), 5e3))
-    ]);
+    return REC_ObservableTaskTree(document.body, branchTasks).promise;
     function tapVsCode(el) {
       el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
     }
@@ -1949,6 +1974,7 @@ var __publicField = (obj, key, value) => {
   }
   window.conciseSyntax = syntax;
   syntax.activate();
+  cacheProc();
   console.log(extensionId, syntax);
 });
 //# sourceMappingURL=workbench.js.map
