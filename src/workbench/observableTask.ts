@@ -14,23 +14,33 @@ const errors = createStructByNames({
   observing_was_set_to_true: '',
   observing_was_set_to_false: '',
   findNewBranch_is_busy: '',
+  task_tree_is_not_an_array: '',
+  invalid_step: '',
+  invalid_selector: '',
+  invalid_return_value: '',
+  failed_next_o_task: '',
 })
 type FnError = (typeof errors)[keyof typeof errors]
+const createResult = () => createTask<'finish', FnError | Error | void>()
 
-export class Unknown {} // https://stackoverflow.com/questions/61685819/typescript-does-not-recognize-a-union-of-type-unknown-and-type-promiseunknown#comment109112699_61685819
-const Result = createTask<
-  'finish' | 'recursive',
-  FnError | Error | (Unknown & undefined)
->()
+export const work_REC_ObservableTaskTree = (
+  target: HTMLElement,
+  tasks: BranchObserverTasks
+) => {
+  const result = createResult()
+  REC_ObservableTaskTree(target, tasks, result)
+  hold()
+  return result
+}
 
-Result.promise.catch((e) => {})
+export { work_REC_ObservableTaskTree as REC_ObservableTaskTree }
 /**
  I'm positive this could be a 10 line function, but I'm not sure how to do it.
  */
-export function REC_ObservableTaskTree(
+function REC_ObservableTaskTree(
   target: HTMLElement,
-  tasks: BranchObserverTasks
-  // Result = Result
+  tasks: BranchObserverTasks,
+  Result: ReturnType<typeof createResult>
 ) {
   let step = 0
   let findNewBranch: (() => [Element | null, Branch] | void) | undefined
@@ -41,29 +51,20 @@ export function REC_ObservableTaskTree(
       return
     }
 
+    if (step == -1) {
+      return panic(errors.invalid_step, step)
+    }
     if (findNewBranch) {
       const [node, tree] = findNewBranch() ?? []
       if (!(node instanceof HTMLElement) || !tree) return
 
-      if (step == -1) {
-        debugger
-        throw new Error(`invalid step: ${step}`)
-      }
       if (!Array.isArray(tree)) {
-        debugger
-        throw new Error('task_tree is not an array')
+        return panic(errors.task_tree_is_not_an_array)
       }
 
       findNewBranch = undefined
       unplug()
-      Result.resolve('recursive')
-
-      // TODO: do something with the result
       return nextMatch(node, tree)
-    }
-    if (step == -1) {
-      debugger
-      return
     }
 
     for (const mutation of record) {
@@ -84,11 +85,12 @@ export function REC_ObservableTaskTree(
     }
   })
   let panicked = false
-  function panic(error: FnError) {
+  function panic(error: FnError, f?: any) {
     panicked = true
     observing = false
     observer.disconnect()
     Result.reject(error)
+    return 'panic' as const
   }
 
   function stepForward(node: Node | null, _tasks = tasks) {
@@ -124,39 +126,38 @@ export function REC_ObservableTaskTree(
   }
   function nextMatch(node: HTMLElement, tree: Branch) {
     if (tree.length !== 3) {
-      // @ts-expect-error
-      const rec = REC_ObservableTaskTree(node, tree[1])
+      // ts-expect-error
+      const rec = REC_ObservableTaskTree(node, tree[1], Result)
       return 'recursive tree'
     }
 
     const [self_selector, o_task, branch] = tree
     const res = handleBranch(node, self_selector, o_task, () => 'next')
-    if (!res) {
-      debugger
-      throw new Error('failed to handle branch')
+    if (!res || res == 'error' || res == 'panic') {
+      return panic(errors.failed_next_o_task)
     }
 
     const [selector, newTasks] = branch
 
     const nextTarget = document.querySelector(selector)
     if (nextTarget instanceof HTMLElement) {
-      // @ts-expect-error
-      const rec = REC_ObservableTaskTree(nextTarget, newTasks)
+      // ts-expect-error
+      const rec = REC_ObservableTaskTree(nextTarget, newTasks, Result)
       return 'recursive'
     } else {
-      // @ts-expect-error
+      // ts-expect-error
       return findMatchFunc(selector, newTasks)
     }
   }
   // prettier-ignore
   function findMatchFunc(selector: string, newTasks: Branch) {
-		if(findNewBranch){
+		if (findNewBranch) {
 			return panic(errors.findNewBranch_is_busy)
 		}
     findNewBranch = () => [document.querySelector(selector), newTasks]
     target = document.body
     step = 0
-    // @ts-expect-error
+    // ts-expect-error
     tasks = newTasks
     observe()
     return 'findNewBranch' as const
@@ -167,7 +168,7 @@ export function REC_ObservableTaskTree(
     selector: string,
     o_task: any,
     // prettier-ignore
-    thenable: () => 'next' | 'findNewBranch' | 'finish' | 'recursive' | 'recursive tree'
+    thenable: () => 'next' | 'findNewBranch' | 'finish' | 'recursive' | 'recursive tree' | 'panic'
   ) {
     if (!node.matches(selector)) return
 
@@ -186,7 +187,6 @@ export function REC_ObservableTaskTree(
           ? error
           : new Error('unknown error', { cause: error })
       )
-      panic(errors.observing_was_set_to_false)
       return 'error'
     }
   }
@@ -215,24 +215,20 @@ export function REC_ObservableTaskTree(
   for (let i = 0; i < tasks.length; i++) {
     const [selector] = tasks[i]
     if (!selector || selector.length == 1) {
-      debugger
-      throw new Error(`invalid selector: ${selector}`)
+      return panic(errors.invalid_selector, selector)
     }
     const node = target.querySelector(selector)
     const res = stepForward(node)
     if (res?.match(/recursive|error/)) {
-      return Result
+      return
     }
   }
 
   if (step > -1 && step < tasks.length && !observing) {
     observe()
   } else {
-    debugger
-    throw new Error(`impossible step : ${step}`)
+    return panic(errors.invalid_step, step)
   }
-
-  return Result
 }
 
 function createTask<R = unknown, E = unknown>() {

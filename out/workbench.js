@@ -1599,12 +1599,21 @@ var __publicField = (obj, key, value) => {
   const errors = createStructByNames({
     observing_was_set_to_true: "",
     observing_was_set_to_false: "",
-    findNewBranch_is_busy: ""
+    findNewBranch_is_busy: "",
+    task_tree_is_not_an_array: "",
+    invalid_step: "",
+    invalid_selector: "",
+    invalid_return_value: "",
+    failed_next_o_task: ""
   });
-  const Result = createTask();
-  Result.promise.catch((e2) => {
-  });
-  function REC_ObservableTaskTree(target, tasks) {
+  const createResult = () => createTask();
+  const work_REC_ObservableTaskTree = (target, tasks) => {
+    const result = createResult();
+    REC_ObservableTaskTree(target, tasks, result);
+    hold();
+    return result;
+  };
+  function REC_ObservableTaskTree(target, tasks, Result) {
     let step = 0;
     let findNewBranch;
     const observer = new MutationObserver(async (record) => {
@@ -1612,26 +1621,19 @@ var __publicField = (obj, key, value) => {
         debugger;
         return;
       }
+      if (step == -1) {
+        return panic(errors.invalid_step);
+      }
       if (findNewBranch) {
         const [node2, tree] = findNewBranch() ?? [];
         if (!(node2 instanceof HTMLElement) || !tree)
           return;
-        if (step == -1) {
-          debugger;
-          throw new Error(`invalid step: ${step}`);
-        }
         if (!Array.isArray(tree)) {
-          debugger;
-          throw new Error("task_tree is not an array");
+          return panic(errors.task_tree_is_not_an_array);
         }
         findNewBranch = void 0;
         unplug();
-        Result.resolve("recursive");
         return nextMatch(node2, tree);
-      }
-      if (step == -1) {
-        debugger;
-        return;
       }
       for (const mutation of record) {
         if (mutation.type == "attributes") {
@@ -1651,11 +1653,12 @@ var __publicField = (obj, key, value) => {
       }
     });
     let panicked = false;
-    function panic(error) {
+    function panic(error, f) {
       panicked = true;
       observing = false;
       observer.disconnect();
       Result.reject(error);
+      return "panic";
     }
     function stepForward(node, _tasks = tasks) {
       if (!(node instanceof HTMLElement) || !_tasks[step]) {
@@ -1687,19 +1690,18 @@ var __publicField = (obj, key, value) => {
     }
     function nextMatch(node, tree) {
       if (tree.length !== 3) {
-        REC_ObservableTaskTree(node, tree[1]);
+        REC_ObservableTaskTree(node, tree[1], Result);
         return "recursive tree";
       }
       const [self_selector, o_task, branch] = tree;
       const res = handleBranch(node, self_selector, o_task, () => "next");
-      if (!res) {
-        debugger;
-        throw new Error("failed to handle branch");
+      if (!res || res == "error" || res == "panic") {
+        return panic(errors.failed_next_o_task);
       }
       const [selector, newTasks] = branch;
       const nextTarget = document.querySelector(selector);
       if (nextTarget instanceof HTMLElement) {
-        REC_ObservableTaskTree(nextTarget, newTasks);
+        REC_ObservableTaskTree(nextTarget, newTasks, Result);
         return "recursive";
       } else {
         return findMatchFunc(selector, newTasks);
@@ -1732,7 +1734,6 @@ var __publicField = (obj, key, value) => {
         Result.reject(
           error instanceof Error ? error : new Error("unknown error", { cause: error })
         );
-        panic(errors.observing_was_set_to_false);
         return "error";
       }
     }
@@ -1758,22 +1759,19 @@ var __publicField = (obj, key, value) => {
     for (let i = 0; i < tasks.length; i++) {
       const [selector] = tasks[i];
       if (!selector || selector.length == 1) {
-        debugger;
-        throw new Error(`invalid selector: ${selector}`);
+        return panic(errors.invalid_selector);
       }
       const node = target.querySelector(selector);
       const res = stepForward(node);
       if (res == null ? void 0 : res.match(/recursive|error/)) {
-        return Result;
+        return;
       }
     }
     if (step > -1 && step < tasks.length && !observing) {
       observe();
     } else {
-      debugger;
-      throw new Error(`impossible step : ${step}`);
+      return panic(errors.invalid_step);
     }
-    return Result;
   }
   function createTask() {
     let resolve = (value) => {
@@ -1822,10 +1820,10 @@ var __publicField = (obj, key, value) => {
       "Concise Syntax",
       "Calibrate Window",
       JSON.stringify(snapshot.colorsTable)
-    ).catch((_) => {
+    ).catch(() => {
       toastConsole.error("Failed to run Calibrate Window command");
       BonkersExecuteCommand.shadow(false, getInput());
-    }).then((_) => tableTask.promise).catch((_) => toastConsole.error("Failed to get colors table")).then((_) => {
+    }).then(() => tableTask.promise).catch(() => toastConsole.error("Failed to get colors table")).then(() => {
       const css = parseSymbolColors(lineEditor).process(snapshot.payload);
       window.localStorage.setItem(sessionKey, css);
       syntaxStyle.styleIt(css);
@@ -1895,7 +1893,7 @@ var __publicField = (obj, key, value) => {
         ]
       ]
     ];
-    return REC_ObservableTaskTree(document.body, branchTasks).promise;
+    return work_REC_ObservableTaskTree(document.body, branchTasks).promise;
     function tapVsCode(el) {
       el.dispatchEvent(new CustomEvent("-monaco-gesturetap", {}));
     }

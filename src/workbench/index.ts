@@ -60,30 +60,15 @@ const createCalibrateSubscription = () =>
       'Calibrate Window' satisfies calibrateWIndowPlaceholder,
       JSON.stringify(snapshot.colorsTable)
     )
-      .catch((_) => {
-        if (_ instanceof Error) {
-          _
-        } else if (typeof _ == 'string') {
-          _
-          if (_ == 'hell') {
-          }
-          // _;
-          // _ = "a"
-        } else if (_ === undefined) {
-          _
-        } else if (!_) {
-          _
-        } else {
-          _
-        }
+      .catch(() => {
         toastConsole.error('Failed to run Calibrate Window command')
         BonkersExecuteCommand.shadow(false, getInput())
       })
       // FIXME: here is where the window should resolve the 'Calibrate Window' task
       // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
-      .then((_) => tableTask!.promise)
-      .catch((_) => toastConsole.error('Failed to get colors table'))
-      .then((_) => {
+      .then(() => tableTask!.promise)
+      .catch(() => toastConsole.error('Failed to get colors table'))
+      .then(() => {
         const css = parseSymbolColors(lineEditor).process(snapshot.payload)
         window.localStorage.setItem(sessionKey, css)
         syntaxStyle.styleIt(css)
