@@ -754,7 +754,7 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
     new Promise(
       (reject) => setTimeout(() => {
         reject(new Error("calibrate_window_task timed out "));
-      }, 5e8)
+      }, 5e3)
     )
   ]);
   if (race instanceof Error)

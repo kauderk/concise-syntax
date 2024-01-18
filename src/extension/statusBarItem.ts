@@ -264,7 +264,7 @@ async function calibrateStateSandbox(
     new Promise((reject) =>
       setTimeout(() => {
         reject(new Error('calibrate_window_task timed out '))
-      }, 500_000_000)
+      }, 5_000)
     ),
   ])
   if (race instanceof Error) throw race

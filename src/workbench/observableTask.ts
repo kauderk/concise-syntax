@@ -23,6 +23,7 @@ const errors = createStructByNames({
   panic_next_recursive_tree: '',
   panic_next_tree: '',
   promise_task_rejected: '',
+  new_task_tree_is_a_function_expected_an_array: '',
 })
 type FnError = (typeof errors)[keyof typeof errors]
 export type Falsy = 0 | -0 | 0n | '' | false | null | undefined // javascript :D
@@ -32,7 +33,6 @@ export const work_REC_ObservableTaskTree = (
   target: HTMLElement,
   domTasks: BranchObserverTasks
 ) => {
-  debugger
   const taskPromise = createResult()
 
   let outParameters = { unplug() {}, taskPromise }
@@ -42,7 +42,8 @@ export const work_REC_ObservableTaskTree = (
   } else {
     const timeout = setTimeout(() => {
       taskPromise.reject(errors.timeout_exceeded)
-    }, 500_000)
+    }, 5_000)
+    // TODO: introduce timeouts for each recursive tree observer
     taskPromise.promise.finally(() => clearTimeout(timeout))
   }
 
@@ -150,14 +151,20 @@ function REC_ObservableTaskTree(
       })
     }
   }
+  // prettier-ignore
+  // I love abstractions man! :[
+  function tryREC<const R>(target: HTMLElement, tree: ObserverTasks, error: FnError, ret: R) {
+		return tryUnplug(()=> {
+      const rec = REC_ObservableTaskTree(target, tree, outParameters)
+      if (!rec || rec == 'panic') {
+        return panic(error)
+      }
+      return ret
+		})
+	}
   function findMatchOrREC(node: HTMLElement, tree: Branch) {
     if (tree.length !== 3) {
-      // @ts-expect-error
-      const rec = REC_ObservableTaskTree(node, tree[1], outParameters)
-      if (!rec || rec == 'panic') {
-        return panic(errors.panic_next_tree)
-      }
-      return 'next tree'
+      return tryREC(node, tree[1], errors.invalid_return_value, 'next tree')
     }
 
     const [self_selector, dom_task, branch] = tree
@@ -168,15 +175,13 @@ function REC_ObservableTaskTree(
 
     const [selector, newTasks] = branch
     const nextTarget = document.querySelector(selector)
+    if (typeof newTasks == 'function') {
+      return panic(errors.new_task_tree_is_a_function_expected_an_array)
+    }
     if (nextTarget instanceof HTMLElement) {
-      // @ts-expect-error
-      const rec = REC_ObservableTaskTree(nextTarget, newTasks, outParameters)
-      if (!rec || rec == 'panic') {
-        return panic(errors.panic_next_recursive_tree)
-      }
-      return 'recursive tree'
+      // prettier-ignore
+      return tryREC(nextTarget, newTasks, errors.panic_next_recursive_tree, 'recursive tree')
     } else {
-      // @ts-expect-error
       return setFindMatchFunc(selector, newTasks)
     }
   }

@@ -33,7 +33,6 @@ const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((state) => {
     //#region opened -> idle -> reset
     if (state == calibrate.error) {
-      debugger
       tableTask?.reject(calibrate.error)
       return
     }
@@ -71,20 +70,14 @@ const createCalibrateSubscription = () =>
       })
       // FIXME: here is where the window should resolve the 'Calibrate Window' task
       // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
-      .then(() =>
-        // prettier-ignore
-        tableTask!.promise.then(_=>{debugger;return _})
-      )
+      .then(() => tableTask!.promise)
       .then(() => {
         const css = parseSymbolColors(lineEditor).process(snapshot.payload)
         window.localStorage.setItem(sessionKey, css)
         syntaxStyle.styleIt(css)
       })
       .catch(() => toastConsole.error('Failed to get colors table'))
-      .finally(() => {
-        debugger
-        tableTask = undefined
-      })
+      .finally(() => (tableTask = undefined))
   })
 
 //#region BonkersExecuteCommand

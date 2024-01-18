@@ -1608,11 +1608,11 @@ var __publicField = (obj, key, value) => {
     timeout_exceeded: "",
     panic_next_recursive_tree: "",
     panic_next_tree: "",
-    promise_task_rejected: ""
+    promise_task_rejected: "",
+    new_task_tree_is_a_function_expected_an_array: ""
   });
   const createResult = () => createTask();
   const work_REC_ObservableTaskTree = (target, domTasks) => {
-    debugger;
     const taskPromise = createResult();
     let outParameters = { unplug() {
     }, taskPromise };
@@ -1622,7 +1622,7 @@ var __publicField = (obj, key, value) => {
     else {
       const timeout = setTimeout(() => {
         taskPromise.reject(errors.timeout_exceeded);
-      }, 5e5);
+      }, 5e3);
       taskPromise.promise.finally(() => clearTimeout(timeout));
     }
     return {
@@ -1709,13 +1709,18 @@ var __publicField = (obj, key, value) => {
         });
       }
     }
+    function tryREC(target2, tree, error, ret) {
+      return tryUnplug(() => {
+        const rec = REC_ObservableTaskTree(target2, tree, outParameters);
+        if (!rec || rec == "panic") {
+          return panic(error);
+        }
+        return ret;
+      });
+    }
     function findMatchOrREC(node, tree) {
       if (tree.length !== 3) {
-        const rec = REC_ObservableTaskTree(node, tree[1], outParameters);
-        if (!rec || rec == "panic") {
-          return panic(errors.panic_next_tree);
-        }
-        return "next tree";
+        return tryREC(node, tree[1], errors.invalid_return_value, "next tree");
       }
       const [self_selector, dom_task, branch] = tree;
       const res = handleBranch(node, self_selector, dom_task, () => "next");
@@ -1724,12 +1729,11 @@ var __publicField = (obj, key, value) => {
       }
       const [selector, newTasks] = branch;
       const nextTarget = document.querySelector(selector);
+      if (typeof newTasks == "function") {
+        return panic(errors.new_task_tree_is_a_function_expected_an_array);
+      }
       if (nextTarget instanceof HTMLElement) {
-        const rec = REC_ObservableTaskTree(nextTarget, newTasks, outParameters);
-        if (!rec || rec == "panic") {
-          return panic(errors.panic_next_recursive_tree);
-        }
-        return "recursive tree";
+        return tryREC(nextTarget, newTasks, errors.panic_next_recursive_tree, "recursive tree");
       } else {
         return setFindMatchFunc(selector, newTasks);
       }
@@ -1837,7 +1841,6 @@ var __publicField = (obj, key, value) => {
   let tableTask;
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
     if (state2 == calibrate.error) {
-      debugger;
       tableTask == null ? void 0 : tableTask.reject(calibrate.error);
       return;
     }
@@ -1866,22 +1869,11 @@ var __publicField = (obj, key, value) => {
     ).catch(() => {
       toastConsole.error("Failed to run Calibrate Window command");
       BonkersExecuteCommand.shadow(false, getInput());
-    }).then(
-      () => (
-        // prettier-ignore
-        tableTask.promise.then((_) => {
-          debugger;
-          return _;
-        })
-      )
-    ).then(() => {
+    }).then(() => tableTask.promise).then(() => {
       const css = parseSymbolColors(lineEditor).process(snapshot.payload);
       window.localStorage.setItem(sessionKey, css);
       syntaxStyle.styleIt(css);
-    }).catch(() => toastConsole.error("Failed to get colors table")).finally(() => {
-      debugger;
-      tableTask = void 0;
-    });
+    }).catch(() => toastConsole.error("Failed to get colors table")).finally(() => tableTask = void 0);
   });
   const calibrateWindowStyle = createStyles("calibrate.window");
   function BonkersExecuteCommand(displayName, commandName, value) {
