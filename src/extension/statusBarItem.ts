@@ -93,7 +93,6 @@ export async function ExtensionState_statusBarItem(
     vscode.workspace.onDidChangeConfiguration?.(async (e) => {
       if (e.affectsConfiguration('workbench.colorTheme')) {
         const tryNext = stores.windowState.read()
-        if (!tryNext) return
         if (tryNext != state.active) {
           return 'SC: windowState is not active'
         }
@@ -444,7 +443,7 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
     vscode.window.showInformationMessage(
       'The extension is busy. Try again in a few seconds.'
     )
-    return
+    return 'SC: busy'
   }
   checkCalibrateWindowCommandContext(state.inactive)
   w_busy = true
@@ -468,17 +467,17 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
   const race = await Promise.race([task.promise, input])
   blurEvent.dispose()
   if (!calibrate_window_task.value) {
-    return
+    return 'SC: calibrate_window_task is undefined'
   }
   if (race instanceof Error) {
-    calibrate_window_task.value?.reject(race)
-    return
+    calibrate_window_task.value.reject(race)
+    return 'SC: reject - window lost focus'
   }
   if (!race) {
-    calibrate_window_task.value?.reject(
+    calibrate_window_task.value.reject(
       new Error('No window input was provided')
     )
-    return
+    return 'SC: reject - no window input'
   }
   try {
     const table: windowColorsTable = JSON.parse(race)
@@ -513,10 +512,13 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
     )
 
     calibrate_window_task.value.resolve()
+    return 'Success: resolved calibrate_window_task'
   } catch (error: any) {
-    const r = `Failed to parse window input with error: ${error?.message}`
+    const r =
+      `Failed to parse window input with error: ${error?.message}` as const
     vscode.window.showErrorMessage(r)
     calibrate_window_task.value?.reject(new Error(r))
+    return r
   }
 }
 function rgbToHexDivergent(rgbString: string, scalar = 1) {
@@ -544,11 +546,11 @@ async function toggleCommandCycle(usingContext: UsingContext) {
     vscode.window.showInformationMessage(
       'The extension is disposed. Mount it to use this command.'
     )
-    return
+    return 'SC: disposed'
   }
 
   const next = flip(stores.windowState.read())
-  await changeExtensionStateCycle(usingContext, next)
+  return await changeExtensionStateCycle(usingContext, next)
 }
 
 function defaultCalibrate(_calibrate: vscode.StatusBarItem) {
@@ -658,6 +660,7 @@ async function changeExtensionStateCycle(
           return 'Executed: extension.calibrate command'
         })
       })
+    return 'Deferred: waitingForUserInput'
   }
 }
 
