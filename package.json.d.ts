@@ -58,7 +58,37 @@ declare const data: {
         "title": "Reset then reload (dev)",
         "category": "Concise Syntax"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Concise Syntax",
+      "properties": {
+        "concise-syntax.opacity.baseline": {
+          "type": "number",
+          "default": 0,
+          "description": "Baseline for all the concise-syntax characters in the editor."
+        },
+        "concise-syntax.opacity.selected": {
+          "type": "number",
+          "default": 0.5,
+          "description": "When a line has any selected range, all the concise-syntax characters in the line are highlighted."
+        },
+        "concise-syntax.opacity.hoverAll": {
+          "type": "number",
+          "default": 0.7,
+          "description": "When a concise-syntax character is hovered in the editor, all the lines are highlighted."
+        },
+        "concise-syntax.opacity.hoverLine": {
+          "type": "number",
+          "default": 1,
+          "description": "When a line is hovered in the editor. All the concise-syntax characters in the line are highlighted."
+        },
+        "concise-syntax.bleedCurrentLines": {
+          "type": "number",
+          "default": 3,
+          "description": "When a line has focus/caret how many lines above and below should be highlighted."
+        }
+      }
+    }
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
