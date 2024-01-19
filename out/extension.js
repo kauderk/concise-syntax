@@ -739,8 +739,10 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
     preview: false,
     preserveFocus: false
   });
+  const closeEditorTask = createTask();
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
     if (doc.uri.path === uriRemote2.path || editor.document.isClosed) {
+      closeEditorTask.resolve(true);
       await consume_close(_calibrate2);
       return true;
     }
@@ -750,10 +752,11 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
   await checkCalibrateWindowCommandContext(state.active);
   await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
   const race = await Promise.race([
+    closeEditorTask.promise,
     calibrate_window_task.value.promise,
     new Promise(
-      (reject) => setTimeout(() => {
-        reject(new Error("calibrate_window_task timed out "));
+      (resolve) => setTimeout(() => {
+        resolve(new Error("calibrate_window_task timed out "));
       }, 5e3)
     )
   ]);
@@ -764,8 +767,9 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
   if (error2 instanceof Error)
     throw error2;
   calibrate_window_task.consume();
+  disposeClosedEditor.consume();
   await checkCalibrateWindowCommandContext(state.inactive);
-  await tryUpdateCalibrateState(calibrate.idle, _calibrate2, 500);
+  await tryUpdateCalibrateState(calibrate.idle, _calibrate2);
   taskProgress.progress.report({ message: "calibrated you may close the file" });
   setTimeout(calibrate_confirmation_task.consume, 5e3);
   return "Success: calibrateStateSandbox";

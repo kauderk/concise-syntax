@@ -247,8 +247,10 @@ async function calibrateStateSandbox(
     preview: false,
     preserveFocus: false,
   })
+  const closeEditorTask = createTask()
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
     if (doc.uri.path === uriRemote.path || editor.document.isClosed) {
+      closeEditorTask.resolve(true)
       await consume_close(_calibrate)
       return true
     }
@@ -260,10 +262,11 @@ async function calibrateStateSandbox(
   await tryUpdateCalibrateState(calibrate.opened, _calibrate, 1500)
 
   const race = await Promise.race([
+    closeEditorTask.promise,
     calibrate_window_task.value.promise,
-    new Promise((reject) =>
+    new Promise((resolve) =>
       setTimeout(() => {
-        reject(new Error('calibrate_window_task timed out '))
+        resolve(new Error('calibrate_window_task timed out '))
       }, 5_000)
     ),
   ])
@@ -276,8 +279,9 @@ async function calibrateStateSandbox(
   calibrate_window_task.consume()
   // FIXME: the window should trigger the 'Calibrate Window' task
   // take a look at src/workbench/index.ts createCalibrateSubscription's "state == calibrate.opened" branch
+  disposeClosedEditor.consume()
   await checkCalibrateWindowCommandContext(state.inactive)
-  await tryUpdateCalibrateState(calibrate.idle, _calibrate, 500)
+  await tryUpdateCalibrateState(calibrate.idle, _calibrate)
   taskProgress.progress.report({ message: 'calibrated you may close the file' })
 
   setTimeout(calibrate_confirmation_task.consume, 5_000)
