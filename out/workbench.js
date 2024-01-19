@@ -8,7 +8,11 @@ var __publicField = (obj, key, value) => {
   return value;
 };
 
-  const extensionId = "kauderk.concise-syntax";
+  const publisher = "kauderk";
+  const extensionName = `concise-syntax`;
+  const extensionDisplayName = `Concise Syntax`;
+  const calibrateWindowCommandPlaceholder = `Calibrate Window`;
+  const extensionId = `${publisher}.${extensionName}`;
   const extensionScriptSrc = extensionId + ".js";
   const windowId = "window." + extensionId;
   const bridgeBetweenVscodeExtension = "aria-label";
@@ -1880,8 +1884,8 @@ var __publicField = (obj, key, value) => {
     syntaxStyle.dispose();
     const snapshot = parseSymbolColors(lineEditor);
     BonkersExecuteCommand(
-      "Concise Syntax",
-      "Calibrate Window",
+      extensionDisplayName,
+      calibrateWindowCommandPlaceholder,
       JSON.stringify(snapshot.colorsTable)
     ).catch(() => {
       toastConsole.error("Failed to run Calibrate Window command");

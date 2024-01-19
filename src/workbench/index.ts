@@ -1,13 +1,13 @@
 import { createSyntaxLifecycle } from './syntax'
 import { createHighlightLifeCycle } from './highlight'
-import { extensionId, viewLinesSelector } from './keys'
+import { extensionDisplayName, extensionId, viewLinesSelector } from './keys'
+import { calibrateWindowCommandPlaceholder } from './keys'
 import { IState, State, calibrationFileName, state } from 'src/shared/state'
 import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
 import { addRemoveRootStyles, createStyles, toastConsole } from './shared'
 import { parseSymbolColors } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 import { createTask, deltaFn } from 'src/shared/utils'
-import { type calibrateWIndowPlaceholder } from 'src/extension/statusBarItem'
 import {
   BranchObserverTasks,
   ObserverTasks,
@@ -60,8 +60,8 @@ const createCalibrateSubscription = () =>
     syntaxStyle.dispose()
     const snapshot = parseSymbolColors(lineEditor)
     BonkersExecuteCommand(
-      'Concise Syntax',
-      'Calibrate Window' satisfies calibrateWIndowPlaceholder,
+      extensionDisplayName,
+      calibrateWindowCommandPlaceholder,
       JSON.stringify(snapshot.colorsTable)
     )
       .catch(() => {

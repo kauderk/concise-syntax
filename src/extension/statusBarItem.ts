@@ -19,6 +19,7 @@ import { useGlobal, useState } from './utils'
 import path from 'path'
 import { Task, createTask, deltaFn, deltaValue } from 'src/shared/utils'
 import { type windowColorsTable } from 'src/workbench'
+import { calibrateWindowCommandPlaceholder } from 'src/workbench/keys'
 
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
@@ -434,7 +435,6 @@ async function calibrateCommandCycle(
     return error instanceof Error ? error : new Error('Unknown error')
   }
 }
-export type calibrateWIndowPlaceholder = 'Calibrate Window'
 async function calibrateWindowCommandCycle(usingContext: UsingContext) {
   const task = createTask<Error>()
   const blurEvent = vscode.window.onDidChangeWindowState((state) => {
@@ -442,13 +442,13 @@ async function calibrateWindowCommandCycle(usingContext: UsingContext) {
       `window focus changed to ${state.focused}`
     )
     if (state.focused === false) {
-      // task.resolve(
-      //   new Error('Window lost focus, calibrate window task was cancelled')
-      // )
+      task.resolve(
+        new Error('Window lost focus, calibrate window task was cancelled')
+      )
     }
   })
   const input = vscode.window.showInputBox({
-    placeHolder: 'Calibrate Window' satisfies calibrateWIndowPlaceholder,
+    placeHolder: calibrateWindowCommandPlaceholder,
     prompt: `Calibrate Window using session's syntax and theme`,
     value: '',
   })

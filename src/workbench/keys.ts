@@ -1,4 +1,11 @@
-export const extensionId = 'kauderk.concise-syntax'
+import type packageJson from '../../package.json'
+// FIXME: find a way to compile/tree shake the import package.json
+export const publisher: (typeof packageJson)['publisher'] = 'kauderk'
+export const extensionName: (typeof packageJson)['name'] = `concise-syntax`
+export const extensionDisplayName: (typeof packageJson)['displayName'] = `Concise Syntax`
+export const calibrateWindowCommandPlaceholder = `Calibrate Window`
+
+export const extensionId = `${publisher}.${extensionName}`
 export const extensionScriptSrc = extensionId + '.js'
 export const windowId = 'window.' + extensionId
 // exploit the fact that vscode renders data to the dom, could be any other attribute

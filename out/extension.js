@@ -39,7 +39,7 @@ const name$1 = "concise-syntax";
 const displayName = "Concise Syntax";
 const description = "Hide unnecessary syntax or markup from programming languages";
 const version = "0.0.1";
-const publisher = "kauderk";
+const publisher$1 = "kauderk";
 const type = "commonjs";
 const engines = {
   vscode: "^1.70.0"
@@ -107,7 +107,7 @@ const packageJson = {
   displayName,
   description,
   version,
-  publisher,
+  publisher: publisher$1,
   type,
   engines,
   categories,
@@ -117,7 +117,10 @@ const packageJson = {
   contributes,
   devDependencies
 };
-const extensionId = "kauderk.concise-syntax";
+const publisher = "kauderk";
+const extensionName = `concise-syntax`;
+const calibrateWindowCommandPlaceholder = `Calibrate Window`;
+const extensionId = `${publisher}.${extensionName}`;
 const extensionScriptSrc = extensionId + ".js";
 const extensionScriptTag = () => new RegExp(
   `<script.+${extensionId.replaceAll(".", "\\.")}.+/script>`,
@@ -891,11 +894,14 @@ async function calibrateWindowCommandCycle(usingContext) {
     vscode__namespace.window.showInformationMessage(
       `window focus changed to ${state2.focused}`
     );
-    if (state2.focused === false)
-      ;
+    if (state2.focused === false) {
+      task.resolve(
+        new Error("Window lost focus, calibrate window task was cancelled")
+      );
+    }
   });
   const input = vscode__namespace.window.showInputBox({
-    placeHolder: "Calibrate Window",
+    placeHolder: calibrateWindowCommandPlaceholder,
     prompt: `Calibrate Window using session's syntax and theme`,
     value: ""
   });
