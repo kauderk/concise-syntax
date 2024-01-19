@@ -1612,17 +1612,19 @@ var __publicField = (obj, key, value) => {
     new_task_tree_is_a_function_expected_an_array: ""
   });
   const createResult = () => createTask();
-  const work_REC_ObservableTaskTree = (target, domTasks) => {
+  const Config = { timeoutMs: 5e3, pokeTheDomIntervalMs: 500 };
+  const work_REC_ObservableTaskTree = (target, domTasks, config) => {
+    const _config = { ...Config, ...config };
     const taskPromise = createResult();
     let outParameters = { unplug() {
     }, taskPromise };
-    const res = REC_ObservableTaskTree(target, domTasks, outParameters);
+    const res = REC_ObservableTaskTree(target, domTasks, _config, outParameters);
     if (res == "finish" || res == "panic" || res == "error")
       ;
     else {
       const timeout = setTimeout(() => {
         taskPromise.reject(errors.timeout_exceeded);
-      }, 5e3);
+      }, _config.timeoutMs);
       taskPromise.promise.finally(() => clearTimeout(timeout));
     }
     return {
@@ -1633,7 +1635,7 @@ var __publicField = (obj, key, value) => {
       }
     };
   };
-  function REC_ObservableTaskTree(target, domTasks, outParameters) {
+  function REC_ObservableTaskTree(target, domTasks, config, outParameters) {
     let step = 0;
     let findNewBranch;
     const observer = new MutationObserver(async (record) => {
@@ -1675,14 +1677,6 @@ var __publicField = (obj, key, value) => {
         return;
       }
     });
-    let panicked = false;
-    function panic(error, f) {
-      debugger;
-      panicked = true;
-      unplug();
-      outParameters.taskPromise.reject(error);
-      return "panic";
-    }
     function stepForward(node, _tasks = domTasks) {
       if (!(node instanceof HTMLElement) || !_tasks[step]) {
         return;
@@ -1714,7 +1708,7 @@ var __publicField = (obj, key, value) => {
     }
     function tryREC(target2, tree, error, ret) {
       return tryUnplug(() => {
-        const rec = REC_ObservableTaskTree(target2, tree, outParameters);
+        const rec = REC_ObservableTaskTree(target2, tree, config, outParameters);
         if (!rec || rec == "panic") {
           return panic(error);
         }
@@ -1752,7 +1746,7 @@ var __publicField = (obj, key, value) => {
       target = document.body;
       step = 0;
       domTasks = newDomTasks;
-      return observe("findNewBranch");
+      return tryPlug("findNewBranch");
     }
     function handleBranch(node, selector, dom_task, thenable) {
       if (!node.matches(selector))
@@ -1782,16 +1776,26 @@ var __publicField = (obj, key, value) => {
       return thenable();
     }
     function unplug() {
+      clearInterval(pokeTheDomInterval);
       observing = false;
       observer.disconnect();
       observer.takeRecords();
     }
     outParameters.unplug = unplug;
+    let pokeTheDomInterval;
     let observing = void 0;
-    const observe = (ret) => {
+    function tryPlug(ret) {
       if (observing) {
         return panic(errors.observing_was_set_to_true);
       }
+      clearInterval(pokeTheDomInterval);
+      pokeTheDomInterval = setInterval(() => {
+        console.log("poking the dom...");
+        const node = document.querySelector(domTasks[step][0]);
+        if (stepForward(node)) {
+          return;
+        }
+      }, config.pokeTheDomIntervalMs);
       observing = true;
       observer.observe(target, {
         childList: true,
@@ -1799,7 +1803,15 @@ var __publicField = (obj, key, value) => {
         attributes: true
       });
       return ret;
-    };
+    }
+    let panicked = false;
+    function panic(error, f) {
+      debugger;
+      panicked = true;
+      unplug();
+      outParameters.taskPromise.reject(error);
+      return "panic";
+    }
     for (let i = 0; i < domTasks.length; i++) {
       const [selector] = domTasks[i];
       if (!selector || selector.length == 1) {
@@ -1815,7 +1827,7 @@ var __publicField = (obj, key, value) => {
       }
     }
     if (step > -1 && step < domTasks.length && !observing) {
-      return observe("return observe");
+      return tryPlug("return observe");
     } else {
       return panic(errors.invalid_step);
     }

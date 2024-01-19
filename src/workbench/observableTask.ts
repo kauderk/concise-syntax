@@ -31,21 +31,23 @@ type FnError = (typeof errors)[keyof typeof errors]
 export type Falsy = 0 | -0 | 0n | '' | false | null | undefined // javascript :D
 const createResult = () => createTask<'finish', FnError | Error | Falsy>()
 
+const Config = { timeoutMs: 5_000, pokeTheDomIntervalMs: 500 }
 export const work_REC_ObservableTaskTree = (
   target: HTMLElement,
-  domTasks: BranchObserverTasks
+  domTasks: BranchObserverTasks,
+  config?: Partial<typeof Config>
 ) => {
+  const _config = { ...Config, ...config }
   const taskPromise = createResult()
 
   let outParameters = { unplug() {}, taskPromise }
-  const res = REC_ObservableTaskTree(target, domTasks, outParameters)
+  const res = REC_ObservableTaskTree(target, domTasks, _config, outParameters)
   if (res == 'finish' || res == 'panic' || res == 'error') {
     // noop
   } else {
     const timeout = setTimeout(() => {
       taskPromise.reject(errors.timeout_exceeded)
-    }, 5_000)
-    // TODO: introduce timeouts for each recursive tree observer
+    }, _config.timeoutMs)
     taskPromise.promise.finally(() => clearTimeout(timeout))
   }
 
@@ -65,6 +67,7 @@ export { work_REC_ObservableTaskTree as REC_ObservableTaskTree }
 function REC_ObservableTaskTree(
   target: HTMLElement,
   domTasks: BranchObserverTasks,
+  config: typeof Config,
   // TODO: find a better way to collapse the recursive stack over time...
   outParameters: {
     unplug: Function
@@ -116,15 +119,8 @@ function REC_ObservableTaskTree(
       return
     }
   })
-  let panicked = false
-  function panic(error: FnError, f?: any) {
-    debugger
-    panicked = true
-    unplug()
-    outParameters.taskPromise.reject(error)
-    return 'panic' as const
-  }
 
+  //#region walk down the tree
   function stepForward(node: Node | null, _tasks = domTasks) {
     if (!(node instanceof HTMLElement) || !_tasks[step]) {
       return
@@ -160,7 +156,8 @@ function REC_ObservableTaskTree(
   // I love abstractions man! :[
   function tryREC<const R>(target: HTMLElement, tree: ObserverTasks, error: FnError, ret: R) {
 		return tryUnplug(()=> {
-      const rec = REC_ObservableTaskTree(target, tree, outParameters)
+			// @ts-expect-error
+      const rec = REC_ObservableTaskTree(target, tree, config, outParameters)
       if (!rec || rec == 'panic') {
         return panic(error)
       }
@@ -187,6 +184,7 @@ function REC_ObservableTaskTree(
       // prettier-ignore
       return tryREC(nextTarget, newTasks, errors.panic_next_recursive_tree, 'recursive tree')
     } else {
+      // @ts-expect-error
       return setFindMatchFunc(selector, newTasks)
     }
   }
@@ -202,11 +200,10 @@ function REC_ObservableTaskTree(
     findNewBranch = () => [document.querySelector(selector), newDomTasks]
     target = document.body
     step = 0
-    // ts-expect-error
+    // @ts-expect-error
     domTasks = newDomTasks
-    return observe('findNewBranch') // FIXME: this error checking is getting ridiculous
+    return tryPlug('findNewBranch') // FIXME: this error checking is getting ridiculous
   }
-
   function handleBranch(
     node: Element,
     selector: string,
@@ -235,7 +232,9 @@ function REC_ObservableTaskTree(
       })
     }
   }
+  //#endregion
 
+  //#region plug/unplug
   function tryUnplug<T>(thenable: () => T) {
     if (observing === false) {
       return panic(errors.observing_was_set_to_false)
@@ -244,17 +243,30 @@ function REC_ObservableTaskTree(
     return thenable()
   }
   function unplug() {
+    clearInterval(pokeTheDomInterval)
     observing = false
     observer.disconnect()
     observer.takeRecords()
   }
   outParameters.unplug = unplug
 
+  // poke the dom to catch mutations that the observer might have missed
+  // in theory this should never be needed, for the current environment which is vscode fake commands
+  // but on a more general environment this might save us from stale data
+  let pokeTheDomInterval: any
   let observing: boolean | undefined = undefined
-  const observe = <const T>(ret: T) => {
+  function tryPlug<const T>(ret: T) {
     if (observing) {
       return panic(errors.observing_was_set_to_true)
     }
+    clearInterval(pokeTheDomInterval) // I know this is redundant, but it makes me feel better
+    pokeTheDomInterval = setInterval(() => {
+      console.log('poking the dom...')
+      const node = document.querySelector(domTasks[step][0])
+      if (stepForward(node)) {
+        return
+      }
+    }, config.pokeTheDomIntervalMs)
     observing = true
     observer.observe(target, {
       childList: true,
@@ -264,6 +276,17 @@ function REC_ObservableTaskTree(
     return ret
   }
 
+  let panicked = false
+  function panic(error: FnError, f?: any) {
+    debugger
+    panicked = true
+    unplug()
+    outParameters.taskPromise.reject(error)
+    return 'panic' as const
+  }
+  //#endregion
+
+  //#region resolve current branch
   for (let i = 0; i < domTasks.length; i++) {
     const [selector] = domTasks[i]
     if (!selector || selector.length == 1) {
@@ -278,9 +301,10 @@ function REC_ObservableTaskTree(
       return res
     }
   }
+  //#endregion
 
   if (step > -1 && step < domTasks.length && !observing) {
-    return observe('return observe') // FIXME: this error checking is getting ridiculous
+    return tryPlug('return observe') // FIXME: this error checking is getting ridiculous
   } else {
     return panic(errors.invalid_step, step)
   }
