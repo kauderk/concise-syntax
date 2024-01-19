@@ -39,19 +39,19 @@ declare const data: {
         "command": "extension.toggle",
         "title": "Toggle",
         "category": "Concise Syntax",
-        "enablement": "!extension.disposed && extension.calibrated"
+        "enablement": "!extension.disposed && extension.calibrated && extension.running"
       },
       {
         "command": "extension.calibrate",
         "title": "Calibrate",
         "category": "Concise Syntax",
-        "enablement": "!extension.disposed && extension.running"
+        "enablement": "!extension.disposed && !extension.calibrateWindow && extension.running"
       },
       {
         "command": "extension.calibrateWindow",
         "title": "Calibrate Window",
         "category": "Concise Syntax",
-        "enablement": "!extension.disposed && extension.calibrateWindow"
+        "enablement": "!extension.disposed && extension.calibrateWindow && extension.running"
       },
       {
         "command": "extension.reset",

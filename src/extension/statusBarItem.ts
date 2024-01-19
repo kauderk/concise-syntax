@@ -45,6 +45,8 @@ let t_busy = false
 const remoteCalibratePath = path.join(__dirname, calibrationFileName)
 const uriRemote = vscode.Uri.file(remoteCalibratePath)
 
+let w_busy = false
+
 type UsingContext = { stores: Stores; context: vscode.ExtensionContext }
 
 export async function ExtensionState_statusBarItem(
@@ -281,7 +283,7 @@ async function calibrateStateSandbox(
   // FIXME: the window should trigger the 'Calibrate Window' task
   // take a look at src/workbench/index.ts createCalibrateSubscription's "state == calibrate.opened" branch
   disposeClosedEditor.consume()
-  await checkCalibrateWindowCommandContext(state.inactive)
+  // await checkCalibrateWindowCommandContext(state.inactive)
   await tryUpdateCalibrateState(calibrate.idle, _calibrate)
   taskProgress.progress.report({ message: 'calibrated you may close the file' })
 
@@ -415,6 +417,7 @@ async function calibrateCommandCycle(
         await stores.colorThemeKind.write(theme)
       }
     }
+    await checkCalibrateWindowCommandContext(state.inactive)
 
     c_busy = false
 
@@ -424,6 +427,7 @@ async function calibrateCommandCycle(
     c_busy = false
     calibrate_window_task.consume()
     calibrate_confirmation_task.consume()
+    await checkCalibrateWindowCommandContext(state.inactive)
     // TODO: merge state icon states...
     await consume_close(_calibrate) // the order matters
     if (_item) {
@@ -436,6 +440,15 @@ async function calibrateCommandCycle(
   }
 }
 async function calibrateWindowCommandCycle(usingContext: UsingContext) {
+  if (w_busy) {
+    vscode.window.showInformationMessage(
+      'The extension is busy. Try again in a few seconds.'
+    )
+    return
+  }
+  checkCalibrateWindowCommandContext(state.inactive)
+  w_busy = true
+
   const task = createTask<Error>()
   const blurEvent = vscode.window.onDidChangeWindowState((state) => {
     vscode.window.showInformationMessage(
@@ -705,13 +718,13 @@ export function checkDisposedCommandContext(next?: State) {
     next == state.active || next == state.inactive
   )
 }
-async function checkCalibrateWindowCommandContext(next?: State) {
+async function checkCalibrateWindowCommandContext(next: State) {
+  w_busy = next != state.active
   await vscode.commands.executeCommand(
     'setContext',
     'extension.calibrateWindow',
     next == state.active
   )
-  await hold(500)
 }
 
 function onDidCloseTextDocument(

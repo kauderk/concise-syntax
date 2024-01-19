@@ -74,19 +74,19 @@ const contributes = {
       command: "extension.toggle",
       title: "Toggle",
       category: "Concise Syntax",
-      enablement: "!extension.disposed && extension.calibrated"
+      enablement: "!extension.disposed && extension.calibrated && extension.running"
     },
     {
       command: "extension.calibrate",
       title: "Calibrate",
       category: "Concise Syntax",
-      enablement: "!extension.disposed && extension.running"
+      enablement: "!extension.disposed && !extension.calibrateWindow && extension.running"
     },
     {
       command: "extension.calibrateWindow",
       title: "Calibrate Window",
       category: "Concise Syntax",
-      enablement: "!extension.disposed && extension.calibrateWindow"
+      enablement: "!extension.disposed && extension.calibrateWindow && extension.running"
     },
     {
       command: "extension.reset",
@@ -583,6 +583,7 @@ let calibrate_window_task = deltaValue((t) => {
 let t_busy = false;
 const remoteCalibratePath = path.join(__dirname, calibrationFileName);
 const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
+let w_busy = false;
 async function ExtensionState_statusBarItem(context, setState) {
   const stores = getStores(context);
   await stores.windowState.write(setState);
@@ -771,7 +772,6 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
     throw error2;
   calibrate_window_task.consume();
   disposeClosedEditor.consume();
-  await checkCalibrateWindowCommandContext(state.inactive);
   await tryUpdateCalibrateState(calibrate.idle, _calibrate2);
   taskProgress.progress.report({ message: "calibrated you may close the file" });
   setTimeout(calibrate_confirmation_task.consume, 5e3);
@@ -871,6 +871,7 @@ async function calibrateCommandCycle(uriRemote2, usingContext) {
         await stores.colorThemeKind.write(theme);
       }
     }
+    await checkCalibrateWindowCommandContext(state.inactive);
     c_busy = false;
     return res;
   } catch (error) {
@@ -878,6 +879,7 @@ async function calibrateCommandCycle(uriRemote2, usingContext) {
     c_busy = false;
     calibrate_window_task.consume();
     calibrate_confirmation_task.consume();
+    await checkCalibrateWindowCommandContext(state.inactive);
     await consume_close(_calibrate);
     if (_item) {
       showCrashIcon(_item, error);
@@ -889,6 +891,14 @@ async function calibrateCommandCycle(uriRemote2, usingContext) {
   }
 }
 async function calibrateWindowCommandCycle(usingContext) {
+  if (w_busy) {
+    vscode__namespace.window.showInformationMessage(
+      "The extension is busy. Try again in a few seconds."
+    );
+    return;
+  }
+  checkCalibrateWindowCommandContext(state.inactive);
+  w_busy = true;
   const task = createTask();
   const blurEvent = vscode__namespace.window.onDidChangeWindowState((state2) => {
     vscode__namespace.window.showInformationMessage(
@@ -1114,12 +1124,12 @@ function checkDisposedCommandContext(next) {
   );
 }
 async function checkCalibrateWindowCommandContext(next) {
+  w_busy = next != state.active;
   await vscode__namespace.commands.executeCommand(
     "setContext",
     "extension.calibrateWindow",
     next == state.active
   );
-  await hold(500);
 }
 function onDidCloseTextDocument(tryClose) {
   return vscode__namespace.window.tabGroups?.onDidChangeTabs?.(async (changedEvent) => {
