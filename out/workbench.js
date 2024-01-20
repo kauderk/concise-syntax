@@ -726,6 +726,7 @@ var __publicField = (obj, key, value) => {
   };
   const stateIcon = "symbol-keyword";
   const state = {
+    resetDev: "resetDev",
     active: "active",
     inactive: "inactive",
     stale: "stale",
@@ -1931,7 +1932,7 @@ var __publicField = (obj, key, value) => {
       if (cache)
         opacitiesStyle.styleIt(cache);
       else
-        throw new Error("cache is empty");
+        window.localStorage.removeItem(opacitiesStorageKey);
     } catch (error) {
       window.localStorage.removeItem(opacitiesStorageKey);
     }
@@ -2073,7 +2074,7 @@ var __publicField = (obj, key, value) => {
       if (cache)
         syntaxStyle.styleIt(cache);
       else
-        throw new Error("cache is empty");
+        window.localStorage.removeItem(calibrateStorageKey);
     } catch (error) {
       window.localStorage.removeItem(calibrateStorageKey);
     }
@@ -2101,6 +2102,10 @@ var __publicField = (obj, key, value) => {
       ];
       deltaSubscribers.fn = () => _.forEach((un) => un());
     } else {
+      if (deltaState == state.resetDev) {
+        window.localStorage.removeItem(calibrateStorageKey);
+        window.localStorage.removeItem(opacitiesStorageKey);
+      }
       deltaSubscribers.consume();
       addRemoveRootStyles(false);
       syntaxStyle.dispose();

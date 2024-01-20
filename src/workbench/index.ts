@@ -31,7 +31,7 @@ function cacheOpacitiesProc() {
   try {
     const cache = window.localStorage.getItem(opacitiesStorageKey)
     if (cache) opacitiesStyle.styleIt(cache)
-    else throw new Error('cache is empty')
+    else window.localStorage.removeItem(opacitiesStorageKey)
   } catch (error) {
     window.localStorage.removeItem(opacitiesStorageKey)
   }
@@ -205,7 +205,7 @@ function cacheCalibrateProc() {
   try {
     const cache = window.localStorage.getItem(calibrateStorageKey)
     if (cache) syntaxStyle.styleIt(cache)
-    else throw new Error('cache is empty')
+    else window.localStorage.removeItem(calibrateStorageKey)
   } catch (error) {
     window.localStorage.removeItem(calibrateStorageKey)
   }
@@ -238,6 +238,10 @@ const createStateSubscription = () =>
       ]
       deltaSubscribers.fn = () => _.forEach((un) => un())
     } else {
+      if (deltaState == state.resetDev) {
+        window.localStorage.removeItem(calibrateStorageKey)
+        window.localStorage.removeItem(opacitiesStorageKey)
+      }
       deltaSubscribers.consume()
       addRemoveRootStyles(false)
       syntaxStyle.dispose()

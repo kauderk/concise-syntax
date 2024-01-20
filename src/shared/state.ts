@@ -60,6 +60,7 @@ export type Calibrate = (typeof calibrate)[keyof typeof calibrate]
 //#region state
 export const stateIcon = 'symbol-keyword'
 export const state = {
+  resetDev: 'resetDev',
   active: 'active',
   inactive: 'inactive',
   stale: 'stale',

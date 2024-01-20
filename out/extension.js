@@ -549,6 +549,7 @@ const calibrate = {
 };
 const stateIcon = "symbol-keyword";
 const state = {
+  resetDev: "resetDev",
   active: "active",
   inactive: "inactive",
   stale: "stale",
@@ -1190,6 +1191,9 @@ function getStores(context) {
 async function wipeAllState(context) {
   await updateSettingsCycle(context, state.inactive);
   const states = getStores(context);
+  if (_item) {
+    await defaultWindowState(_item, state.resetDev, states.windowState);
+  }
   for (const iterator of Object.values(states)) {
     await iterator.write(void 0);
   }

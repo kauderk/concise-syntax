@@ -729,6 +729,9 @@ type Stores = ReturnType<typeof getStores>
 export async function wipeAllState(context: vscode.ExtensionContext) {
   await updateSettingsCycle(context, state.inactive)
   const states = getStores(context)
+  if (_item) {
+    await defaultWindowState(_item, state.resetDev, states.windowState)
+  }
   for (const iterator of Object.values(states)) {
     await iterator.write(undefined as any)
   }
