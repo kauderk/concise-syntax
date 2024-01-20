@@ -252,7 +252,8 @@ function editorOverlayLifecycle(
       styles.clear(editorLabel)
     } else {
       // FIXME: this is like leaking information that can't be clean up later
-      toastConsole.error('editorLabel is undefined')
+      // FIXME: seems to happen when the editor changes from a non tsx file to a tsx file
+      console.log('Error: editorLabel is undefined')
     }
     EditorLanguageTracker.disconnect()
     OverlayLineTracker.disconnect()

@@ -1122,7 +1122,7 @@ var __publicField = (obj, key, value) => {
       if (editorLabel) {
         styles.clear(editorLabel);
       } else {
-        toastConsole.error("editorLabel is undefined");
+        console.log("Error: editorLabel is undefined");
       }
       EditorLanguageTracker.disconnect();
       OverlayLineTracker.disconnect();

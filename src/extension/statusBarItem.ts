@@ -608,14 +608,14 @@ async function changeExtensionStateCycle(
     return 'SC: theme is not a string'
   }
   if (busy || c_busy) {
-    if (!waitingForUserInput)
+    if (waitingForUserInput)
       vscode.window.showInformationMessage(
         'The extension is busy. Try again in a few seconds.'
       )
     return 'SC: busy'
   }
   if (t_busy) {
-    if (!waitingForUserInput)
+    if (waitingForUserInput)
       vscode.window.showWarningMessage(
         `The extension is busy changing the color theme...`
       )
