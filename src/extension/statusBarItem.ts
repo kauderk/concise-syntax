@@ -116,7 +116,7 @@ export async function ExtensionState_statusBarItem(
   )
 
   // the extension side doesn't need to read this but the window side does; so make sure to not fall out of sync
-  deltaState.opacities = stores.opacities.read() ?? deltaState.opacities
+  syncOpacities(usingContext)
 
   // execute after registering the commands, specially calibrateWIndowCommand
   const next = setState ?? 'active'
@@ -692,22 +692,23 @@ async function changedExtensionOpacitiesCycle(
   usingContext: UsingContext
 ) {
   if (!e.affectsConfiguration('concise-syntax.opacity')) return 'SC: no change'
+  syncOpacities(usingContext)
+}
+async function syncOpacities(usingContext: UsingContext) {
   if (!_item) {
     return 'SC: _item is undefined'
   }
-  const opacities = vscode.workspace
+  const opacities = await vscode.workspace
     .getConfiguration('concise-syntax')
     .get('opacity')
   if (!opacities || typeof opacities != 'object')
     return 'SC: opacities is not an object'
 
-  const _opacities = {
-    ...deltaState.opacities,
-    ...opacities,
-  }
-  await usingContext.stores.opacities.write(_opacities)
   _item.tooltip = encode({
-    opacities: _opacities,
+    opacities: await usingContext.stores.opacities.write({
+      ...deltaState.opacities,
+      ...opacities,
+    }),
   })
 }
 
@@ -731,6 +732,12 @@ export async function wipeAllState(context: vscode.ExtensionContext) {
   const states = getStores(context)
   if (_item) {
     await defaultWindowState(_item, state.resetDev, states.windowState)
+  }
+  // TODO: find a way to batch reset to default
+  for (const key of Object.keys(DefaultOpacity)) {
+    await vscode.workspace
+      .getConfiguration('concise-syntax')
+      .update('opacity.' + key, undefined, vscode.ConfigurationTarget.Global)
   }
   for (const iterator of Object.values(states)) {
     await iterator.write(undefined as any)

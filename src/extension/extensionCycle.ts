@@ -13,7 +13,6 @@ import msg from '../shared/messages'
 export async function installCycle(context: vscode.ExtensionContext) {
   const res = await read()
   if (res.wasActive) {
-    console.log('vscode-concise-syntax is active!')
     return res.wasActive
   }
 

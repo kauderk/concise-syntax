@@ -708,7 +708,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       }
     }
   );
-  deltaState.opacities = stores.opacities.read() ?? deltaState.opacities;
+  syncOpacities(usingContext);
   const next = setState ?? "active";
   await changeExtensionStateCycle(usingContext, next);
 }
@@ -1161,19 +1161,20 @@ function changedColorThemeCycle(e, usingContext) {
 async function changedExtensionOpacitiesCycle(e, usingContext) {
   if (!e.affectsConfiguration("concise-syntax.opacity"))
     return "SC: no change";
+  syncOpacities(usingContext);
+}
+async function syncOpacities(usingContext) {
   if (!_item) {
     return "SC: _item is undefined";
   }
-  const opacities = vscode__namespace.workspace.getConfiguration("concise-syntax").get("opacity");
+  const opacities = await vscode__namespace.workspace.getConfiguration("concise-syntax").get("opacity");
   if (!opacities || typeof opacities != "object")
     return "SC: opacities is not an object";
-  const _opacities = {
-    ...deltaState.opacities,
-    ...opacities
-  };
-  await usingContext.stores.opacities.write(_opacities);
   _item.tooltip = encode({
-    opacities: _opacities
+    opacities: await usingContext.stores.opacities.write({
+      ...deltaState.opacities,
+      ...opacities
+    })
   });
 }
 function getStores(context) {
@@ -1193,6 +1194,9 @@ async function wipeAllState(context) {
   const states = getStores(context);
   if (_item) {
     await defaultWindowState(_item, state.resetDev, states.windowState);
+  }
+  for (const key2 of Object.keys(DefaultOpacity)) {
+    await vscode__namespace.workspace.getConfiguration("concise-syntax").update("opacity." + key2, void 0, vscode__namespace.ConfigurationTarget.Global);
   }
   for (const iterator of Object.values(states)) {
     await iterator.write(void 0);
@@ -1295,7 +1299,6 @@ function hold(t = 100) {
 async function installCycle(context) {
   const res = await read();
   if (res.wasActive) {
-    console.log("vscode-concise-syntax is active!");
     return res.wasActive;
   }
   let remoteWorkbenchPath;
