@@ -693,7 +693,49 @@ var __publicField = (obj, key, value) => {
     };
     return tryFunction;
   }
-  function createSyntaxLifecycle(observable, state2, props) {
+  const stateIcon = "symbol-keyword";
+  const state = {
+    active: "active",
+    inactive: "inactive",
+    stale: "stale",
+    disposed: "disposed",
+    error: "error"
+  };
+  const IState = {
+    selector: `[id="${extensionId}"]:has(.codicon-${stateIcon})`,
+    encode(input) {
+      return `Concise Syntax: ${input.state},${input.calibrate}`;
+    },
+    /**
+     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
+     * @param encoded
+     * @returns
+     */
+    decode(encoded) {
+      var _a, _b, _c, _d;
+      if (!encoded)
+        return {};
+      const regex = /Concise Syntax: (?<state>\w+),(?<calibrate>\w+)/;
+      return {
+        state: (_b = (_a = regex.exec(encoded)) == null ? void 0 : _a.groups) == null ? void 0 : _b.state,
+        calibrate: (_d = (_c = regex.exec(encoded)) == null ? void 0 : _c.groups) == null ? void 0 : _d.calibrate
+      };
+    }
+  };
+  const calibrationFileName = "syntax.tsx";
+  const calibrate = {
+    bootUp: "bootUp",
+    opening: "opening",
+    opened: "opened",
+    closed: "closed",
+    idle: "idle",
+    error: "error"
+  };
+  const allPossibleStates = [
+    ...Object.values(state),
+    ...Object.values(calibrate)
+  ];
+  function createSyntaxLifecycle(observables, IState2, props) {
     return lifecycle({
       dom() {
         const statusBar = document.querySelector("footer .right-items");
@@ -711,7 +753,7 @@ var __publicField = (obj, key, value) => {
             var _a;
             if (busy)
               return;
-            const item = (_a = DOM.watchForRemoval) == null ? void 0 : _a.querySelector(state2.selector);
+            const item = (_a = DOM.watchForRemoval) == null ? void 0 : _a.querySelector(IState2.selector);
             const icon = item == null ? void 0 : item.querySelector(".codicon");
             if (!item || !icon)
               return;
@@ -722,17 +764,21 @@ var __publicField = (obj, key, value) => {
               target: () => dom.item,
               watchAttribute: [bridgeBetweenVscodeExtension],
               change([bridge]) {
-                const delta = state2.decode(bridge);
-                if (!delta || observable.value === delta)
-                  return;
-                observable.value = delta;
+                Object.entries(IState2.decode(bridge)).forEach(([key, delta]) => {
+                  if (!(key == "state" || key == "calibrate"))
+                    return;
+                  let _delta = allPossibleStates.find((state2) => state2 == delta);
+                  if (!_delta || observables[key].value === _delta)
+                    return;
+                  observables[key].value = _delta;
+                });
               }
             });
             attributeObserver.plug();
             return attributeObserver.stop;
           },
           removed(node, consume) {
-            if (node.matches(state2.selector)) {
+            if (node.matches(IState2.selector)) {
               consume();
             }
           },
@@ -1104,54 +1150,6 @@ var __publicField = (obj, key, value) => {
       REC_added,
       bruteForceRemove
     };
-  }
-  const stateIcon = "symbol-keyword";
-  const state = {
-    active: "active",
-    inactive: "inactive",
-    stale: "stale",
-    disposed: "disposed",
-    error: "error"
-  };
-  const IState = {
-    selector: iconSelector(stateIcon),
-    encode(state2) {
-      return `Concise Syntax: ${state2}`;
-    },
-    /**
-     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
-     * @param string
-     * @returns
-     */
-    decode(string) {
-      return Object.values(state).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
-    }
-  };
-  const calibrateIcon = "go-to-file";
-  const calibrationFileName = "syntax.tsx";
-  const calibrate = {
-    opening: "opening",
-    opened: "opened",
-    closed: "closed",
-    idle: "idle",
-    error: "error"
-  };
-  const ICalibrate = {
-    selector: iconSelector(calibrateIcon),
-    encode(state2) {
-      return `Concise Syntax (calibrate): ${state2}`;
-    },
-    /**
-     * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
-     * @param string
-     * @returns
-     */
-    decode(string) {
-      return Object.values(calibrate).reverse().find((state2) => string == null ? void 0 : string.includes(state2));
-    }
-  };
-  function iconSelector(icon) {
-    return `[id="${extensionId}"]:has(.codicon-${icon})`;
   }
   function Clone(o, m) {
     if ("object" !== typeof o)
@@ -1856,9 +1854,6 @@ var __publicField = (obj, key, value) => {
   const stateObservable = createObservable(void 0);
   const calibrateObservable = createObservable(void 0);
   const sessionKey = `${extensionId}.session.styles`;
-  createStyles("calibrate").styleIt(
-    `${ICalibrate.selector}{display: none !important}`
-  );
   let tableTask;
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
     if (state2 == calibrate.error) {
@@ -2011,7 +2006,6 @@ var __publicField = (obj, key, value) => {
     if (deltaState == state.active) {
       addRemoveRootStyles(true);
       cacheProc();
-      calibration.activate(500);
       highlight.activate(500);
       const _ = [createCalibrateSubscription(), createEditorSubscription()];
       deltaSubscribers.fn = () => _.forEach((un) => un());
@@ -2020,19 +2014,24 @@ var __publicField = (obj, key, value) => {
       addRemoveRootStyles(false);
       syntaxStyle.dispose();
       highlight.dispose();
-      calibration.dispose();
     }
   });
-  const syntax = createSyntaxLifecycle(stateObservable, IState, {
-    activate() {
-      const unSubscribeState = createStateSubscription();
-      return () => {
-        stateObservable.value = state.inactive;
-        unSubscribeState();
-      };
+  const syntax = createSyntaxLifecycle(
+    {
+      state: stateObservable,
+      calibrate: calibrateObservable
+    },
+    IState,
+    {
+      activate() {
+        const unSubscribeState = createStateSubscription();
+        return () => {
+          stateObservable.value = state.inactive;
+          unSubscribeState();
+        };
+      }
     }
-  });
-  const calibration = createSyntaxLifecycle(calibrateObservable, ICalibrate);
+  );
   const highlight = createHighlightLifeCycle(editorObservable);
   if (window.conciseSyntax) {
     window.conciseSyntax.dispose();

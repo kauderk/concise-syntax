@@ -9,29 +9,33 @@ export const state = {
   error: 'error',
 } as const
 export type State = (typeof state)[keyof typeof state]
+
 /**
  * Exploit the fact that vscode will render strings to the DOM
  */
 export const IState = {
-  selector: iconSelector(stateIcon),
-  encode(state: State) {
-    return `Concise Syntax: ${state}` as const
+  selector: `[id="${extensionId}"]:has(.codicon-${stateIcon})`,
+  encode(input: { state: State; calibrate: Calibrate }) {
+    return `Concise Syntax: ${input.state},${input.calibrate}` as const
   },
   /**
    * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
-   * @param string
+   * @param encoded
    * @returns
    */
-  decode(string?: string) {
-    return Object.values(state)
-      .reverse()
-      .find((state) => string?.includes(state))
+  decode(encoded?: string) {
+    if (!encoded) return {}
+    const regex = /Concise Syntax: (?<state>\w+),(?<calibrate>\w+)/
+    return {
+      state: regex.exec(encoded)?.groups?.state,
+      calibrate: regex.exec(encoded)?.groups?.calibrate,
+    }
   },
 }
 
-export const calibrateIcon = 'go-to-file'
 export const calibrationFileName = 'syntax.tsx'
 export const calibrate = {
+  bootUp: 'bootUp',
   opening: 'opening',
   opened: 'opened',
   closed: 'closed',
@@ -47,26 +51,8 @@ export const calibrate = {
  * noting/bootUp > click > opening > opened > dom/click > closed > standBy
  */
 export type Calibrate = (typeof calibrate)[keyof typeof calibrate]
-/**
- * Exploit the fact that vscode will render strings to the DOM
- */
-export const ICalibrate = {
-  selector: iconSelector(calibrateIcon),
-  encode(state: Calibrate) {
-    return `Concise Syntax (calibrate): ${state}` as const
-  },
-  /**
-   * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
-   * @param string
-   * @returns
-   */
-  decode(string?: string) {
-    return Object.values(calibrate)
-      .reverse()
-      .find((state) => string?.includes(state))
-  },
-}
 
-function iconSelector(icon: string) {
-  return `[id="${extensionId}"]:has(.codicon-${icon})` as const
-}
+export const allPossibleStates = [
+  ...Object.values(state),
+  ...Object.values(calibrate),
+] as const

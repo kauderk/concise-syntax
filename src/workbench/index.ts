@@ -3,7 +3,7 @@ import { createHighlightLifeCycle } from './highlight'
 import { extensionDisplayName, extensionId, viewLinesSelector } from './keys'
 import { calibrateWindowCommandPlaceholder } from './keys'
 import { IState, State, calibrationFileName, state } from 'src/shared/state'
-import { ICalibrate, Calibrate, calibrate } from 'src/shared/state'
+import { Calibrate, calibrate } from 'src/shared/state'
 import { addRemoveRootStyles, createStyles, toastConsole } from './shared'
 import { parseSymbolColors } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
@@ -20,10 +20,6 @@ const stateObservable = createObservable<State | undefined>(undefined)
 const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 
 const sessionKey = `${extensionId}.session.styles`
-
-createStyles('calibrate').styleIt(
-  `${ICalibrate.selector}{display: none !important}`
-)
 
 let tableTask: ReturnType<typeof createTask<Calibrate>> | undefined
 export type windowColorsTable = ReturnType<
@@ -209,7 +205,6 @@ const createStateSubscription = () =>
     if (deltaState == state.active) {
       addRemoveRootStyles(true)
       cacheProc()
-      calibration.activate(500)
       highlight.activate(500) // FIXME: find the moment the css finishes loading
       const _ = [createCalibrateSubscription(), createEditorSubscription()]
       deltaSubscribers.fn = () => _.forEach((un) => un())
@@ -218,21 +213,25 @@ const createStateSubscription = () =>
       addRemoveRootStyles(false)
       syntaxStyle.dispose()
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow
-      calibration.dispose()
     }
   })
 
-const syntax = createSyntaxLifecycle(stateObservable, IState, {
-  activate() {
-    const unSubscribeState = createStateSubscription()
-    return () => {
-      stateObservable.value = state.inactive
-      unSubscribeState()
-    }
+const syntax = createSyntaxLifecycle(
+  {
+    state: stateObservable,
+    calibrate: calibrateObservable,
   },
-})
-// TODO: merge extension _calibrate and _state icons/bridges
-const calibration = createSyntaxLifecycle(calibrateObservable, ICalibrate)
+  IState,
+  {
+    activate() {
+      const unSubscribeState = createStateSubscription()
+      return () => {
+        stateObservable.value = state.inactive
+        unSubscribeState()
+      }
+    },
+  }
+)
 const highlight = createHighlightLifeCycle(editorObservable)
 
 // prettier-ignore

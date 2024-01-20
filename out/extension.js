@@ -93,7 +93,37 @@ const contributes = {
       title: "Reset then reload (dev)",
       category: "Concise Syntax"
     }
-  ]
+  ],
+  configuration: {
+    title: "Concise Syntax",
+    properties: {
+      "concise-syntax.opacity.baseline": {
+        type: "number",
+        "default": 0,
+        description: "Baseline for all the concise-syntax characters in the editor."
+      },
+      "concise-syntax.opacity.selected": {
+        type: "number",
+        "default": 0.5,
+        description: "When a line has any selected range, all the concise-syntax characters in the line are highlighted."
+      },
+      "concise-syntax.opacity.hoverAll": {
+        type: "number",
+        "default": 0.7,
+        description: "When a concise-syntax character is hovered in the editor, all the lines are highlighted."
+      },
+      "concise-syntax.opacity.hoverLine": {
+        type: "number",
+        "default": 1,
+        description: "When a line is hovered in the editor. All the concise-syntax characters in the line are highlighted."
+      },
+      "concise-syntax.bleedCurrentLines": {
+        type: "number",
+        "default": 3,
+        description: "When a line has focus/caret how many lines above and below should be highlighted."
+      }
+    }
+  }
 };
 const devDependencies = {
   "@types/node": "^20.10.5",
@@ -496,31 +526,38 @@ const state = {
   error: "error"
 };
 const IState = {
-  selector: iconSelector(stateIcon),
-  encode(state2) {
-    return `Concise Syntax: ${state2}`;
+  selector: `[id="${extensionId}"]:has(.codicon-${stateIcon})`,
+  encode(input) {
+    return `Concise Syntax: ${input.state},${input.calibrate}`;
   },
   /**
    * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
-   * @param string
+   * @param encoded
    * @returns
    */
-  decode(string) {
-    return Object.values(state).reverse().find((state2) => string?.includes(state2));
+  decode(encoded) {
+    if (!encoded)
+      return {};
+    const regex = /Concise Syntax: (?<state>\w+),(?<calibrate>\w+)/;
+    return {
+      state: regex.exec(encoded)?.groups?.state,
+      calibrate: regex.exec(encoded)?.groups?.calibrate
+    };
   }
 };
-const calibrateIcon = "go-to-file";
 const calibrationFileName = "syntax.tsx";
 const calibrate = {
+  bootUp: "bootUp",
   opening: "opening",
   opened: "opened",
   closed: "closed",
   idle: "idle",
   error: "error"
 };
-function iconSelector(icon) {
-  return `[id="${extensionId}"]:has(.codicon-${icon})`;
-}
+[
+  ...Object.values(state),
+  ...Object.values(calibrate)
+];
 function deltaFn(consume = false) {
   let delta;
   return {
@@ -571,7 +608,6 @@ const iconText = "";
 let busy;
 let disposeConfiguration = deltaFn(true);
 let crashedMessage = "";
-let _calibrate;
 let c_busy = false;
 let disposeClosedEditor = deltaFn(true);
 let calibrate_confirmation_task = deltaValue((t) => {
@@ -584,6 +620,11 @@ let t_busy = false;
 const remoteCalibratePath = path.join(__dirname, calibrationFileName);
 const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
 let w_busy = false;
+let lastCalibrateState = "bootUp";
+const encode = (input) => {
+  lastCalibrateState = input.calibrate;
+  return IState.encode(input);
+};
 async function ExtensionState_statusBarItem(context, setState) {
   const stores = getStores(context);
   await stores.windowState.write(setState);
@@ -596,9 +637,6 @@ async function ExtensionState_statusBarItem(context, setState) {
   _item = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
   _item.command = toggleCommand;
   const calibrateCommand = packageJson.contributes.commands[3].command;
-  _calibrate = vscode__namespace.window.createStatusBarItem(vscode__namespace.StatusBarAlignment.Right, 0);
-  _calibrate.command = calibrateCommand;
-  defaultCalibrate(_calibrate);
   const calibrateWIndowCommand = packageJson.contributes.commands[4].command;
   context.subscriptions.push(
     _item,
@@ -606,10 +644,9 @@ async function ExtensionState_statusBarItem(context, setState) {
       toggleCommand,
       () => toggleCommandCycle(usingContext)
     ),
-    _calibrate,
     vscode__namespace.commands.registerCommand(
       calibrateCommand,
-      () => calibrateCommandCycle(uriRemote, usingContext)
+      () => calibrateCommandCycle(uriRemote, usingContext, _item)
     ),
     vscode__namespace.commands.registerCommand(
       calibrateWIndowCommand,
@@ -706,7 +743,7 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRe
     return "invalidated";
   }
 }
-async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
+async function calibrateStateSandbox(uriRemote2, usingContext, _item2) {
   const { stores } = usingContext;
   if (stores.globalCalibration.read() != state.active) {
     const res = await vscode__namespace.window.showInformationMessage(
@@ -725,17 +762,21 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
   }
   const taskProgress = withProgress();
   calibrate_confirmation_task.value = taskProgress.task;
+  if (!taskProgress.progress)
+    return new Error("taskProgress.progress is undefined");
   taskProgress.progress.report({ message: "calibrating extension" });
   defaultWindowState = () => {
   };
-  const res1 = await REC_nextWindowStateCycle(state.inactive, state.inactive, usingContext);
+  const stateCycle = (state2) => REC_nextWindowStateCycle(state2, state2, usingContext);
+  const res1 = await stateCycle(state.inactive);
   defaultWindowState = annoyance;
   if (res1 instanceof Error)
-    throw res1;
-  if (stores.windowState.read() != state.active && _item) {
-    await defaultWindowState(_item, "active", stores.windowState);
+    return res1;
+  if (stores.windowState.read() != state.active) {
+    await defaultWindowState(_item2, "active", stores.windowState);
   }
-  await tryUpdateCalibrateState(calibrate.opening, _calibrate2);
+  const calibrateCycle = (calibrate2, t = 100) => tryUpdateCalibrateState(_item2, currentStateOrThrow(stores), calibrate2, t);
+  await calibrateCycle(calibrate.opening);
   const document = await vscode__namespace.workspace.openTextDocument(uriRemote2);
   const editor = await vscode__namespace.window.showTextDocument(document, {
     preview: false,
@@ -745,14 +786,14 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
     if (doc.uri.path === uriRemote2.path || editor.document.isClosed) {
       closeEditorTask.resolve(true);
-      await consume_close(_calibrate2);
+      await consume_close(_item2, currentStateOrThrow(stores));
       return true;
     }
   });
   taskProgress.progress.report({ message: "calibrating window" });
   calibrate_window_task.value = createTask();
   await checkCalibrateWindowCommandContext(state.active);
-  await tryUpdateCalibrateState(calibrate.opened, _calibrate2, 1500);
+  await calibrateCycle(calibrate.opened, 1500);
   const race = await Promise.race([
     closeEditorTask.promise,
     calibrate_window_task.value.promise,
@@ -763,14 +804,14 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _calibrate2) {
     )
   ]);
   if (race instanceof Error)
-    throw race;
+    return race;
   taskProgress.progress.report({ message: "calibrating syntax and theme" });
-  const error2 = await REC_nextWindowStateCycle(state.active, state.active, usingContext);
+  const error2 = await stateCycle(state.active);
   if (error2 instanceof Error)
-    throw error2;
+    return error2;
   calibrate_window_task.consume();
   disposeClosedEditor.consume();
-  await tryUpdateCalibrateState(calibrate.idle, _calibrate2);
+  await calibrateCycle(calibrate.idle);
   taskProgress.progress.report({ message: "calibrated you may close the file" });
   setTimeout(calibrate_confirmation_task.consume, 5e3);
   return "Success: calibrateStateSandbox";
@@ -811,37 +852,38 @@ async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursi
 function showCrashIcon(_item2, error) {
   crashedMessage = error?.message || "unknown";
   _item2.text = `$(error)` + iconText;
-  _item2.tooltip = IState.encode(state.error);
+  _item2.tooltip = encode({
+    state: state.error,
+    calibrate: state.error
+  });
   _item2.show();
-  _calibrate?.hide();
   disposeConfiguration.consume();
 }
 let defaultWindowState = async function(_item2, next, windowState) {
   await windowState.write(next);
   _item2.text = `$(${stateIcon})` + iconText;
-  _item2.tooltip = IState.encode(next);
+  _item2.tooltip = encode({
+    state: next,
+    calibrate: lastCalibrateState
+    // this is the only place where you need to read this value...
+  });
   const failure = next == state.disposed || next == state.stale || next == state.error;
   await hold(failure ? 1e3 : 100);
   if (failure) {
-    _calibrate?.hide();
     _item2.hide();
   } else {
-    if (next == state.active) {
-      _calibrate?.show();
-    } else {
-      _calibrate?.hide();
-    }
     _item2.show();
   }
 };
 const annoyance = defaultWindowState;
-async function calibrateCommandCycle(uriRemote2, usingContext) {
+function currentStateOrThrow({ windowState }) {
+  const currentState = windowState.read();
+  if (!currentState)
+    throw new Error("currentState is undefined");
+  return currentState;
+}
+async function calibrateCommandCycle(uriRemote2, usingContext, _item2) {
   const { stores } = usingContext;
-  if (!_calibrate) {
-    const r = "SC: No status bar item found (calibrate)";
-    vscode__namespace.window.showErrorMessage(r);
-    return r;
-  }
   if (stores.extensionState.read() == "disposed") {
     vscode__namespace.window.showInformationMessage(
       "The extension is disposed. Mount it to use this command."
@@ -860,9 +902,14 @@ async function calibrateCommandCycle(uriRemote2, usingContext) {
     );
     return "SC: pending calibrate_window_task";
   }
+  if (!_item2) {
+    return "SC: _item is undefined";
+  }
   try {
     c_busy = true;
-    const res = await calibrateStateSandbox(uriRemote2, usingContext, _calibrate);
+    const res = await calibrateStateSandbox(uriRemote2, usingContext, _item2);
+    if (res instanceof Error)
+      throw res;
     if (res == "Success: calibrateStateSandbox") {
       const theme = vscode__namespace.workspace.getConfiguration("workbench")?.get("colorTheme");
       if (typeof theme == "string" && theme !== stores.colorThemeKind.read()) {
@@ -878,9 +925,12 @@ async function calibrateCommandCycle(uriRemote2, usingContext) {
     calibrate_window_task.consume();
     calibrate_confirmation_task.consume();
     await checkCalibrateWindowCommandContext(state.inactive);
-    await consume_close(_calibrate);
-    if (_item) {
-      showCrashIcon(_item, error);
+    const currentState = stores.windowState.read();
+    if (!currentState)
+      return new Error("currentState is undefined");
+    await consume_close(_item2, currentState);
+    if (_item2) {
+      showCrashIcon(_item2, error);
     }
     vscode__namespace.window.showErrorMessage(
       `Error: failed to execute calibrate command with error: ${error?.message}`
@@ -989,16 +1039,20 @@ async function toggleCommandCycle(usingContext) {
   const next = flip(stores.windowState.read());
   return await changeExtensionStateCycle(usingContext, next);
 }
-function defaultCalibrate(_calibrate2) {
-  _calibrate2.text = `$(${calibrateIcon})`;
-  _calibrate2.tooltip = "bootUp";
-}
-function consume_close(_calibrate2) {
+function consume_close(_item2, redundantCurrentState, t = 100) {
   disposeClosedEditor.consume();
-  return tryUpdateCalibrateState(calibrate.closed, _calibrate2);
+  return tryUpdateCalibrateState(
+    _item2,
+    redundantCurrentState,
+    calibrate.closed,
+    t
+  );
 }
-function tryUpdateCalibrateState(state2, _calibrate2, t = 100) {
-  _calibrate2.tooltip = state2;
+function tryUpdateCalibrateState(_item2, redundantCurrentState, calibrate2, t = 100) {
+  _item2.tooltip = encode({
+    state: redundantCurrentState,
+    calibrate: calibrate2
+  });
   return hold(t);
 }
 async function checkCalibratedCommandContext(next, calibrationState) {
@@ -1106,8 +1160,6 @@ function withProgress() {
   return {
     task,
     get progress() {
-      if (!_progress)
-        throw new Error("progress is undefined");
       return _progress;
     }
   };

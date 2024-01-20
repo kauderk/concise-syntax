@@ -1,7 +1,8 @@
 import { bridgeBetweenVscodeExtension } from './keys'
 import { lifecycle } from './lifecycle'
 import { createAttributeArrayMutation, innerChildrenMutation } from './shared'
-import type { IState, ICalibrate } from '../shared/state'
+import { allPossibleStates } from '../shared/state'
+import type { IState as _Istate } from '../shared/state'
 import type { stateObservable, calibrateObservable } from './index'
 
 /**
@@ -10,8 +11,11 @@ import type { stateObservable, calibrateObservable } from './index'
  * Take a look at: regexToDomToCss.ts to see how the styles are generated
  */
 export function createSyntaxLifecycle(
-  observable: typeof stateObservable | typeof calibrateObservable,
-  state: typeof IState | typeof ICalibrate,
+  observables: {
+    state: typeof stateObservable
+    calibrate: typeof calibrateObservable
+  },
+  IState: typeof _Istate,
   props?: { activate: () => () => void }
 ) {
   return lifecycle<{ watchForRemoval: H }>({
@@ -30,7 +34,7 @@ export function createSyntaxLifecycle(
         parent: DOM.watchForRemoval,
         validate(node, busy) {
           if (busy) return
-          const item = DOM.watchForRemoval?.querySelector(state.selector) as H
+          const item = DOM.watchForRemoval?.querySelector(IState.selector) as H
           const icon = item?.querySelector('.codicon') as H
           if (!item || !icon) return
           return { icon, item }
@@ -40,9 +44,13 @@ export function createSyntaxLifecycle(
             target: () => dom.item,
             watchAttribute: [bridgeBetweenVscodeExtension],
             change([bridge]) {
-              const delta = state.decode(bridge)
-              if (!delta || observable.value === delta) return
-              observable.value = delta
+              // TODO: should the type system validate this?
+              Object.entries(IState.decode(bridge)).forEach(([key, delta]) => {
+                if (!(key == 'state' || key == 'calibrate')) return
+                let _delta = allPossibleStates.find((state) => state == delta)
+                if (!_delta || observables[key].value === _delta) return
+                observables[key].value = _delta
+              })
             },
           })
 
@@ -50,7 +58,7 @@ export function createSyntaxLifecycle(
           return attributeObserver.stop
         },
         removed(node, consume) {
-          if (node.matches(state.selector)) {
+          if (node.matches(IState.selector)) {
             consume()
           }
         },
