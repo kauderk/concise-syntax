@@ -65,7 +65,6 @@ export function createSyntaxLifecycle(
                     diff = true
                   }
                   if (diff) {
-                    debugger
                     // it will only trigger the change if the object is different
                     observables.opacities.value = {
                       ...observables.opacities.value,

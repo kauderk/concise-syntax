@@ -13,8 +13,8 @@ var __publicField = (obj, key, value) => {
   const extensionDisplayName = `Concise Syntax`;
   const calibrateWindowCommandPlaceholder = `Calibrate Window`;
   const extensionId = `${publisher}.${extensionName}`;
-  const extensionScriptSrc = extensionId + ".js";
-  const windowId = "window." + extensionId;
+  const extensionScriptSrc = `${extensionId}.js`;
+  const windowId = `window.${extensionId}`;
   const bridgeBetweenVscodeExtension = "aria-label";
   const editorSelector = ".editor-instance";
   const idSelector = '[data-mode-id="typescriptreact"]';
@@ -737,7 +737,7 @@ var __publicField = (obj, key, value) => {
     encode(input) {
       const opacities = Object.entries(OpacityNames).reduce(
         (acc, [key, value]) => {
-          acc[value] = (input.opacities ?? DefaultOpacity)[key];
+          acc[value] = input.opacities[key];
           return acc;
         },
         {}
@@ -814,7 +814,6 @@ var __publicField = (obj, key, value) => {
                       diff = true;
                     }
                     if (diff) {
-                      debugger;
                       observables.opacities.value = {
                         ...observables.opacities.value
                       };

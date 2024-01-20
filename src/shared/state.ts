@@ -78,7 +78,7 @@ export const IState = {
     const opacities = Object.entries(OpacityNames).reduce(
       (acc, [key, value]) => {
         // @ts-expect-error
-        acc[value] = (input.opacities ?? DefaultOpacity)[key]
+        acc[value] = input.opacities[key]
         return acc
       },
       <Record<string, string>>{}

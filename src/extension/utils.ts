@@ -4,7 +4,7 @@ import * as vscode from 'vscode'
 // FIXME: handle the errors where it is being used
 export function _catch(e: unknown) {}
 
-export function useState<S extends string, T extends string>(
+export function useState<S extends string, T>(
   context: vscode.ExtensionContext,
   key: S,
   type: T // I don't like weaning my type hat
@@ -23,7 +23,7 @@ export function useState<S extends string, T extends string>(
     },
   }
 }
-export function useGlobal<S extends string, T extends string>(
+export function useGlobal<S extends string, T>(
   context: vscode.ExtensionContext,
   key: S,
   type: T // I don't like weaning my type hat

@@ -5,9 +5,9 @@ export const extensionName: (typeof packageJson)['name'] = `concise-syntax`
 export const extensionDisplayName: (typeof packageJson)['displayName'] = `Concise Syntax`
 export const calibrateWindowCommandPlaceholder = `Calibrate Window`
 
-export const extensionId = `${publisher}.${extensionName}`
-export const extensionScriptSrc = extensionId + '.js'
-export const windowId = 'window.' + extensionId
+export const extensionId = `${publisher}.${extensionName}` as const
+export const extensionScriptSrc = `${extensionId}.js` as const
+export const windowId = `window.${extensionId}` as const
 // exploit the fact that vscode renders data to the dom, could be any other attribute
 export const bridgeBetweenVscodeExtension = 'aria-label'
 

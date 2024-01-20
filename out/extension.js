@@ -151,7 +151,7 @@ const publisher = "kauderk";
 const extensionName = `concise-syntax`;
 const calibrateWindowCommandPlaceholder = `Calibrate Window`;
 const extensionId = `${publisher}.${extensionName}`;
-const extensionScriptSrc = extensionId + ".js";
+const extensionScriptSrc = `${extensionId}.js`;
 const extensionScriptTag = () => new RegExp(
   `<script.+${extensionId.replaceAll(".", "\\.")}.+/script>`,
   "gm"
@@ -560,7 +560,7 @@ const IState = {
   encode(input) {
     const opacities = Object.entries(OpacityNames).reduce(
       (acc, [key2, value]) => {
-        acc[value] = (input.opacities ?? DefaultOpacity)[key2];
+        acc[value] = input.opacities[key2];
         return acc;
       },
       {}
@@ -653,10 +653,18 @@ let t_busy = false;
 const remoteCalibratePath = path.join(__dirname, calibrationFileName);
 const uriRemote = vscode__namespace.Uri.file(remoteCalibratePath);
 let w_busy = false;
-let lastCalibrateState = "bootUp";
-const encode = (input) => {
-  lastCalibrateState = input.calibrate;
-  return IState.encode(input);
+let deltaState = {
+  state: "inactive",
+  calibrate: "bootUp",
+  opacities: { ...DefaultOpacity }
+};
+const encode = (delta) => {
+  const input = {
+    state: delta.state ?? deltaState.state,
+    calibrate: delta.calibrate ?? deltaState.calibrate,
+    opacities: delta.opacities ?? deltaState.opacities
+  };
+  return IState.encode(deltaState = input);
 };
 async function ExtensionState_statusBarItem(context, setState) {
   const stores = getStores(context);
@@ -683,20 +691,14 @@ async function ExtensionState_statusBarItem(context, setState) {
     ),
     vscode__namespace.commands.registerCommand(
       calibrateWIndowCommand,
-      async () => calibrateWindowCommandCycle(usingContext)
+      () => calibrateWindowCommandCycle(usingContext)
     ),
-    vscode__namespace.workspace.onDidChangeConfiguration?.(async (e) => {
-      if (e.affectsConfiguration("workbench.colorTheme")) {
-        const tryNext = stores.windowState.read();
-        if (tryNext != state.active) {
-          return "SC: windowState is not active";
-        }
-        if (stores.calibrationState.read() != state.active) {
-          return "SC: calibrationState is not active";
-        }
-        return changeExtensionStateCycle(usingContext, tryNext);
-      }
-    }),
+    vscode__namespace.workspace.onDidChangeConfiguration(
+      (e) => changedColorThemeCycle(e, usingContext)
+    ),
+    vscode__namespace.workspace.onDidChangeConfiguration(
+      (e) => changedExtensionOpacitiesCycle(e, usingContext)
+    ),
     {
       dispose() {
         disposeConfiguration.consume();
@@ -705,6 +707,7 @@ async function ExtensionState_statusBarItem(context, setState) {
       }
     }
   );
+  deltaState.opacities = stores.opacities.read() ?? deltaState.opacities;
   const next = setState ?? "active";
   await changeExtensionStateCycle(usingContext, next);
 }
@@ -808,7 +811,7 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _item2) {
   if (stores.windowState.read() != state.active) {
     await defaultWindowState(_item2, "active", stores.windowState);
   }
-  const calibrateCycle = (calibrate2, t = 100) => tryUpdateCalibrateState(_item2, currentStateOrThrow(stores), calibrate2, t);
+  const calibrateCycle = (calibrate2, t = 100) => tryUpdateCalibrateState(_item2, calibrate2, t);
   await calibrateCycle(calibrate.opening);
   const document = await vscode__namespace.workspace.openTextDocument(uriRemote2);
   const editor = await vscode__namespace.window.showTextDocument(document, {
@@ -819,7 +822,7 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _item2) {
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
     if (doc.uri.path === uriRemote2.path || editor.document.isClosed) {
       closeEditorTask.resolve(true);
-      await consume_close(_item2, currentStateOrThrow(stores));
+      await consume_close(_item2);
       return true;
     }
   });
@@ -896,9 +899,7 @@ let defaultWindowState = async function(_item2, next, windowState) {
   await windowState.write(next);
   _item2.text = `$(${stateIcon})` + iconText;
   _item2.tooltip = encode({
-    state: next,
-    calibrate: lastCalibrateState
-    // this is the only place where you need to read this value...
+    state: next
   });
   const failure = next == state.disposed || next == state.stale || next == state.error;
   await hold(failure ? 1e3 : 100);
@@ -909,12 +910,6 @@ let defaultWindowState = async function(_item2, next, windowState) {
   }
 };
 const annoyance = defaultWindowState;
-function currentStateOrThrow({ windowState }) {
-  const currentState = windowState.read();
-  if (!currentState)
-    throw new Error("currentState is undefined");
-  return currentState;
-}
 async function calibrateCommandCycle(uriRemote2, usingContext, _item2) {
   const { stores } = usingContext;
   if (stores.extensionState.read() == "disposed") {
@@ -958,10 +953,7 @@ async function calibrateCommandCycle(uriRemote2, usingContext, _item2) {
     calibrate_window_task.consume();
     calibrate_confirmation_task.consume();
     await checkCalibrateWindowCommandContext(state.inactive);
-    const currentState = stores.windowState.read();
-    if (!currentState)
-      return new Error("currentState is undefined");
-    await consume_close(_item2, currentState);
+    await consume_close(_item2);
     if (_item2) {
       showCrashIcon(_item2, error);
     }
@@ -1072,18 +1064,12 @@ async function toggleCommandCycle(usingContext) {
   const next = flip(stores.windowState.read());
   return await changeExtensionStateCycle(usingContext, next);
 }
-function consume_close(_item2, redundantCurrentState, t = 100) {
+function consume_close(_item2, t = 100) {
   disposeClosedEditor.consume();
-  return tryUpdateCalibrateState(
-    _item2,
-    redundantCurrentState,
-    calibrate.closed,
-    t
-  );
+  return tryUpdateCalibrateState(_item2, calibrate.closed, t);
 }
-function tryUpdateCalibrateState(_item2, redundantCurrentState, calibrate2, t = 100) {
+function tryUpdateCalibrateState(_item2, calibrate2, t = 100) {
   _item2.tooltip = encode({
-    state: redundantCurrentState,
     calibrate: calibrate2
   });
   return hold(t);
@@ -1158,6 +1144,37 @@ async function changeExtensionStateCycle(usingContext, overloadedNextState) {
     return "Deferred: waitingForUserInput";
   }
 }
+function changedColorThemeCycle(e, usingContext) {
+  if (e.affectsConfiguration("workbench.colorTheme"))
+    return "SC: no change";
+  const { stores } = usingContext;
+  const tryNext = stores.windowState.read();
+  if (tryNext != state.active) {
+    return "SC: windowState is not active";
+  }
+  if (stores.calibrationState.read() != state.active) {
+    return "SC: calibrationState is not active";
+  }
+  return changeExtensionStateCycle(usingContext, tryNext);
+}
+async function changedExtensionOpacitiesCycle(e, usingContext) {
+  if (!e.affectsConfiguration("concise-syntax.opacity"))
+    return "SC: no change";
+  if (!_item) {
+    return "SC: _item is undefined";
+  }
+  const opacities = vscode__namespace.workspace.getConfiguration("concise-syntax").get("opacity");
+  if (!opacities || typeof opacities != "object")
+    return "SC: opacities is not an object";
+  const _opacities = {
+    ...deltaState.opacities,
+    ...opacities
+  };
+  await usingContext.stores.opacities.write(_opacities);
+  _item.tooltip = encode({
+    opacities: _opacities
+  });
+}
 function getStores(context) {
   return {
     extensionState: getStateStore(context),
@@ -1166,7 +1183,8 @@ function getStores(context) {
     globalCalibration: getGlobalAnyCalibrate(context),
     calibrationState: getAnyCalibrate(context),
     textMateRules: getTextMateRules(context),
-    colorThemeKind: getColorThemeKind(context)
+    colorThemeKind: getColorThemeKind(context),
+    opacities: getOpacities(context)
   };
 }
 async function wipeAllState(context) {
@@ -1242,6 +1260,9 @@ function binary(state2) {
 }
 function flip(next) {
   return next == "active" ? "inactive" : "active";
+}
+function getOpacities(context) {
+  return useState(context, "opacities");
 }
 function getColorThemeKind(context) {
   return useState(context, "colorThemeKind");

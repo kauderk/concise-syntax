@@ -7,12 +7,14 @@ import {
   updateWriteTextMateRules,
 } from './settings'
 import {
+  DefaultOpacity,
   IState,
   State,
   calibrate,
   calibrationFileName,
   state,
   stateIcon,
+  Opacities,
 } from 'src/shared/state'
 import { Calibrate } from 'src/shared/state'
 import { useGlobal, useState } from './utils'
@@ -45,11 +47,19 @@ const remoteCalibratePath = path.join(__dirname, calibrationFileName)
 const uriRemote = vscode.Uri.file(remoteCalibratePath)
 
 let w_busy = false
-// make sure to update this function when ever you call a .encode() method
-let lastCalibrateState: Calibrate = 'bootUp' // just because I don't want to poison all functions that don't require this value... It will surely get out of sync and cause silent bugs but I don't care right now
-const encode: typeof IState.encode = (input) => {
-  lastCalibrateState = input.calibrate
-  return IState.encode(input)
+type EncodeInput = Parameters<typeof IState.encode>[0]
+let deltaState: EncodeInput = {
+  state: 'inactive',
+  calibrate: 'bootUp',
+  opacities: { ...DefaultOpacity },
+}
+const encode = (delta: Partial<EncodeInput>) => {
+  const input = {
+    state: delta.state ?? deltaState.state,
+    calibrate: delta.calibrate ?? deltaState.calibrate,
+    opacities: delta.opacities ?? deltaState.opacities,
+  }
+  return IState.encode((deltaState = input))
 }
 type UsingContext = { stores: Stores; context: vscode.ExtensionContext }
 type UsingContextItem = UsingContext & { _item: vscode.StatusBarItem }
@@ -87,21 +97,15 @@ export async function ExtensionState_statusBarItem(
     vscode.commands.registerCommand(calibrateCommand, () =>
       calibrateCommandCycle(uriRemote, usingContext, _item)
     ),
-    vscode.commands.registerCommand(calibrateWIndowCommand, async () =>
+    vscode.commands.registerCommand(calibrateWIndowCommand, () =>
       calibrateWindowCommandCycle(usingContext)
     ),
-    vscode.workspace.onDidChangeConfiguration?.(async (e) => {
-      if (e.affectsConfiguration('workbench.colorTheme')) {
-        const tryNext = stores.windowState.read()
-        if (tryNext != state.active) {
-          return 'SC: windowState is not active'
-        }
-        if (stores.calibrationState.read() != state.active) {
-          return 'SC: calibrationState is not active'
-        }
-        return changeExtensionStateCycle(usingContext, tryNext)
-      }
-    }),
+    vscode.workspace.onDidChangeConfiguration((e) =>
+      changedColorThemeCycle(e, usingContext)
+    ),
+    vscode.workspace.onDidChangeConfiguration((e) =>
+      changedExtensionOpacitiesCycle(e, usingContext)
+    ),
     {
       dispose() {
         disposeConfiguration.consume()
@@ -110,6 +114,9 @@ export async function ExtensionState_statusBarItem(
       },
     }
   )
+
+  // the extension side doesn't need to read this but the window side does; so make sure to not fall out of sync
+  deltaState.opacities = stores.opacities.read() ?? deltaState.opacities
 
   // execute after registering the commands, specially calibrateWIndowCommand
   const next = setState ?? 'active'
@@ -247,7 +254,7 @@ async function calibrateStateSandbox(
   }
 
   const calibrateCycle = (calibrate: Calibrate, t = 100) =>
-    tryUpdateCalibrateState(_item, currentStateOrThrow(stores), calibrate, t)
+    tryUpdateCalibrateState(_item, calibrate, t)
   await calibrateCycle(calibrate.opening)
   const document = await vscode.workspace.openTextDocument(uriRemote)
   const editor = await vscode.window.showTextDocument(document, {
@@ -258,7 +265,7 @@ async function calibrateStateSandbox(
   disposeClosedEditor.fn = onDidCloseTextDocument(async (doc) => {
     if (doc.uri.path === uriRemote.path || editor.document.isClosed) {
       closeEditorTask.resolve(true)
-      await consume_close(_item, currentStateOrThrow(stores))
+      await consume_close(_item)
       return true
     }
   })
@@ -360,7 +367,6 @@ let defaultWindowState = async function (
   _item.text = `$(${stateIcon})` + iconText
   _item.tooltip = encode({
     state: next,
-    calibrate: lastCalibrateState, // this is the only place where you need to read this value...
   })
   const failure =
     next == state.disposed || next == state.stale || next == state.error
@@ -375,11 +381,6 @@ let defaultWindowState = async function (
 // Prevent rare annoying flickering on editors when the workbench observers trigger their inactive states
 // I won't create an abstraction on top of REC_nextWindowStateCycle to handle this case because it is too specific
 const annoyance = defaultWindowState
-function currentStateOrThrow({ windowState }: Stores) {
-  const currentState = windowState.read()
-  if (!currentState) throw new Error('currentState is undefined') // anyone can touch this variable, make sure it is ok...
-  return currentState
-}
 
 async function calibrateCommandCycle(
   uriRemote: vscode.Uri,
@@ -436,9 +437,7 @@ async function calibrateCommandCycle(
     calibrate_window_task.consume()
     calibrate_confirmation_task.consume()
     await checkCalibrateWindowCommandContext(state.inactive)
-    const currentState = stores.windowState.read()
-    if (!currentState) return new Error('currentState is undefined') // anyone can touch this variable, make sure it is ok...
-    await consume_close(_item, currentState) // the order matters
+    await consume_close(_item) // the order matters
     if (_item) {
       showCrashIcon(_item, error)
     }
@@ -563,28 +562,17 @@ async function toggleCommandCycle(usingContext: UsingContext) {
   return await changeExtensionStateCycle(usingContext, next)
 }
 
-function consume_close(
-  _item: vscode.StatusBarItem,
-  redundantCurrentState: State,
-  t = 100
-) {
+function consume_close(_item: vscode.StatusBarItem, t = 100) {
   disposeClosedEditor.consume()
-  return tryUpdateCalibrateState(
-    _item,
-    redundantCurrentState,
-    calibrate.closed,
-    t
-  )
+  return tryUpdateCalibrateState(_item, calibrate.closed, t)
 }
 function tryUpdateCalibrateState(
   _item: vscode.StatusBarItem,
-  redundantCurrentState: State,
   calibrate: Calibrate,
   t = 100
 ) {
   _item.tooltip = encode({
-    state: redundantCurrentState,
-    calibrate: calibrate,
+    calibrate,
   })
 
   return hold(t)
@@ -683,6 +671,46 @@ async function changeExtensionStateCycle(
   }
 }
 
+function changedColorThemeCycle(
+  e: vscode.ConfigurationChangeEvent,
+  usingContext: UsingContext
+) {
+  if (e.affectsConfiguration('workbench.colorTheme')) return 'SC: no change'
+  const { stores } = usingContext
+  const tryNext = stores.windowState.read()
+  if (tryNext != state.active) {
+    return 'SC: windowState is not active'
+  }
+  if (stores.calibrationState.read() != state.active) {
+    return 'SC: calibrationState is not active'
+  }
+  return changeExtensionStateCycle(usingContext, tryNext)
+}
+
+async function changedExtensionOpacitiesCycle(
+  e: vscode.ConfigurationChangeEvent,
+  usingContext: UsingContext
+) {
+  if (!e.affectsConfiguration('concise-syntax.opacity')) return 'SC: no change'
+  if (!_item) {
+    return 'SC: _item is undefined'
+  }
+  const opacities = vscode.workspace
+    .getConfiguration('concise-syntax')
+    .get('opacity')
+  if (!opacities || typeof opacities != 'object')
+    return 'SC: opacities is not an object'
+
+  const _opacities = {
+    ...deltaState.opacities,
+    ...opacities,
+  }
+  await usingContext.stores.opacities.write(_opacities)
+  _item.tooltip = encode({
+    opacities: _opacities,
+  })
+}
+
 function getStores(context: vscode.ExtensionContext) {
   return {
     extensionState: getStateStore(context),
@@ -692,8 +720,10 @@ function getStores(context: vscode.ExtensionContext) {
     calibrationState: getAnyCalibrate(context),
     textMateRules: getTextMateRules(context),
     colorThemeKind: getColorThemeKind(context),
+    opacities: getOpacities(context),
   }
 }
+
 type Stores = ReturnType<typeof getStores>
 
 export async function wipeAllState(context: vscode.ExtensionContext) {
@@ -782,6 +812,9 @@ function flip(next?: State) {
   return next == 'active' ? 'inactive' : 'active'
 }
 
+export function getOpacities(context: vscode.ExtensionContext) {
+  return useState(context, 'opacities', <Opacities>DefaultOpacity)
+}
 export function getColorThemeKind(context: vscode.ExtensionContext) {
   return useState(context, 'colorThemeKind', <string>{})
 }
