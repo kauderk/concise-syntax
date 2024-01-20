@@ -1,9 +1,18 @@
 import { bridgeBetweenVscodeExtension } from './keys'
 import { lifecycle } from './lifecycle'
 import { createAttributeArrayMutation, innerChildrenMutation } from './shared'
-import { allPossibleStates } from '../shared/state'
+import { state, calibrate } from '../shared/state'
 import type { IState as _Istate } from '../shared/state'
-import type { stateObservable, calibrateObservable } from './index'
+import type {
+  stateObservable,
+  calibrateObservable,
+  opacitiesObservable,
+} from './index'
+
+const enumStates = [
+  ...Object.values(state),
+  ...Object.values(calibrate),
+] as const
 
 /**
  * @description When the vscode extension changes the "bridge attribute" apply custom styles
@@ -14,6 +23,7 @@ export function createSyntaxLifecycle(
   observables: {
     state: typeof stateObservable
     calibrate: typeof calibrateObservable
+    opacities: typeof opacitiesObservable
   },
   IState: typeof _Istate,
   props?: { activate: () => () => void }
@@ -29,7 +39,6 @@ export function createSyntaxLifecycle(
       }
     },
     activate(DOM) {
-      // FIXME: share a single mutation
       return innerChildrenMutation({
         parent: DOM.watchForRemoval,
         validate(node, busy) {
@@ -44,10 +53,29 @@ export function createSyntaxLifecycle(
             target: () => dom.item,
             watchAttribute: [bridgeBetweenVscodeExtension],
             change([bridge]) {
-              // TODO: should the type system validate this?
               Object.entries(IState.decode(bridge)).forEach(([key, delta]) => {
+                if (key == 'opacities' && typeof delta === 'object') {
+                  let diff = false
+                  for (const [key, value] of Object.entries(delta)) {
+                    if (isNaN(Number(value))) continue
+                    // @ts-expect-error
+                    if (observables.opacities.value[key] === value) continue
+                    // @ts-expect-error
+                    observables.opacities.value[key] = value
+                    diff = true
+                  }
+                  if (diff) {
+                    debugger
+                    // it will only trigger the change if the object is different
+                    observables.opacities.value = {
+                      ...observables.opacities.value,
+                    }
+                  }
+                  return
+                }
+
                 if (!(key == 'state' || key == 'calibrate')) return
-                let _delta = allPossibleStates.find((state) => state == delta)
+                let _delta = enumStates.find((state) => state == delta)
                 if (!_delta || observables[key].value === _delta) return
                 observables[key].value = _delta
               })

@@ -37,6 +37,16 @@ export function createObservable<T>(initialValue: T) {
         }
       }
     },
+    subscribe(sub: Subscriber) {
+      const res = sub(_value) // FIXME: don't copy paste this code
+      if (typeof res === 'function') {
+        // prettier-ignore
+        _toDispose.set(sub, (_toDispose.get(sub) || []).concat(res))
+      } else if (res === 'Symbol.dispose') {
+        splice(sub)
+      }
+      return this.$ubscribe(sub)
+    },
     /**
      * Subscribe without calling the callback immediately
      */

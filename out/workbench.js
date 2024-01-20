@@ -693,6 +693,37 @@ var __publicField = (obj, key, value) => {
     };
     return tryFunction;
   }
+  const OpacityNames = {
+    baseline: "b",
+    selected: "s",
+    hoverAll: "ha",
+    hoverLine: "hl",
+    bleedCurrentLines: "bcl"
+  };
+  const DefaultOpacity = {
+    baseline: 0,
+    selected: 0.5,
+    hoverAll: 0.7,
+    hoverLine: 1,
+    bleedCurrentLines: 3
+  };
+  const OpacityTable = Object.entries(DefaultOpacity).reduce(
+    (acc, [key, value]) => {
+      acc[key] = `var(--${key},${value})`;
+      return acc;
+    },
+    {}
+  );
+  const cssOpacityName = "--concise-syntax-opacity";
+  const calibrationFileName = "syntax.tsx";
+  const calibrate = {
+    bootUp: "bootUp",
+    opening: "opening",
+    opened: "opened",
+    closed: "closed",
+    idle: "idle",
+    error: "error"
+  };
   const stateIcon = "symbol-keyword";
   const state = {
     active: "active",
@@ -704,7 +735,16 @@ var __publicField = (obj, key, value) => {
   const IState = {
     selector: `[id="${extensionId}"]:has(.codicon-${stateIcon})`,
     encode(input) {
-      return `Concise Syntax: ${input.state},${input.calibrate}`;
+      const opacities = Object.entries(OpacityNames).reduce(
+        (acc, [key, value]) => {
+          acc[value] = (input.opacities ?? DefaultOpacity)[key];
+          return acc;
+        },
+        {}
+      );
+      return `Concise Syntax: ${input.state},${input.calibrate},${JSON.stringify(
+        opacities
+      )}`;
     },
     /**
      * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
@@ -712,26 +752,24 @@ var __publicField = (obj, key, value) => {
      * @returns
      */
     decode(encoded) {
-      var _a, _b, _c, _d;
+      var _a, _b, _c, _d, _e, _f;
       if (!encoded)
         return {};
-      const regex = /Concise Syntax: (?<state>\w+),(?<calibrate>\w+)/;
+      const regex = /Concise Syntax: (?<state>\w+),(?<calibrate>\w+),(?<opacities>\{.+\})/;
+      const _opacities = JSON.parse(
+        ((_b = (_a = regex.exec(encoded)) == null ? void 0 : _a.groups) == null ? void 0 : _b.opacities) ?? "{}"
+      );
       return {
-        state: (_b = (_a = regex.exec(encoded)) == null ? void 0 : _a.groups) == null ? void 0 : _b.state,
-        calibrate: (_d = (_c = regex.exec(encoded)) == null ? void 0 : _c.groups) == null ? void 0 : _d.calibrate
+        state: (_d = (_c = regex.exec(encoded)) == null ? void 0 : _c.groups) == null ? void 0 : _d.state,
+        calibrate: (_f = (_e = regex.exec(encoded)) == null ? void 0 : _e.groups) == null ? void 0 : _f.calibrate,
+        opacities: Object.entries(OpacityNames).reduce((acc, [key, value]) => {
+          acc[key] = _opacities[value];
+          return acc;
+        }, {})
       };
     }
   };
-  const calibrationFileName = "syntax.tsx";
-  const calibrate = {
-    bootUp: "bootUp",
-    opening: "opening",
-    opened: "opened",
-    closed: "closed",
-    idle: "idle",
-    error: "error"
-  };
-  const allPossibleStates = [
+  const enumStates = [
     ...Object.values(state),
     ...Object.values(calibrate)
   ];
@@ -765,9 +803,27 @@ var __publicField = (obj, key, value) => {
               watchAttribute: [bridgeBetweenVscodeExtension],
               change([bridge]) {
                 Object.entries(IState2.decode(bridge)).forEach(([key, delta]) => {
+                  if (key == "opacities" && typeof delta === "object") {
+                    let diff = false;
+                    for (const [key2, value] of Object.entries(delta)) {
+                      if (isNaN(Number(value)))
+                        continue;
+                      if (observables.opacities.value[key2] === value)
+                        continue;
+                      observables.opacities.value[key2] = value;
+                      diff = true;
+                    }
+                    if (diff) {
+                      debugger;
+                      observables.opacities.value = {
+                        ...observables.opacities.value
+                      };
+                    }
+                    return;
+                  }
                   if (!(key == "state" || key == "calibrate"))
                     return;
-                  let _delta = allPossibleStates.find((state2) => state2 == delta);
+                  let _delta = enumStates.find((state2) => state2 == delta);
                   if (!_delta || observables[key].value === _delta)
                     return;
                   observables[key].value = _delta;
@@ -970,7 +1026,7 @@ var __publicField = (obj, key, value) => {
     styleIt(
       styles.getOrCreateLabeledStyle(label, selector),
       `[aria-label="${label}"]${linesSelector} :is(${lines}) {
-				--r: .7;
+				${cssOpacityName}: ${OpacityTable.selected};
 		}`
     );
     return true;
@@ -1518,19 +1574,19 @@ var __publicField = (obj, key, value) => {
         const toUnion = selectorValues.map((f) => f.selector).join(",");
         return `
 			.view-lines {
-				--r: 0;
+				${cssOpacityName}: ${OpacityTable.baseline};
 			}
 			.view-lines > div:hover,
 			${root}>${selectorOnly2.emptyQuote.selector} {
-				--r: 1;
+				${cssOpacityName}: ${OpacityTable.hoverLine};
 			}
 			.view-lines:has(:is(${toUnion},${anyTagSelector}):hover),
 			.view-lines:has(${lineSelector}:hover ${ternaryOtherwiseSelector}) {
-				--r: .5;
+				${cssOpacityName}: ${OpacityTable.hoverAll};
 			}
 			${root} :is(${toUnion}),
 			${root}:is(${ternaryOtherwise.scope}) {
-				opacity: var(--r);
+				opacity: var(${cssOpacityName});
 			}
 			`;
       }
@@ -1588,6 +1644,15 @@ var __publicField = (obj, key, value) => {
             i -= 1;
           }
         }
+      },
+      subscribe(sub) {
+        const res = sub(_value);
+        if (typeof res === "function") {
+          _toDispose.set(sub, (_toDispose.get(sub) || []).concat(res));
+        } else if (res === "Symbol.dispose") {
+          splice(sub);
+        }
+        return this.$ubscribe(sub);
       },
       /**
        * Subscribe without calling the callback immediately
@@ -1850,11 +1915,31 @@ var __publicField = (obj, key, value) => {
       return acc;
     }, {});
   }
-  const editorObservable = createObservable(void 0);
-  const stateObservable = createObservable(void 0);
-  const calibrateObservable = createObservable(void 0);
-  const sessionKey = `${extensionId}.session.styles`;
+  const opacitiesStorageKey = `${extensionId}.opacities`;
+  const opacitiesObservable = createObservable({ ...DefaultOpacity });
+  const opacitiesStyle = createStyles("opacities");
+  const createOpacitiesSubscription = () => opacitiesObservable.subscribe((opacities) => {
+    const cssVars = Object.entries(opacities).reduce((acc, [key, value]) => {
+      return acc + `--${key}: ${value};`;
+    }, "");
+    const style = `body { ${cssVars} }`;
+    opacitiesStyle.styleIt(style);
+    window.localStorage.setItem(opacitiesStorageKey, style);
+  });
+  function cacheOpacitiesProc() {
+    try {
+      const cache = window.localStorage.getItem(opacitiesStorageKey);
+      if (cache)
+        opacitiesStyle.styleIt(cache);
+      else
+        throw new Error("cache is empty");
+    } catch (error) {
+      window.localStorage.removeItem(opacitiesStorageKey);
+    }
+  }
+  const calibrateStorageKey = `${extensionId}.session.styles`;
   let tableTask;
+  const calibrateObservable = createObservable(void 0);
   const createCalibrateSubscription = () => calibrateObservable.$ubscribe((state2) => {
     if (state2 == calibrate.error) {
       tableTask == null ? void 0 : tableTask.reject(calibrate.error);
@@ -1887,7 +1972,7 @@ var __publicField = (obj, key, value) => {
       BonkersExecuteCommand.shadow(false, getInput());
     }).then(() => tableTask.promise).then(() => {
       const css = parseSymbolColors(lineEditor).process(snapshot.payload);
-      window.localStorage.setItem(sessionKey, css);
+      window.localStorage.setItem(calibrateStorageKey, css);
       syntaxStyle.styleIt(css);
     }).catch(() => toastConsole.error("Failed to get colors table")).finally(() => tableTask = void 0);
   });
@@ -1983,31 +2068,38 @@ var __publicField = (obj, key, value) => {
   function getInput() {
     return document.querySelector("div.quick-input-box input");
   }
-  function cacheProc() {
+  function cacheCalibrateProc() {
     try {
-      const cache = window.localStorage.getItem(sessionKey);
+      const cache = window.localStorage.getItem(calibrateStorageKey);
       if (cache)
         syntaxStyle.styleIt(cache);
       else
         throw new Error("cache is empty");
     } catch (error) {
-      window.localStorage.removeItem(sessionKey);
+      window.localStorage.removeItem(calibrateStorageKey);
     }
   }
+  const editorObservable = createObservable(void 0);
   const createEditorSubscription = () => editorObservable.$ubscribe((value) => {
     if (!value)
       return;
-    cacheProc();
+    cacheCalibrateProc();
     return "Symbol.dispose";
   });
   const syntaxStyle = createStyles("hide");
   let deltaSubscribers = deltaFn();
+  const stateObservable = createObservable(void 0);
   const createStateSubscription = () => stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
       addRemoveRootStyles(true);
-      cacheProc();
+      cacheCalibrateProc();
+      cacheOpacitiesProc();
       highlight.activate(500);
-      const _ = [createCalibrateSubscription(), createEditorSubscription()];
+      const _ = [
+        createOpacitiesSubscription(),
+        createCalibrateSubscription(),
+        createEditorSubscription()
+      ];
       deltaSubscribers.fn = () => _.forEach((un) => un());
     } else {
       deltaSubscribers.consume();
@@ -2019,7 +2111,8 @@ var __publicField = (obj, key, value) => {
   const syntax = createSyntaxLifecycle(
     {
       state: stateObservable,
-      calibrate: calibrateObservable
+      calibrate: calibrateObservable,
+      opacities: opacitiesObservable
     },
     IState,
     {
@@ -2038,7 +2131,8 @@ var __publicField = (obj, key, value) => {
   }
   window.conciseSyntax = syntax;
   syntax.activate();
-  cacheProc();
+  cacheCalibrateProc();
+  cacheOpacitiesProc();
   console.log(extensionId, syntax);
 });
 //# sourceMappingURL=workbench.js.map

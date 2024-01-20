@@ -1,6 +1,7 @@
 import { type textMateRulesNames } from 'src/extension/settings'
 import { linesSelector } from './keys'
 import { Clone } from 'src/shared/clone'
+import { OpacityTable, cssOpacityName } from 'src/shared/state'
 
 //#region tables
 type Condition = (payload: {
@@ -390,19 +391,19 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 
       return `
 			.view-lines {
-				--r: 0;
+				${cssOpacityName}: ${OpacityTable.baseline};
 			}
 			.view-lines > div:hover,
 			${root}>${selectorOnly.emptyQuote.selector} {
-				--r: 1;
+				${cssOpacityName}: ${OpacityTable.hoverLine};
 			}
 			.view-lines:has(:is(${toUnion},${anyTagSelector}):hover),
 			.view-lines:has(${lineSelector}:hover ${ternaryOtherwiseSelector}) {
-				--r: .5;
+				${cssOpacityName}: ${OpacityTable.hoverAll};
 			}
 			${root} :is(${toUnion}),
 			${root}:is(${ternaryOtherwise.scope}) {
-				opacity: var(--r);
+				opacity: var(${cssOpacityName});
 			}
 			`
     },

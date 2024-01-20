@@ -517,6 +517,36 @@ function move(arr, fromIndex, toIndex) {
   arr.splice(fromIndex, 1);
   arr.splice(toIndex, 0, element);
 }
+const OpacityNames = {
+  baseline: "b",
+  selected: "s",
+  hoverAll: "ha",
+  hoverLine: "hl",
+  bleedCurrentLines: "bcl"
+};
+const DefaultOpacity = {
+  baseline: 0,
+  selected: 0.5,
+  hoverAll: 0.7,
+  hoverLine: 1,
+  bleedCurrentLines: 3
+};
+Object.entries(DefaultOpacity).reduce(
+  (acc, [key2, value]) => {
+    acc[key2] = `var(--${key2},${value})`;
+    return acc;
+  },
+  {}
+);
+const calibrationFileName = "syntax.tsx";
+const calibrate = {
+  bootUp: "bootUp",
+  opening: "opening",
+  opened: "opened",
+  closed: "closed",
+  idle: "idle",
+  error: "error"
+};
 const stateIcon = "symbol-keyword";
 const state = {
   active: "active",
@@ -528,7 +558,16 @@ const state = {
 const IState = {
   selector: `[id="${extensionId}"]:has(.codicon-${stateIcon})`,
   encode(input) {
-    return `Concise Syntax: ${input.state},${input.calibrate}`;
+    const opacities = Object.entries(OpacityNames).reduce(
+      (acc, [key2, value]) => {
+        acc[value] = (input.opacities ?? DefaultOpacity)[key2];
+        return acc;
+      },
+      {}
+    );
+    return `Concise Syntax: ${input.state},${input.calibrate},${JSON.stringify(
+      opacities
+    )}`;
   },
   /**
    * VSCode will reinterpret the string: "<?icon>  <extensionName>, <?IState.encode>"
@@ -538,26 +577,20 @@ const IState = {
   decode(encoded) {
     if (!encoded)
       return {};
-    const regex = /Concise Syntax: (?<state>\w+),(?<calibrate>\w+)/;
+    const regex = /Concise Syntax: (?<state>\w+),(?<calibrate>\w+),(?<opacities>\{.+\})/;
+    const _opacities = JSON.parse(
+      regex.exec(encoded)?.groups?.opacities ?? "{}"
+    );
     return {
       state: regex.exec(encoded)?.groups?.state,
-      calibrate: regex.exec(encoded)?.groups?.calibrate
+      calibrate: regex.exec(encoded)?.groups?.calibrate,
+      opacities: Object.entries(OpacityNames).reduce((acc, [key2, value]) => {
+        acc[key2] = _opacities[value];
+        return acc;
+      }, {})
     };
   }
 };
-const calibrationFileName = "syntax.tsx";
-const calibrate = {
-  bootUp: "bootUp",
-  opening: "opening",
-  opened: "opened",
-  closed: "closed",
-  idle: "idle",
-  error: "error"
-};
-[
-  ...Object.values(state),
-  ...Object.values(calibrate)
-];
 function deltaFn(consume = false) {
   let delta;
   return {

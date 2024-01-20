@@ -4,27 +4,47 @@ import { extensionDisplayName, extensionId, viewLinesSelector } from './keys'
 import { calibrateWindowCommandPlaceholder } from './keys'
 import { IState, State, calibrationFileName, state } from 'src/shared/state'
 import { Calibrate, calibrate } from 'src/shared/state'
+import { Opacities, DefaultOpacity } from 'src/shared/state'
 import { addRemoveRootStyles, createStyles, toastConsole } from './shared'
 import { parseSymbolColors } from './regexToDomToCss'
 import { createObservable } from '../shared/observable'
 import { createTask, deltaFn } from 'src/shared/utils'
-import {
-  BranchObserverTasks,
-  ObserverTasks,
-  REC_ObservableTaskTree,
-} from './observableTask'
-export type { editorObservable, stateObservable, calibrateObservable }
+import { BranchObserverTasks, ObserverTasks } from './observableTask'
+import { REC_ObservableTaskTree } from './observableTask'
+export type { stateObservable, calibrateObservable, opacitiesObservable }
+export type { editorObservable }
 
-const editorObservable = createObservable<undefined | string>(undefined)
-const stateObservable = createObservable<State | undefined>(undefined)
-const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
+//#region opacities
+const opacitiesStorageKey = `${extensionId}.opacities`
+const opacitiesObservable = createObservable<Opacities>({ ...DefaultOpacity })
+const opacitiesStyle = createStyles('opacities')
+const createOpacitiesSubscription = () =>
+  opacitiesObservable.subscribe((opacities) => {
+    const cssVars = Object.entries(opacities).reduce((acc, [key, value]) => {
+      return acc + `--${key}: ${value};`
+    }, '')
+    const style = `body { ${cssVars} }`
+    opacitiesStyle.styleIt(style)
+    window.localStorage.setItem(opacitiesStorageKey, style)
+  })
+function cacheOpacitiesProc() {
+  try {
+    const cache = window.localStorage.getItem(opacitiesStorageKey)
+    if (cache) opacitiesStyle.styleIt(cache)
+    else throw new Error('cache is empty')
+  } catch (error) {
+    window.localStorage.removeItem(opacitiesStorageKey)
+  }
+}
+//#endregion
 
-const sessionKey = `${extensionId}.session.styles`
-
+//#region calibrate
+const calibrateStorageKey = `${extensionId}.session.styles`
 let tableTask: ReturnType<typeof createTask<Calibrate>> | undefined
 export type windowColorsTable = ReturnType<
   typeof parseSymbolColors
 >['colorsTable']
+const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 const createCalibrateSubscription = () =>
   calibrateObservable.$ubscribe((state) => {
     //#region opened -> idle -> reset
@@ -69,7 +89,7 @@ const createCalibrateSubscription = () =>
       .then(() => tableTask!.promise)
       .then(() => {
         const css = parseSymbolColors(lineEditor).process(snapshot.payload)
-        window.localStorage.setItem(sessionKey, css)
+        window.localStorage.setItem(calibrateStorageKey, css)
         syntaxStyle.styleIt(css)
       })
       .catch(() => toastConsole.error('Failed to get colors table'))
@@ -181,32 +201,41 @@ function getInput() {
 
 //#endregion
 
-function cacheProc() {
+function cacheCalibrateProc() {
   try {
-    const cache = window.localStorage.getItem(sessionKey)
+    const cache = window.localStorage.getItem(calibrateStorageKey)
     if (cache) syntaxStyle.styleIt(cache)
     else throw new Error('cache is empty')
   } catch (error) {
-    window.localStorage.removeItem(sessionKey)
+    window.localStorage.removeItem(calibrateStorageKey)
   }
 }
+const editorObservable = createObservable<string | undefined>(undefined)
 const createEditorSubscription = () =>
   editorObservable.$ubscribe((value) => {
     if (!value) return
-    cacheProc()
+    cacheCalibrateProc()
     return 'Symbol.dispose'
   })
+//#endregion
 
+//#region state
 const syntaxStyle = createStyles('hide')
 let deltaSubscribers = deltaFn()
+const stateObservable = createObservable<State | undefined>(undefined)
 // Just use the "using" keyword...
 const createStateSubscription = () =>
   stateObservable.$ubscribe((deltaState) => {
     if (deltaState == state.active) {
       addRemoveRootStyles(true)
-      cacheProc()
+      cacheCalibrateProc()
+      cacheOpacitiesProc()
       highlight.activate(500) // FIXME: find the moment the css finishes loading
-      const _ = [createCalibrateSubscription(), createEditorSubscription()]
+      const _ = [
+        createOpacitiesSubscription(),
+        createCalibrateSubscription(),
+        createEditorSubscription(),
+      ]
       deltaSubscribers.fn = () => _.forEach((un) => un())
     } else {
       deltaSubscribers.consume()
@@ -215,11 +244,14 @@ const createStateSubscription = () =>
       highlight.dispose() // the unwinding of the editorObservable could cause a stack overflow
     }
   })
+//#endregion
 
+//#region cycles
 const syntax = createSyntaxLifecycle(
   {
     state: stateObservable,
     calibrate: calibrateObservable,
+    opacities: opacitiesObservable,
   },
   IState,
   {
@@ -233,7 +265,9 @@ const syntax = createSyntaxLifecycle(
   }
 )
 const highlight = createHighlightLifeCycle(editorObservable)
+//#endregion
 
+//#region init
 // prettier-ignore
 declare global { interface Window { conciseSyntax?: typeof syntax } }
 if (window.conciseSyntax) {
@@ -241,11 +275,8 @@ if (window.conciseSyntax) {
 }
 window.conciseSyntax = syntax
 syntax.activate()
-cacheProc()
+cacheCalibrateProc()
+cacheOpacitiesProc()
 
 console.log(extensionId, syntax)
-
-/**
- * FIXME
- * handle drastic user changes for example when changing vscode's profile
- */
+//#endregion

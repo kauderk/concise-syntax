@@ -27,6 +27,7 @@ import {
   validateAddedView,
 } from './utils'
 import type { editorObservable } from './index'
+import { OpacityTable, cssOpacityName } from 'src/shared/state'
 
 /**
  * @description Change color of highlighted or selected lines
@@ -129,7 +130,7 @@ function createHighlight({ node, selector, add, set, label, color }: Selected) {
   styleIt(
     styles.getOrCreateLabeledStyle(label, selector),
     `[aria-label="${label}"]${linesSelector} :is(${lines}) {
-				--r: .7;
+				${cssOpacityName}: ${OpacityTable.selected};
 		}`
   )
 
