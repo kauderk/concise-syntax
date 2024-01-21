@@ -62,20 +62,25 @@ declare const data: {
     "configuration": {
       "title": "Concise Syntax",
       "properties": {
-        "concise-syntax.baseline": {
+        "concise-syntax.base": {
           "type": "number",
           "default": 0,
-          "description": "Baseline for all the concise-syntax characters in the editor."
+          "description": "Base opacity for all the concise-syntax characters in the editor."
         },
         "concise-syntax.selected": {
           "type": "number",
           "default": 0.5,
           "description": "When a line has any selected range, all the concise-syntax characters in the line are highlighted."
         },
+        "concise-syntax.current": {
+          "type": "number",
+          "default": 0.6,
+          "description": "When a line has any selected range, all the concise-syntax characters in the line are highlighted."
+        },
         "concise-syntax.hoverAll": {
           "type": "number",
           "default": 0.7,
-          "description": "When a concise-syntax character is hovered in the editor, all the lines are highlighted."
+          "description": "When a concise-syntax character is hovered in the editor, all concise-syntax characters are highlighted."
         },
         "concise-syntax.hoverLine": {
           "type": "number",

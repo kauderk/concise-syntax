@@ -737,7 +737,7 @@ export async function wipeAllState(context: vscode.ExtensionContext) {
   for (const key of Object.keys(DefaultOpacity)) {
     await vscode.workspace
       .getConfiguration('concise-syntax')
-      .update('opacity.' + key, undefined, vscode.ConfigurationTarget.Global)
+      .update(key, undefined, vscode.ConfigurationTarget.Global)
   }
   for (const iterator of Object.values(states)) {
     await iterator.write(undefined as any)

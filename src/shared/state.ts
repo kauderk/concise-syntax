@@ -10,18 +10,20 @@ type opacitiesPropertyNames = ExtractLastWord<
 >
 
 export const OpacityNames = {
-  baseline: 'b',
+  base: 'b',
   selected: 's',
+  current: 'c',
   hoverAll: 'ha',
   hoverLine: 'hl',
   bleedCurrentLines: 'bcl',
 } as const satisfies Record<opacitiesPropertyNames, string>
 export const DefaultOpacity = {
-  baseline: 0,
+  base: 0,
   selected: 0.5,
+  current: 0.6,
   hoverAll: 0.7,
   hoverLine: 1,
-  bleedCurrentLines: 3,
+  bleedCurrentLines: 1,
 } as const satisfies Opacities
 export const OpacityTable = Object.entries(DefaultOpacity).reduce(
   (acc, [key, value]) => {

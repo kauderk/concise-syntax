@@ -133,7 +133,7 @@ function createHighlight(o: Selected & { thenable?: (top: number) => void }) {
   styleIt(
     styles.getOrCreateLabeledStyle(label, selector),
     `[aria-label="${label}"]${linesSelector} :is(${lines}) {
-				${cssOpacityName}: ${OpacityTable.selected};
+				${cssOpacityName}: ${o.cssVarOpacity};
 		}`
   )
 }
@@ -217,34 +217,13 @@ function editorOverlayLifecycle(
     createHighlight({
       selector: selectedSelector,
       set: selectedLines,
+      cssVarOpacity: OpacityTable.selected,
       ...pre,
     })
     createHighlight({
       selector: currentSelector,
       set: currentLines,
-    }) ||
-      createHighlight({
-        selector: currentSelector,
-        set: currentLines,
-        ...pre,
-        thenable(top) {
-          // @ts-expect-error
-          let offset = node.clientHeight
-          if (isNaN(offset))
-            return toastConsole.error('bleedCurrentLines: offset is NaN')
-          const bleed = awkward.bleedCurrentLinesValue()
-          for (let i = -bleed; i <= bleed; i++) {
-            bleedCurrentLines[add ? 'add' : 'delete'](top + offset * i)
-          }
-          // FIXME: this is so hacky omg
-          bleedCurrentLines[!add ? 'add' : 'delete'](top)
-          createHighlight({
-            selector: 'div' + currentSelector, // TODO: specify the selector
-            set: bleedCurrentLines,
-            ...pre,
-          })
-        },
-      })
+      cssVarOpacity: OpacityTable.current,
       ...pre,
       thenable(top) {
         const { node, add, label } = pre

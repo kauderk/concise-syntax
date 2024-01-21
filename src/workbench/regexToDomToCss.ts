@@ -391,7 +391,7 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
 
       return `
 			.view-lines {
-				${cssOpacityName}: ${OpacityTable.baseline};
+				${cssOpacityName}: ${OpacityTable.base};
 			}
 			.view-lines > div:hover,
 			${root}>${selectorOnly.emptyQuote.selector} {

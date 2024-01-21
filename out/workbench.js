@@ -1032,7 +1032,7 @@ var __publicField = (obj, key, value) => {
     styleIt(
       styles.getOrCreateLabeledStyle(label, selector),
       `[aria-label="${label}"]${linesSelector} :is(${lines}) {
-				${cssOpacityName}: ${OpacityTable.selected};
+				${cssOpacityName}: ${o.cssVarOpacity};
 		}`
     );
   }

@@ -48,6 +48,7 @@ export type Selected = {
   add: boolean
   set: Set<number>
   label: string
+  cssVarOpacity: string
 }
 export function tryGetAttribute(
   line: HTMLElement,
