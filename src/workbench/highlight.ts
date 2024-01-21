@@ -102,13 +102,14 @@ export function createHighlightLifeCycle(
   })
 }
 
-function createHighlight({ node, selector, add, set, label, color }: Selected) {
+function createHighlight({ node, selector, add, set, label }: Selected) {
   if (!e(node) || !node.querySelector(selector)) return
   const top = parseTopStyle(node)
   if (
     isNaN(top) ||
     set.has(top) === add ||
     (!add &&
+      selector !== 'div' &&
       // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
       document.querySelector(
         `[aria-label="${label}"]` +
@@ -122,6 +123,13 @@ function createHighlight({ node, selector, add, set, label, color }: Selected) {
 
   // funny code
   set[add ? 'add' : 'delete'](top)
+  if (selector === 'div') {
+    let offset = 19
+    let bleed = 3
+    for (let i = -bleed; i <= bleed; i++) {
+      set[add ? 'add' : 'delete'](top + offset * i)
+    }
+  }
 
   const lines = Array.from(set)
     .reduce((acc, top) => acc + `[style*="${top}"],`, '')
@@ -134,7 +142,7 @@ function createHighlight({ node, selector, add, set, label, color }: Selected) {
 		}`
   )
 
-  return true
+  return selector
 }
 
 function editorOverlayLifecycle(
@@ -184,12 +192,14 @@ function editorOverlayLifecycle(
   function mount() {
     selectedLines.clear()
     currentLines.clear()
+    bleedCurrentLines.clear()
     deltaOverlay.childNodes.forEach((node) => highlightStyles(node, true)) // if you restart vscode, there might be selected lines already
   }
 
   // lookup state
   let selectedLines = new Set<number>()
   let currentLines = new Set<number>()
+  let bleedCurrentLines = new Set<number>()
 
   const OverlayLineTracker = createMutation({
     target: () => deltaOverlay,
@@ -207,18 +217,24 @@ function editorOverlayLifecycle(
   function highlightStyles(node: Node, add: boolean) {
     if (!editorLabel) return
     const pre = { node, add, label: editorLabel }
-    createHighlight({
-      selector: selectedSelector,
-      color: 'orange',
-      set: selectedLines,
-      ...pre,
-    }) ||
+    const res =
+      createHighlight({
+        selector: selectedSelector,
+        set: selectedLines,
+        ...pre,
+      }) ||
       createHighlight({
         selector: currentSelector,
-        color: 'brown',
         set: currentLines,
         ...pre,
       })
+    if (res === currentSelector) {
+      createHighlight({
+        selector: 'div',
+        set: bleedCurrentLines,
+        ...pre,
+      })
+    }
   }
 
   // FIXME: find a better way to handle selected lines flickering and layout shifts

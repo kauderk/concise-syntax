@@ -14,9 +14,9 @@ export const bridgeBetweenVscodeExtension = 'aria-label'
 export const editorSelector = '.editor-instance'
 export const idSelector = '[data-mode-id="typescriptreact"]'
 export const viewLinesSelector = '.view-lines.monaco-mouse-cursor-text'
-export const linesSelector = idSelector + ` ` + viewLinesSelector
+export const linesSelector = `${idSelector} ${viewLinesSelector}`
 export const overlaySelector = '.view-overlays'
-export const highlightSelector = idSelector + ` ` + overlaySelector
+export const highlightSelector = `${idSelector} ${overlaySelector}`
 export const selectedSelector = '.selected-text'
 export const currentSelector = '.current-line'
 export const languages = ['typescriptreact', 'javascriptreact']

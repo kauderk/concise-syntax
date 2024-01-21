@@ -19,9 +19,9 @@ var __publicField = (obj, key, value) => {
   const editorSelector = ".editor-instance";
   const idSelector = '[data-mode-id="typescriptreact"]';
   const viewLinesSelector = ".view-lines.monaco-mouse-cursor-text";
-  const linesSelector = idSelector + ` ` + viewLinesSelector;
+  const linesSelector = `${idSelector} ${viewLinesSelector}`;
   const overlaySelector = ".view-overlays";
-  const highlightSelector = idSelector + ` ` + overlaySelector;
+  const highlightSelector = `${idSelector} ${overlaySelector}`;
   const selectedSelector = ".selected-text";
   const currentSelector = ".current-line";
   const splitViewContainerSelector = ".split-view-container";
@@ -1011,17 +1011,24 @@ var __publicField = (obj, key, value) => {
       }
     });
   }
-  function createHighlight({ node, selector, add, set, label, color: color2 }) {
+  function createHighlight({ node, selector, add, set, label }) {
     if (!e(node) || !node.querySelector(selector))
       return;
     const top = parseTopStyle(node);
-    if (isNaN(top) || set.has(top) === add || !add && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+    if (isNaN(top) || set.has(top) === add || !add && selector !== "div" && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
     document.querySelector(
       `[aria-label="${label}"]` + highlightSelector + `>[style*="${top}"]>` + selector
     )) {
       return;
     }
     set[add ? "add" : "delete"](top);
+    if (selector === "div") {
+      let offset = 19;
+      let bleed = 3;
+      for (let i = -bleed; i <= bleed; i++) {
+        set[add ? "add" : "delete"](top + offset * i);
+      }
+    }
     const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
     styleIt(
       styles.getOrCreateLabeledStyle(label, selector),
@@ -1029,7 +1036,7 @@ var __publicField = (obj, key, value) => {
 				${cssOpacityName}: ${OpacityTable.selected};
 		}`
     );
-    return true;
+    return selector;
   }
   function editorOverlayLifecycle(editor, _overlay, foundEditor) {
     let editorLabel = editor.getAttribute("aria-label");
@@ -1065,10 +1072,12 @@ var __publicField = (obj, key, value) => {
     function mount() {
       selectedLines.clear();
       currentLines.clear();
+      bleedCurrentLines.clear();
       deltaOverlay.childNodes.forEach((node) => highlightStyles(node, true));
     }
     let selectedLines = /* @__PURE__ */ new Set();
     let currentLines = /* @__PURE__ */ new Set();
+    let bleedCurrentLines = /* @__PURE__ */ new Set();
     const OverlayLineTracker = createMutation({
       target: () => deltaOverlay,
       options: {
@@ -1085,17 +1094,22 @@ var __publicField = (obj, key, value) => {
       if (!editorLabel)
         return;
       const pre = { node, add, label: editorLabel };
-      createHighlight({
+      const res = createHighlight({
         selector: selectedSelector,
-        color: "orange",
         set: selectedLines,
         ...pre
       }) || createHighlight({
         selector: currentSelector,
-        color: "brown",
         set: currentLines,
         ...pre
       });
+      if (res === currentSelector) {
+        createHighlight({
+          selector: "div",
+          set: bleedCurrentLines,
+          ...pre
+        });
+      }
     }
     let layoutShift;
     let tries = 0;

@@ -707,7 +707,15 @@ async function ExtensionState_statusBarItem(context, setState) {
         calibrate_confirmation_task.consume();
       }
     }
+    // vscode.window.onDidChangeActiveTextEditor(updateStatusBarItem),
+    // vscode.window.onDidChangeTextEditorSelection(updateStatusBarItem)
   );
+  const myStatusBarItem = vscode__namespace.window.createStatusBarItem(
+    vscode__namespace.StatusBarAlignment.Right,
+    100
+  );
+  myStatusBarItem.text = "Hello World";
+  context.subscriptions.push(myStatusBarItem);
   syncOpacities(usingContext);
   const next = setState ?? "active";
   await changeExtensionStateCycle(usingContext, next);

@@ -47,7 +47,6 @@ export type Selected = {
   selector: string
   add: boolean
   set: Set<number>
-  color: string
   label: string
 }
 export function tryGetAttribute(
