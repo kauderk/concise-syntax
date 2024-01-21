@@ -694,18 +694,20 @@ var __publicField = (obj, key, value) => {
     return tryFunction;
   }
   const OpacityNames = {
-    baseline: "b",
+    base: "b",
     selected: "s",
+    current: "c",
     hoverAll: "ha",
     hoverLine: "hl",
     bleedCurrentLines: "bcl"
   };
   const DefaultOpacity = {
-    baseline: 0,
+    base: 0,
     selected: 0.5,
+    current: 0.6,
     hoverAll: 0.7,
     hoverLine: 1,
-    bleedCurrentLines: 3
+    bleedCurrentLines: 1
   };
   const OpacityTable = Object.entries(DefaultOpacity).reduce(
     (acc, [key, value]) => {
@@ -1033,7 +1035,6 @@ var __publicField = (obj, key, value) => {
 				${cssOpacityName}: ${OpacityTable.selected};
 		}`
     );
-    return selector;
   }
   function editorOverlayLifecycle(editor, _overlay, awkward) {
     let editorLabel = editor.getAttribute("aria-label");
@@ -1075,6 +1076,7 @@ var __publicField = (obj, key, value) => {
     let selectedLines = /* @__PURE__ */ new Set();
     let currentLines = /* @__PURE__ */ new Set();
     let bleedCurrentLines = /* @__PURE__ */ new Set();
+    let lineHeight;
     const OverlayLineTracker = createMutation({
       target: () => deltaOverlay,
       options: {
@@ -1094,26 +1096,31 @@ var __publicField = (obj, key, value) => {
       createHighlight({
         selector: selectedSelector,
         set: selectedLines,
+        cssVarOpacity: OpacityTable.selected,
         ...pre
-      }) || createHighlight({
+      });
+      createHighlight({
         selector: currentSelector,
         set: currentLines,
+        cssVarOpacity: OpacityTable.current,
         ...pre,
         thenable(top) {
-          let offset = node.clientHeight;
-          if (isNaN(offset))
+          const { node: node2, add: add2, label } = pre;
+          const selector = "div" + currentSelector;
+          lineHeight = node2.clientHeight || lineHeight;
+          if (!lineHeight || isNaN(lineHeight))
             return toastConsole.error("bleedCurrentLines: offset is NaN");
           const bleed = awkward.bleedCurrentLinesValue();
           for (let i = -bleed; i <= bleed; i++) {
-            bleedCurrentLines[add ? "add" : "delete"](top + offset * i);
+            bleedCurrentLines[add2 ? "add" : "delete"](top + lineHeight * i);
           }
-          bleedCurrentLines[!add ? "add" : "delete"](top);
-          createHighlight({
-            selector: "div" + currentSelector,
-            // TODO: specify the selector
-            set: bleedCurrentLines,
-            ...pre
-          });
+          const lines = Array.from(bleedCurrentLines).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
+          styleIt(
+            styles.getOrCreateLabeledStyle(label, selector),
+            `[aria-label="${label}"]${linesSelector} :is(${lines}) {
+							${cssOpacityName}: ${OpacityTable.current};
+					}`
+          );
         }
       });
     }
@@ -1121,13 +1128,14 @@ var __publicField = (obj, key, value) => {
     let tries = 0;
     const limit = 5;
     const lineTracker = (cb) => {
+      var _a;
       tries += 1;
       if (tries > limit) {
         cb();
         clearInterval(layoutShift);
         return;
       }
-      const line = deltaOverlay.querySelector(selectedSelector + "," + currentSelector);
+      const line = (_a = deltaOverlay.querySelector(selectedSelector + "," + currentSelector)) == null ? void 0 : _a.parentElement;
       if (line && !isNaN(parseTopStyle(line))) {
         mount();
       }
@@ -1191,6 +1199,7 @@ var __publicField = (obj, key, value) => {
         let deltaBleedCurrentLines = _opacitiesObservable.value.bleedCurrentLines;
         const unSubscribe = _opacitiesObservable.$ubscribe((o) => {
           if (deltaBleedCurrentLines !== o.bleedCurrentLines) {
+            deltaBleedCurrentLines = o.bleedCurrentLines;
             cycle.mount();
           }
         });
@@ -1609,7 +1618,7 @@ var __publicField = (obj, key, value) => {
         const toUnion = selectorValues.map((f) => f.selector).join(",");
         return `
 			.view-lines {
-				${cssOpacityName}: ${OpacityTable.baseline};
+				${cssOpacityName}: ${OpacityTable.base};
 			}
 			.view-lines > div:hover,
 			${root}>${selectorOnly2.emptyQuote.selector} {

@@ -130,15 +130,12 @@ function createHighlight(o: Selected & { thenable?: (top: number) => void }) {
   const lines = Array.from(set)
     .reduce((acc, top) => acc + `[style*="${top}"],`, '')
     .slice(0, -1)
-
   styleIt(
     styles.getOrCreateLabeledStyle(label, selector),
     `[aria-label="${label}"]${linesSelector} :is(${lines}) {
 				${cssOpacityName}: ${OpacityTable.selected};
 		}`
   )
-
-  return selector
 }
 
 function editorOverlayLifecycle(
@@ -199,6 +196,7 @@ function editorOverlayLifecycle(
   let selectedLines = new Set<number>()
   let currentLines = new Set<number>()
   let bleedCurrentLines = new Set<number>()
+  let lineHeight: number | undefined
 
   const OverlayLineTracker = createMutation({
     target: () => deltaOverlay,
@@ -220,6 +218,10 @@ function editorOverlayLifecycle(
       selector: selectedSelector,
       set: selectedLines,
       ...pre,
+    })
+    createHighlight({
+      selector: currentSelector,
+      set: currentLines,
     }) ||
       createHighlight({
         selector: currentSelector,
@@ -243,6 +245,31 @@ function editorOverlayLifecycle(
           })
         },
       })
+      ...pre,
+      thenable(top) {
+        const { node, add, label } = pre
+        const selector = 'div' + currentSelector
+
+        // @ts-expect-error
+        lineHeight = node.clientHeight || lineHeight
+        if (!lineHeight || isNaN(lineHeight))
+          return toastConsole.error('bleedCurrentLines: offset is NaN')
+        const bleed = awkward.bleedCurrentLinesValue()
+        for (let i = -bleed; i <= bleed; i++) {
+          bleedCurrentLines[add ? 'add' : 'delete'](top + lineHeight * i)
+        }
+
+        const lines = Array.from(bleedCurrentLines)
+          .reduce((acc, top) => acc + `[style*="${top}"],`, '')
+          .slice(0, -1)
+        styleIt(
+          styles.getOrCreateLabeledStyle(label, selector),
+          `[aria-label="${label}"]${linesSelector} :is(${lines}) {
+							${cssOpacityName}: ${OpacityTable.current};
+					}`
+        )
+      },
+    })
   }
 
   // FIXME: find a better way to handle selected lines flickering and layout shifts
@@ -258,7 +285,7 @@ function editorOverlayLifecycle(
       return
     }
     // prettier-ignore
-    const line = deltaOverlay.querySelector(selectedSelector+','+currentSelector) as H
+    const line = deltaOverlay.querySelector(selectedSelector+','+currentSelector)?.parentElement as H
     if (line && !isNaN(parseTopStyle(line))) {
       mount()
     }
@@ -335,6 +362,7 @@ function createStackStructure(
       let deltaBleedCurrentLines = _opacitiesObservable.value.bleedCurrentLines
       const unSubscribe = _opacitiesObservable.$ubscribe((o) => {
         if (deltaBleedCurrentLines !== o.bleedCurrentLines) {
+          deltaBleedCurrentLines = o.bleedCurrentLines
           cycle.mount()
         }
       })

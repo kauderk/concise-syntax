@@ -97,30 +97,35 @@ const contributes = {
   configuration: {
     title: "Concise Syntax",
     properties: {
-      "concise-syntax.baseline": {
+      "concise-syntax.base": {
         type: "number",
         "default": 0,
-        description: "Baseline for all the concise-syntax characters in the editor."
+        description: "Base opacity for all concise-syntax characters in the document."
       },
       "concise-syntax.selected": {
         type: "number",
         "default": 0.5,
-        description: "When a line has any selected range, all the concise-syntax characters in the line are highlighted."
+        description: "When a line has any selected range: all concise-syntax characters in the line gain opacity."
+      },
+      "concise-syntax.current": {
+        type: "number",
+        "default": 0.6,
+        description: "When a line has focus/caret: all concise-syntax characters in the line gain opacity."
       },
       "concise-syntax.hoverAll": {
         type: "number",
         "default": 0.7,
-        description: "When a concise-syntax character is hovered in the editor, all the lines are highlighted."
+        description: "When a concise-syntax character is hovered in the document: all concise-syntax characters gain opacity."
       },
       "concise-syntax.hoverLine": {
         type: "number",
         "default": 1,
-        description: "When a line is hovered in the editor. All the concise-syntax characters in the line are highlighted."
+        description: "When a line is hovered in the document: all concise-syntax characters in the line gain opacity."
       },
       "concise-syntax.bleedCurrentLines": {
         type: "number",
-        "default": 3,
-        description: "When a line has focus/caret how many lines above and below should be highlighted."
+        "default": 1,
+        description: "When a line has focus/caret: how many lines above and below should gain opacity."
       }
     }
   }
@@ -518,18 +523,20 @@ function move(arr, fromIndex, toIndex) {
   arr.splice(toIndex, 0, element);
 }
 const OpacityNames = {
-  baseline: "b",
+  base: "b",
   selected: "s",
+  current: "c",
   hoverAll: "ha",
   hoverLine: "hl",
   bleedCurrentLines: "bcl"
 };
 const DefaultOpacity = {
-  baseline: 0,
+  base: 0,
   selected: 0.5,
+  current: 0.6,
   hoverAll: 0.7,
   hoverLine: 1,
-  bleedCurrentLines: 3
+  bleedCurrentLines: 1
 };
 Object.entries(DefaultOpacity).reduce(
   (acc, [key2, value]) => {
@@ -1197,7 +1204,7 @@ async function wipeAllState(context) {
     await defaultWindowState(_item, state.resetDev, states.windowState);
   }
   for (const key2 of Object.keys(DefaultOpacity)) {
-    await vscode__namespace.workspace.getConfiguration("concise-syntax").update("opacity." + key2, void 0, vscode__namespace.ConfigurationTarget.Global);
+    await vscode__namespace.workspace.getConfiguration("concise-syntax").update(key2, void 0, vscode__namespace.ConfigurationTarget.Global);
   }
   for (const iterator of Object.values(states)) {
     await iterator.write(void 0);
