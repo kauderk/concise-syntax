@@ -6,10 +6,9 @@ import type packageJson from '../../package.json'
 type ExtractLastWord<T extends string> =
   T extends `${infer _}.${infer LastWord}` ? LastWord : T
 type opacitiesPropertyNames = ExtractLastWord<
-  ExtractLastWord<
-    keyof (typeof packageJson)['contributes']['configuration']['properties']
-  >
+  keyof (typeof packageJson)['contributes']['configuration']['properties']
 >
+
 export const OpacityNames = {
   baseline: 'b',
   selected: 's',

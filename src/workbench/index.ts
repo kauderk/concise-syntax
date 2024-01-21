@@ -98,18 +98,22 @@ const createCalibrateSubscription = () =>
 
 //#region BonkersExecuteCommand
 const calibrateWindowStyle = createStyles('calibrate.window')
-// prettier-ignore
-function BonkersExecuteCommand(displayName: string, commandName: string, value: string) {
+
+function BonkersExecuteCommand(
+  displayName: string,
+  commandName: string,
+  value: string
+) {
   BonkersExecuteCommand.shadow(true)
   const widgetSelector = '.quick-input-widget'
   const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`
   let shadowInput: any
-  
+
   const commandWidgetTasks = [
     [
       `${inputSelector}`,
       (el) => {
-        shadowEventListeners(shadowInput=el)
+        shadowEventListeners((shadowInput = el))
         el.value = `>${displayName}`
         el.dispatchEvent(new Event('input'))
       },
@@ -147,13 +151,13 @@ function BonkersExecuteCommand(displayName: string, commandName: string, value: 
       },
     ],
   ] as const satisfies ObserverTasks
-  
+
   // TODO: pass OR branch types
   const branchTasks = [
     [
       'li.action-item.command-center-center',
       tapVsCode,
-      [widgetSelector, commandWidgetTasks]
+      [widgetSelector, commandWidgetTasks],
     ],
     [
       `.menubar-menu-button[aria-label="View"]`,
@@ -161,14 +165,14 @@ function BonkersExecuteCommand(displayName: string, commandName: string, value: 
       [
         `[class="action-item"]:has([aria-label="Command Palette..."])`,
         tapVsCode,
-        [widgetSelector, commandWidgetTasks]
-      ]
+        [widgetSelector, commandWidgetTasks],
+      ],
     ],
   ] as const satisfies BranchObserverTasks
-  
+
   return REC_ObservableTaskTree(document.body, branchTasks).promise
 
-  function tapVsCode(el:Element) {
+  function tapVsCode(el: Element) {
     el.dispatchEvent(new CustomEvent('-monaco-gesturetap', {}))
   }
 }
@@ -268,7 +272,10 @@ const syntax = createSyntaxLifecycle(
     },
   }
 )
-const highlight = createHighlightLifeCycle(editorObservable)
+const highlight = createHighlightLifeCycle(
+  editorObservable,
+  opacitiesObservable
+)
 //#endregion
 
 //#region init

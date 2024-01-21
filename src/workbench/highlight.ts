@@ -26,7 +26,7 @@ import {
   styles,
   validateAddedView,
 } from './utils'
-import type { editorObservable } from './index'
+import type { editorObservable, opacitiesObservable } from './index'
 import { OpacityTable, cssOpacityName } from 'src/shared/state'
 
 /**
@@ -35,7 +35,8 @@ import { OpacityTable, cssOpacityName } from 'src/shared/state'
  * Take a look at the {createHighlight} function to see how the styles are generated
  */
 export function createHighlightLifeCycle(
-  _editorObservable: typeof editorObservable
+  _editorObservable: typeof editorObservable,
+  _opacitiesObservable: typeof opacitiesObservable
 ) {
   return lifecycle({
     // prettier-ignore
@@ -61,7 +62,8 @@ export function createHighlightLifeCycle(
        */
       const structure = createStackStructure(
         DOM.watchForRemoval,
-        _editorObservable
+        _editorObservable,
+        _opacitiesObservable
       )
 
       return innerChildrenMutation({
@@ -102,14 +104,14 @@ export function createHighlightLifeCycle(
   })
 }
 
-function createHighlight({ node, selector, add, set, label }: Selected) {
+function createHighlight(o: Selected & { thenable?: (top: number) => void }) {
+  const { node, add, label, selector, set } = o
   if (!e(node) || !node.querySelector(selector)) return
   const top = parseTopStyle(node)
   if (
     isNaN(top) ||
     set.has(top) === add ||
     (!add &&
-      selector !== 'div' &&
       // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
       document.querySelector(
         `[aria-label="${label}"]` +
@@ -123,13 +125,7 @@ function createHighlight({ node, selector, add, set, label }: Selected) {
 
   // funny code
   set[add ? 'add' : 'delete'](top)
-  if (selector === 'div') {
-    let offset = 19
-    let bleed = 3
-    for (let i = -bleed; i <= bleed; i++) {
-      set[add ? 'add' : 'delete'](top + offset * i)
-    }
-  }
+  o.thenable?.(top)
 
   const lines = Array.from(set)
     .reduce((acc, top) => acc + `[style*="${top}"],`, '')
@@ -148,7 +144,10 @@ function createHighlight({ node, selector, add, set, label }: Selected) {
 function editorOverlayLifecycle(
   editor: HTMLElement,
   _overlay: HTMLElement,
-  foundEditor: () => void
+  awkward: {
+    foundEditor: () => void
+    bleedCurrentLinesValue(): number
+  }
 ) {
   // lookup state
   let editorLabel = editor.getAttribute('aria-label') as string | undefined
@@ -179,7 +178,7 @@ function editorOverlayLifecycle(
       if (label.match(/(\.tsx$)|(\.tsx, )/)) {
         if (language === 'typescriptreact') {
           OverlayLineTracker.observe()
-          bruteForceLayoutShift(foundEditor)
+          bruteForceLayoutShift(awkward.foundEditor)
         }
         if (oldLabel && label != oldLabel) {
           toastConsole.log('look! this gets executed...', oldLabel)
@@ -217,24 +216,33 @@ function editorOverlayLifecycle(
   function highlightStyles(node: Node, add: boolean) {
     if (!editorLabel) return
     const pre = { node, add, label: editorLabel }
-    const res =
-      createHighlight({
-        selector: selectedSelector,
-        set: selectedLines,
-        ...pre,
-      }) ||
+    createHighlight({
+      selector: selectedSelector,
+      set: selectedLines,
+      ...pre,
+    }) ||
       createHighlight({
         selector: currentSelector,
         set: currentLines,
         ...pre,
+        thenable(top) {
+          // @ts-expect-error
+          let offset = node.clientHeight
+          if (isNaN(offset))
+            return toastConsole.error('bleedCurrentLines: offset is NaN')
+          const bleed = awkward.bleedCurrentLinesValue()
+          for (let i = -bleed; i <= bleed; i++) {
+            bleedCurrentLines[add ? 'add' : 'delete'](top + offset * i)
+          }
+          // FIXME: this is so hacky omg
+          bleedCurrentLines[!add ? 'add' : 'delete'](top)
+          createHighlight({
+            selector: 'div' + currentSelector, // TODO: specify the selector
+            set: bleedCurrentLines,
+            ...pre,
+          })
+        },
       })
-    if (res === currentSelector) {
-      createHighlight({
-        selector: 'div',
-        set: bleedCurrentLines,
-        ...pre,
-      })
-    }
   }
 
   // FIXME: find a better way to handle selected lines flickering and layout shifts
@@ -249,7 +257,8 @@ function editorOverlayLifecycle(
       clearInterval(layoutShift)
       return
     }
-    const line = deltaOverlay.querySelector(selectedSelector) as H
+    // prettier-ignore
+    const line = deltaOverlay.querySelector(selectedSelector+','+currentSelector) as H
     if (line && !isNaN(parseTopStyle(line))) {
       mount()
     }
@@ -262,23 +271,27 @@ function editorOverlayLifecycle(
 
   EditorLanguageTracker.plug()
 
-  return function dispose() {
-    clearInterval(layoutShift)
-    if (editorLabel) {
-      styles.clear(editorLabel)
-    } else {
-      // FIXME: this is like leaking information that can't be clean up later
-      // FIXME: seems to happen when the editor changes from a non tsx file to a tsx file
-      console.log('Error: editorLabel is undefined')
-    }
-    EditorLanguageTracker.disconnect()
-    OverlayLineTracker.disconnect()
+  return {
+    mount,
+    dispose() {
+      clearInterval(layoutShift)
+      if (editorLabel) {
+        styles.clear(editorLabel)
+      } else {
+        // FIXME: this is like leaking information that can't be clean up later
+        // FIXME: seems to happen when the editor changes from a non tsx file to a tsx file
+        console.log('Error: editorLabel is undefined')
+      }
+      EditorLanguageTracker.disconnect()
+      OverlayLineTracker.disconnect()
+    },
   }
 }
 
 function createStackStructure(
   watchForRemoval: HTMLElement,
-  _editorObservable: typeof editorObservable
+  _editorObservable: typeof editorObservable,
+  _opacitiesObservable: typeof opacitiesObservable
 ) {
   let recStack = new Map<HTMLElement, Function>()
   let editorStack = new Map<HTMLElement, Function>()
@@ -305,19 +318,31 @@ function createStackStructure(
   function awkwardStack(elements: ReturnType<typeof findScopeElements>) {
     const { overlay, editor } = elements
     if (overlay && editor && !editorStack.has(editor)) {
-      // TODO: get me out of here
-      const foundEditor = () => {
-        if (!watchForRemoval.contains(editor)) {
-          toastConsole.error('Editor not found _editorObservable')
-          return
+      // FIXME: this is so convoluted...
+      // FIXME: why does this function provides input callbacks and output methods...?
+      const cycle = editorOverlayLifecycle(editor, overlay, {
+        foundEditor() {
+          if (!watchForRemoval.contains(editor)) {
+            toastConsole.error('Editor not found _editorObservable')
+            return
+          }
+          _editorObservable.value = editor.getAttribute('aria-label')!
+        },
+        bleedCurrentLinesValue() {
+          return _opacitiesObservable.value.bleedCurrentLines
+        },
+      })
+      let deltaBleedCurrentLines = _opacitiesObservable.value.bleedCurrentLines
+      const unSubscribe = _opacitiesObservable.$ubscribe((o) => {
+        if (deltaBleedCurrentLines !== o.bleedCurrentLines) {
+          cycle.mount()
         }
-        _editorObservable.value = editor.getAttribute('aria-label')!
+      })
+      const dispose = () => {
+        cycle.dispose()
+        unSubscribe()
       }
-      // toastConsole.log('awkwardStack')
-      editorStack.set(
-        editor,
-        editorOverlayLifecycle(editor, overlay, foundEditor)
-      )
+      editorStack.set(editor, dispose)
       return true
     }
   }

@@ -97,22 +97,22 @@ const contributes = {
   configuration: {
     title: "Concise Syntax",
     properties: {
-      "concise-syntax.opacity.baseline": {
+      "concise-syntax.baseline": {
         type: "number",
         "default": 0,
         description: "Baseline for all the concise-syntax characters in the editor."
       },
-      "concise-syntax.opacity.selected": {
+      "concise-syntax.selected": {
         type: "number",
         "default": 0.5,
         description: "When a line has any selected range, all the concise-syntax characters in the line are highlighted."
       },
-      "concise-syntax.opacity.hoverAll": {
+      "concise-syntax.hoverAll": {
         type: "number",
         "default": 0.7,
         description: "When a concise-syntax character is hovered in the editor, all the lines are highlighted."
       },
-      "concise-syntax.opacity.hoverLine": {
+      "concise-syntax.hoverLine": {
         type: "number",
         "default": 1,
         description: "When a line is hovered in the editor. All the concise-syntax characters in the line are highlighted."
@@ -707,15 +707,7 @@ async function ExtensionState_statusBarItem(context, setState) {
         calibrate_confirmation_task.consume();
       }
     }
-    // vscode.window.onDidChangeActiveTextEditor(updateStatusBarItem),
-    // vscode.window.onDidChangeTextEditorSelection(updateStatusBarItem)
   );
-  const myStatusBarItem = vscode__namespace.window.createStatusBarItem(
-    vscode__namespace.StatusBarAlignment.Right,
-    100
-  );
-  myStatusBarItem.text = "Hello World";
-  context.subscriptions.push(myStatusBarItem);
   syncOpacities(usingContext);
   const next = setState ?? "active";
   await changeExtensionStateCycle(usingContext, next);
@@ -1167,15 +1159,15 @@ function changedColorThemeCycle(e, usingContext) {
   return changeExtensionStateCycle(usingContext, tryNext);
 }
 async function changedExtensionOpacitiesCycle(e, usingContext) {
-  if (!e.affectsConfiguration("concise-syntax.opacity"))
+  if (!e.affectsConfiguration("concise-syntax"))
     return "SC: no change";
-  syncOpacities(usingContext);
+  return syncOpacities(usingContext);
 }
 async function syncOpacities(usingContext) {
   if (!_item) {
     return "SC: _item is undefined";
   }
-  const opacities = await vscode__namespace.workspace.getConfiguration("concise-syntax").get("opacity");
+  const opacities = await vscode__namespace.workspace.getConfiguration("concise-syntax");
   if (!opacities || typeof opacities != "object")
     return "SC: opacities is not an object";
   _item.tooltip = encode({
@@ -1184,6 +1176,7 @@ async function syncOpacities(usingContext) {
       ...opacities
     })
   });
+  return "Success: opacities";
 }
 function getStores(context) {
   return {

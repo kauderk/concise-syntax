@@ -957,7 +957,7 @@ var __publicField = (obj, key, value) => {
       });
     }
   }
-  function createHighlightLifeCycle(_editorObservable) {
+  function createHighlightLifeCycle(_editorObservable, _opacitiesObservable) {
     return lifecycle({
       // prettier-ignore
       dom() {
@@ -974,7 +974,8 @@ var __publicField = (obj, key, value) => {
       activate(DOM) {
         const structure = createStackStructure(
           DOM.watchForRemoval,
-          _editorObservable
+          _editorObservable,
+          _opacitiesObservable
         );
         return innerChildrenMutation({
           parent: DOM.watchForRemoval,
@@ -1011,24 +1012,20 @@ var __publicField = (obj, key, value) => {
       }
     });
   }
-  function createHighlight({ node, selector, add, set, label }) {
+  function createHighlight(o) {
+    var _a;
+    const { node, add, label, selector, set } = o;
     if (!e(node) || !node.querySelector(selector))
       return;
     const top = parseTopStyle(node);
-    if (isNaN(top) || set.has(top) === add || !add && selector !== "div" && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
+    if (isNaN(top) || set.has(top) === add || !add && // FIXME: figure out how to overcome vscode rapid dom swap at viewLayers.ts _finishRenderingInvalidLines
     document.querySelector(
       `[aria-label="${label}"]` + highlightSelector + `>[style*="${top}"]>` + selector
     )) {
       return;
     }
     set[add ? "add" : "delete"](top);
-    if (selector === "div") {
-      let offset = 19;
-      let bleed = 3;
-      for (let i = -bleed; i <= bleed; i++) {
-        set[add ? "add" : "delete"](top + offset * i);
-      }
-    }
+    (_a = o.thenable) == null ? void 0 : _a.call(o, top);
     const lines = Array.from(set).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
     styleIt(
       styles.getOrCreateLabeledStyle(label, selector),
@@ -1038,7 +1035,7 @@ var __publicField = (obj, key, value) => {
     );
     return selector;
   }
-  function editorOverlayLifecycle(editor, _overlay, foundEditor) {
+  function editorOverlayLifecycle(editor, _overlay, awkward) {
     let editorLabel = editor.getAttribute("aria-label");
     let deltaOverlay = _overlay;
     const EditorLanguageTracker = createAttributeArrayMutation({
@@ -1059,7 +1056,7 @@ var __publicField = (obj, key, value) => {
         if (label.match(/(\.tsx$)|(\.tsx, )/)) {
           if (language === "typescriptreact") {
             OverlayLineTracker.observe();
-            bruteForceLayoutShift(foundEditor);
+            bruteForceLayoutShift(awkward.foundEditor);
           }
           if (oldLabel && label != oldLabel) {
             toastConsole.log("look! this gets executed...", oldLabel);
@@ -1094,22 +1091,31 @@ var __publicField = (obj, key, value) => {
       if (!editorLabel)
         return;
       const pre = { node, add, label: editorLabel };
-      const res = createHighlight({
+      createHighlight({
         selector: selectedSelector,
         set: selectedLines,
         ...pre
       }) || createHighlight({
         selector: currentSelector,
         set: currentLines,
-        ...pre
+        ...pre,
+        thenable(top) {
+          let offset = node.clientHeight;
+          if (isNaN(offset))
+            return toastConsole.error("bleedCurrentLines: offset is NaN");
+          const bleed = awkward.bleedCurrentLinesValue();
+          for (let i = -bleed; i <= bleed; i++) {
+            bleedCurrentLines[add ? "add" : "delete"](top + offset * i);
+          }
+          bleedCurrentLines[!add ? "add" : "delete"](top);
+          createHighlight({
+            selector: "div" + currentSelector,
+            // TODO: specify the selector
+            set: bleedCurrentLines,
+            ...pre
+          });
+        }
       });
-      if (res === currentSelector) {
-        createHighlight({
-          selector: "div",
-          set: bleedCurrentLines,
-          ...pre
-        });
-      }
     }
     let layoutShift;
     let tries = 0;
@@ -1121,7 +1127,7 @@ var __publicField = (obj, key, value) => {
         clearInterval(layoutShift);
         return;
       }
-      const line = deltaOverlay.querySelector(selectedSelector);
+      const line = deltaOverlay.querySelector(selectedSelector + "," + currentSelector);
       if (line && !isNaN(parseTopStyle(line))) {
         mount();
       }
@@ -1132,18 +1138,21 @@ var __publicField = (obj, key, value) => {
       layoutShift = setInterval(() => lineTracker(cb), 100);
     }
     EditorLanguageTracker.plug();
-    return function dispose() {
-      clearInterval(layoutShift);
-      if (editorLabel) {
-        styles.clear(editorLabel);
-      } else {
-        console.log("Error: editorLabel is undefined");
+    return {
+      mount,
+      dispose() {
+        clearInterval(layoutShift);
+        if (editorLabel) {
+          styles.clear(editorLabel);
+        } else {
+          console.log("Error: editorLabel is undefined");
+        }
+        EditorLanguageTracker.disconnect();
+        OverlayLineTracker.disconnect();
       }
-      EditorLanguageTracker.disconnect();
-      OverlayLineTracker.disconnect();
     };
   }
-  function createStackStructure(watchForRemoval2, _editorObservable) {
+  function createStackStructure(watchForRemoval2, _editorObservable, _opacitiesObservable) {
     let recStack = /* @__PURE__ */ new Map();
     let editorStack = /* @__PURE__ */ new Map();
     let treeStack = /* @__PURE__ */ new Map();
@@ -1167,17 +1176,29 @@ var __publicField = (obj, key, value) => {
     function awkwardStack(elements) {
       const { overlay, editor } = elements;
       if (overlay && editor && !editorStack.has(editor)) {
-        const foundEditor = () => {
-          if (!watchForRemoval2.contains(editor)) {
-            toastConsole.error("Editor not found _editorObservable");
-            return;
+        const cycle = editorOverlayLifecycle(editor, overlay, {
+          foundEditor() {
+            if (!watchForRemoval2.contains(editor)) {
+              toastConsole.error("Editor not found _editorObservable");
+              return;
+            }
+            _editorObservable.value = editor.getAttribute("aria-label");
+          },
+          bleedCurrentLinesValue() {
+            return _opacitiesObservable.value.bleedCurrentLines;
           }
-          _editorObservable.value = editor.getAttribute("aria-label");
+        });
+        let deltaBleedCurrentLines = _opacitiesObservable.value.bleedCurrentLines;
+        const unSubscribe = _opacitiesObservable.$ubscribe((o) => {
+          if (deltaBleedCurrentLines !== o.bleedCurrentLines) {
+            cycle.mount();
+          }
+        });
+        const dispose = () => {
+          cycle.dispose();
+          unSubscribe();
         };
-        editorStack.set(
-          editor,
-          editorOverlayLifecycle(editor, overlay, foundEditor)
-        );
+        editorStack.set(editor, dispose);
         return true;
       }
     }
@@ -2143,7 +2164,10 @@ var __publicField = (obj, key, value) => {
       }
     }
   );
-  const highlight = createHighlightLifeCycle(editorObservable);
+  const highlight = createHighlightLifeCycle(
+    editorObservable,
+    opacitiesObservable
+  );
   if (window.conciseSyntax) {
     window.conciseSyntax.dispose();
   }

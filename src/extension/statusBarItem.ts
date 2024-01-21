@@ -113,49 +113,7 @@ export async function ExtensionState_statusBarItem(
         calibrate_confirmation_task.consume()
       },
     }
-    // vscode.window.onDidChangeActiveTextEditor(updateStatusBarItem),
-    // vscode.window.onDidChangeTextEditorSelection(updateStatusBarItem)
   )
-  function getSelectedLineRanges(editor: vscode.TextEditor) {
-    const selections = editor.selections.map((selection) => {
-      const startLine = selection.start.line
-      const endLine = selection.end.line
-
-      const selectedLines = []
-      for (let i = startLine - 3; i <= endLine + 3; i++) {
-        selectedLines.push({
-          // line: editor.document.lineAt(i),
-          active: editor.document.offsetAt(selection.active),
-          start: editor.document.offsetAt(selection.start),
-          end: editor.document.offsetAt(selection.end),
-          anchor: editor.document.offsetAt(selection.anchor),
-        })
-      }
-      return selectedLines
-    })
-    // selections[0].reduce((prev, curr) => {
-    //   return prev + (curr.end - curr.start)
-    // }, 0)
-    myStatusBarItem.text = `$(megaphone) ${selections[0]?.[0]?.active}`
-  }
-  function updateStatusBarItem() {
-    if (!vscode.window.activeTextEditor) return
-    getSelectedLineRanges(vscode.window.activeTextEditor)
-
-    const lines =
-      vscode.window.activeTextEditor.selections.reduce((prev, curr) => {
-        return prev + (curr.end.line - curr.start.line)
-      }, 0) || 0
-  }
-
-  // create a new status bar item that we can now manage
-  const myStatusBarItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    100
-  )
-  myStatusBarItem.text = 'Hello World'
-  // myStatusBarItem.show()
-  context.subscriptions.push(myStatusBarItem)
 
   // the extension side doesn't need to read this but the window side does; so make sure to not fall out of sync
   syncOpacities(usingContext)
@@ -733,16 +691,14 @@ async function changedExtensionOpacitiesCycle(
   e: vscode.ConfigurationChangeEvent,
   usingContext: UsingContext
 ) {
-  if (!e.affectsConfiguration('concise-syntax.opacity')) return 'SC: no change'
-  syncOpacities(usingContext)
+  if (!e.affectsConfiguration('concise-syntax')) return 'SC: no change'
+  return syncOpacities(usingContext)
 }
 async function syncOpacities(usingContext: UsingContext) {
   if (!_item) {
     return 'SC: _item is undefined'
   }
-  const opacities = await vscode.workspace
-    .getConfiguration('concise-syntax')
-    .get('opacity')
+  const opacities = await vscode.workspace.getConfiguration('concise-syntax')
   if (!opacities || typeof opacities != 'object')
     return 'SC: opacities is not an object'
 
@@ -752,6 +708,8 @@ async function syncOpacities(usingContext: UsingContext) {
       ...opacities,
     }),
   })
+
+  return 'Success: opacities'
 }
 
 function getStores(context: vscode.ExtensionContext) {
