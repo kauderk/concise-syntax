@@ -55,7 +55,7 @@ const createCalibrateSubscription = () =>
     if (!(state == calibrate.opened || state == calibrate.idle)) return
     // prettier-ignore
     // FIXME: use proper uri or shared file path between extension and workbench
-    const lineEditor = document.querySelector<HTMLElement>(`[data-uri$="concise-syntax/out/${calibrationFileName}"] ${viewLinesSelector}`)
+    const lineEditor = document.querySelector<HTMLElement>(`[data-uri$="out/${calibrationFileName}"] ${viewLinesSelector}`)
     if (!lineEditor) {
       return toastConsole.error('Calibrate Editor not found')
     }
@@ -130,7 +130,7 @@ function BonkersExecuteCommand(
       },
     ],
     [
-      `${inputSelector}[title="${commandName}"][aria-describedby="quickInput_message"]`,
+      `${inputSelector}:is([title="${commandName}"],[placeholder="${commandName}"])[aria-describedby="quickInput_message"]`,
       (el) => {
         if (shadowInput !== el) {
           return new Error('shadowInput!==target')
