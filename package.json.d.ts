@@ -65,32 +65,32 @@ declare const data: {
         "concise-syntax.base": {
           "type": "number",
           "default": 0,
-          "description": "Base opacity for all the concise-syntax characters in the editor."
+          "description": "Base opacity for all concise-syntax characters in the document."
         },
         "concise-syntax.selected": {
           "type": "number",
           "default": 0.5,
-          "description": "When a line has any selected range, all the concise-syntax characters in the line are highlighted."
+          "description": "When a line has any selected range: all concise-syntax characters in the line gain opacity."
         },
         "concise-syntax.current": {
           "type": "number",
           "default": 0.6,
-          "description": "When a line has any selected range, all the concise-syntax characters in the line are highlighted."
+          "description": "When a line has focus/caret: all concise-syntax characters in the line gain opacity."
         },
         "concise-syntax.hoverAll": {
           "type": "number",
           "default": 0.7,
-          "description": "When a concise-syntax character is hovered in the editor, all concise-syntax characters are highlighted."
+          "description": "When a concise-syntax character is hovered in the document: all concise-syntax characters gain opacity."
         },
         "concise-syntax.hoverLine": {
           "type": "number",
           "default": 1,
-          "description": "When a line is hovered in the editor. All the concise-syntax characters in the line are highlighted."
+          "description": "When a line is hovered in the document: all concise-syntax characters in the line gain opacity."
         },
         "concise-syntax.bleedCurrentLines": {
           "type": "number",
-          "default": 3,
-          "description": "When a line has focus/caret how many lines above and below should be highlighted."
+          "default": 1,
+          "description": "When a line has focus/caret: how many lines above and below should gain opacity."
         }
       }
     }
