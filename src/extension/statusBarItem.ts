@@ -737,7 +737,7 @@ function changedColorThemeCycle(
     stores.colorThemeKind.read() == undefined
   )
     return
-  if (e.affectsConfiguration('workbench.colorTheme')) return 'SC: no change'
+  if (!e.affectsConfiguration('workbench.colorTheme')) return 'SC: no change'
   const tryNext = stores.windowState.read()
   if (tryNext != state.active) {
     return 'SC: windowState is not active'

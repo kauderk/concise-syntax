@@ -1201,7 +1201,7 @@ function changedColorThemeCycle(e, usingContext) {
   const { stores } = usingContext;
   if (!anyDocument || stores.calibrationState.read() != state.active || stores.colorThemeKind.read() == void 0)
     return;
-  if (e.affectsConfiguration("workbench.colorTheme"))
+  if (!e.affectsConfiguration("workbench.colorTheme"))
     return "SC: no change";
   const tryNext = stores.windowState.read();
   if (tryNext != state.active) {
