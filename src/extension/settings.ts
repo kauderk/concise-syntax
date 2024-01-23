@@ -4,6 +4,7 @@ import { _catch, useState } from './utils'
 import JSONC from 'comment-json'
 import { extensionId } from 'src/workbench/keys'
 import { Clone } from 'src/shared/clone'
+import path from 'path'
 
 export const key = 'editor.tokenColorCustomizations'
 const name = `${extensionId}.`
@@ -231,6 +232,14 @@ async function tryParseSettings() {
     config = JSONC.parse(raw_json)
   } catch (error) {
     config ??= {}
+    await fs.promises
+      .mkdir(path.dirname(userSettingsPath), { recursive: true })
+      .then(() =>
+        fs.promises
+          .writeFile(userSettingsPath, '', 'utf-8')
+          .then((res) => (raw_json = ''))
+      )
+      .catch((res) => {})
     console.error(error)
   }
 
@@ -260,7 +269,7 @@ async function tryParseSettings() {
     wasEmpty,
     async write() {
       try {
-        if (raw_json === undefined) throw new Error('raw_json is undefined')
+        if (raw_json === undefined) return new Error('raw_json is undefined')
         const indent = raw_json.match(/^\s+/)?.[0] ?? '  '
         const virtualJson = JSONC.stringify(config, null, indent)
         // if (virtualJson === raw_json) return

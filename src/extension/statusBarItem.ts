@@ -124,16 +124,26 @@ export async function ExtensionState_statusBarItem(
   syncOpacities(usingContext)
   // execute after registering the commands, specially calibrateWIndowCommand
 
-  const firstDocument = vscode.window.onDidChangeActiveTextEditor(async (e) => {
-    if (anyDocument) return
-    const tsx = e?.document.languageId == 'typescriptreact'
-    if (!tsx) return
+  if (
+    vscode.window.activeTextEditor?.document.languageId == 'typescriptreact'
+  ) {
     anyDocument = true
-    firstDocument.dispose()
     const next = setState ?? 'active'
     await changeExtensionStateCycle(usingContext, next)
-  })
-  context.subscriptions.push(firstDocument)
+  } else {
+    const firstDocument = vscode.window.onDidChangeActiveTextEditor(
+      async (e) => {
+        if (anyDocument) return
+        const tsx = e?.document.languageId == 'typescriptreact'
+        if (!tsx) return
+        anyDocument = true
+        firstDocument.dispose()
+        const next = setState ?? 'active'
+        await changeExtensionStateCycle(usingContext, next)
+      }
+    )
+    context.subscriptions.push(firstDocument)
+  }
 }
 
 async function REC_windowStateSandbox(

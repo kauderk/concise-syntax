@@ -42,9 +42,3 @@ That being said, it is a proof of concept about how to communicate between the e
 	}
 	```
 	</details>
-
-errors:
-
-apply default .vscode/settings.json along with textMateRules
-
-annoying waring: extension is busy even though it didn't install correctly

@@ -475,6 +475,10 @@ async function tryParseSettings() {
     config = JSONC.parse(raw_json);
   } catch (error) {
     config ??= {};
+    await fs__namespace.promises.mkdir(path.dirname(userSettingsPath), { recursive: true }).then(
+      () => fs__namespace.promises.writeFile(userSettingsPath, "", "utf-8").then((res) => raw_json = "")
+    ).catch((res) => {
+    });
     console.error(error);
   }
   if (raw_json === void 0) {
@@ -499,7 +503,7 @@ async function tryParseSettings() {
     async write() {
       try {
         if (raw_json === void 0)
-          throw new Error("raw_json is undefined");
+          return new Error("raw_json is undefined");
         const indent = raw_json.match(/^\s+/)?.[0] ?? "  ";
         const virtualJson = JSONC.stringify(config, null, indent);
         await fs__namespace.promises.writeFile(userSettingsPath, virtualJson, "utf-8");
@@ -712,18 +716,26 @@ async function ExtensionState_statusBarItem(context, setState) {
     }
   );
   syncOpacities(usingContext);
-  const firstDocument = vscode__namespace.window.onDidChangeActiveTextEditor(async (e) => {
-    if (anyDocument)
-      return;
-    const tsx = e?.document.languageId == "typescriptreact";
-    if (!tsx)
-      return;
+  if (vscode__namespace.window.activeTextEditor?.document.languageId == "typescriptreact") {
     anyDocument = true;
-    firstDocument.dispose();
     const next = setState ?? "active";
     await changeExtensionStateCycle(usingContext, next);
-  });
-  context.subscriptions.push(firstDocument);
+  } else {
+    const firstDocument = vscode__namespace.window.onDidChangeActiveTextEditor(
+      async (e) => {
+        if (anyDocument)
+          return;
+        const tsx = e?.document.languageId == "typescriptreact";
+        if (!tsx)
+          return;
+        anyDocument = true;
+        firstDocument.dispose();
+        const next = setState ?? "active";
+        await changeExtensionStateCycle(usingContext, next);
+      }
+    );
+    context.subscriptions.push(firstDocument);
+  }
 }
 async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRecursiveDiff) {
   const { stores, context, _item: _item2 } = usingContext;
