@@ -1,5 +1,7 @@
 # concise-syntax
 
+![Concise Syntax demo gif](./demo.gif)
+
 1. What does it do?
 	- It toggles the visibility of unnecessary syntax.
 2. Why and when to use it?
