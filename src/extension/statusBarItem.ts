@@ -146,14 +146,22 @@ async function REC_windowStateSandbox(
 
   _item.text = `$(${statusIconLoading})` + iconText
   const cache = await updateSettingsCycle(context, settings)
-
+  if (cache instanceof Error) {
+    await defaultWindowState(_item, state.error, stores.windowState)
+    return cache
+  }
   if (typeof cache == 'function') {
     if (await invalidRecursiveDiff?.(cache)) {
       return 'SC: invalid recursive diff'
     }
     const task = createTask()
     const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
-    await cache()
+    const res = await cache()
+    if (res instanceof Error) {
+      watcher.dispose()
+      await defaultWindowState(_item, state.error, stores.windowState)
+      return res
+    }
     await Promise.race([
       task.promise, // either the configuration changes or the timeout
       new Promise((resolve) => setTimeout(resolve, 3000)),
@@ -170,7 +178,7 @@ async function REC_windowStateSandbox(
     const tryNext = stores.windowState.read()
     if (!tryNext) return
     
-    await REC_nextWindowStateCycle(
+    const res = await REC_nextWindowStateCycle(
       tryNext,
       binary(tryNext),
       usingContext,
@@ -213,6 +221,12 @@ async function REC_windowStateSandbox(
           }
         )
       })
+    
+    if(res =="SC: invalid recursive diff" || res== "Success: cached" || res== "Success: invalidated"){}
+    else{
+			disposeConfiguration.consume()
+      return res
+    }
   }).dispose
 
   if (cache === true) {
@@ -351,6 +365,7 @@ async function REC_nextWindowStateCycle(
       Object.assign(usingContext, { _item }),
       recursiveDiff
     )
+    if (res instanceof Error) throw res
 
     busy = false
     return res

@@ -107,7 +107,7 @@ export async function updateSettingsCycle(
   operation: 'inactive' | 'active'
 ) {
   const res = await tryParseSettings()
-  if (!res) return
+  if (res instanceof Error) return res
   const { wasEmpty, specialObjectUserRules: userRules } = res
   const textMateRules = await getOrDefaultTextMateRules(context)
 
@@ -219,10 +219,7 @@ async function getOrDefaultTextMateRules(context: vscode.ExtensionContext) {
 async function tryParseSettings() {
   const workspace = vscode.workspace.workspaceFolders?.[0].uri
   if (!workspace) {
-    vscode.window.showErrorMessage(
-      'No workspace found: cannot update textMateRules'
-    )
-    return
+    return new Error('No workspace found: cannot update textMateRules')
   }
 
   const userSettingsPath = workspace.fsPath + '/' + settingsJsonPath
@@ -238,10 +235,9 @@ async function tryParseSettings() {
   }
 
   if (raw_json === undefined) {
-    vscode.window.showErrorMessage(
+    return new Error(
       `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
     )
-    return
   }
 
   // NOTE: This is a special object https://www.npmjs.com/package/comment-json#commentarray
@@ -249,10 +245,9 @@ async function tryParseSettings() {
     config?.[key]?.textMateRules
 
   if (userRules && !Array.isArray(userRules)) {
-    vscode.window.showErrorMessage(
+    return new Error(
       `${settingsJsonPath}: ${key}.textMateRules is not an array`
     )
-    return
   }
 
   const wasEmpty = !userRules || userRules?.length == 0
@@ -268,11 +263,13 @@ async function tryParseSettings() {
         if (raw_json === undefined) throw new Error('raw_json is undefined')
         const indent = raw_json.match(/^\s+/)?.[0] ?? '  '
         const virtualJson = JSONC.stringify(config, null, indent)
-        if (virtualJson === raw_json) return
+        // if (virtualJson === raw_json) return
         await fs.promises.writeFile(userSettingsPath, virtualJson, 'utf-8')
+        return 'Success: wrote textMateRules'
       } catch (error: any) {
-        vscode.window.showErrorMessage(
-          'Failed to write textMateRules. Error: ' + error.message
+        return new Error(
+          'Failed to write textMateRules. Error: ' +
+            (error.message || 'unknown')
         )
       }
     },

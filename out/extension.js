@@ -368,8 +368,8 @@ async function updateWriteTextMateRules(context, cb) {
 const settingsJsonPath = ".vscode/settings.json";
 async function updateSettingsCycle(context, operation) {
   const res = await tryParseSettings();
-  if (!res)
-    return;
+  if (res instanceof Error)
+    return res;
   const { wasEmpty, specialObjectUserRules: userRules } = res;
   const textMateRules = await getOrDefaultTextMateRules(context);
   let diff = false;
@@ -465,10 +465,7 @@ async function getOrDefaultTextMateRules(context) {
 async function tryParseSettings() {
   const workspace = vscode__namespace.workspace.workspaceFolders?.[0].uri;
   if (!workspace) {
-    vscode__namespace.window.showErrorMessage(
-      "No workspace found: cannot update textMateRules"
-    );
-    return;
+    return new Error("No workspace found: cannot update textMateRules");
   }
   const userSettingsPath = workspace.fsPath + "/" + settingsJsonPath;
   let raw_json;
@@ -481,17 +478,15 @@ async function tryParseSettings() {
     console.error(error);
   }
   if (raw_json === void 0) {
-    vscode__namespace.window.showErrorMessage(
+    return new Error(
       `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
     );
-    return;
   }
   let userRules = config?.[key]?.textMateRules;
   if (userRules && !Array.isArray(userRules)) {
-    vscode__namespace.window.showErrorMessage(
+    return new Error(
       `${settingsJsonPath}: ${key}.textMateRules is not an array`
     );
-    return;
   }
   const wasEmpty = !userRules || userRules?.length == 0;
   if (!userRules) {
@@ -507,12 +502,11 @@ async function tryParseSettings() {
           throw new Error("raw_json is undefined");
         const indent = raw_json.match(/^\s+/)?.[0] ?? "  ";
         const virtualJson = JSONC.stringify(config, null, indent);
-        if (virtualJson === raw_json)
-          return;
         await fs__namespace.promises.writeFile(userSettingsPath, virtualJson, "utf-8");
+        return "Success: wrote textMateRules";
       } catch (error) {
-        vscode__namespace.window.showErrorMessage(
-          "Failed to write textMateRules. Error: " + error.message
+        return new Error(
+          "Failed to write textMateRules. Error: " + (error.message || "unknown")
         );
       }
     }
@@ -735,13 +729,22 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRe
   const { stores, context, _item: _item2 } = usingContext;
   _item2.text = `$(${statusIconLoading})` + iconText;
   const cache = await updateSettingsCycle(context, settings);
+  if (cache instanceof Error) {
+    await defaultWindowState(_item2, state.error, stores.windowState);
+    return cache;
+  }
   if (typeof cache == "function") {
     if (await invalidRecursiveDiff?.(cache)) {
       return "SC: invalid recursive diff";
     }
     const task = createTask();
     const watcher = vscode__namespace.workspace.onDidChangeConfiguration(task.resolve);
-    await cache();
+    const res = await cache();
+    if (res instanceof Error) {
+      watcher.dispose();
+      await defaultWindowState(_item2, state.error, stores.windowState);
+      return res;
+    }
     await Promise.race([
       task.promise,
       // either the configuration changes or the timeout
@@ -757,7 +760,7 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRe
       const tryNext2 = stores.windowState.read();
       if (!tryNext2)
         return;
-      await REC_nextWindowStateCycle(
+      const res = await REC_nextWindowStateCycle(
         tryNext2,
         binary(tryNext2),
         usingContext,
@@ -766,12 +769,12 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRe
             return;
           if (tryNext2 == state.active && stores.globalInvalidation.read() != state.active) {
             await defaultWindowState(_item2, state.stale, stores.windowState);
-            const res = await vscode__namespace.window.showInformationMessage(
+            const res2 = await vscode__namespace.window.showInformationMessage(
               "The extension settings were invalidated while the extension was running.               Shall we add missing extension textMateRules if any and move them to the end to avoid conflicts?",
               "Yes and remember",
               "No and deactivate"
             );
-            const next = res?.includes("Yes") ? state.active : state.inactive;
+            const next = res2?.includes("Yes") ? state.active : state.inactive;
             await stores.globalInvalidation.write(next);
             if (next == state.inactive) {
               await defaultWindowState(_item2, next, stores.windowState);
@@ -792,6 +795,12 @@ async function REC_windowStateSandbox(tryNext, settings, usingContext, invalidRe
           );
         }
       );
+      if (res == "SC: invalid recursive diff" || res == "Success: cached" || res == "Success: invalidated")
+        ;
+      else {
+        disposeConfiguration.consume();
+        return res;
+      }
     }).dispose;
   if (cache === true) {
     return "Success: cached";
@@ -896,6 +905,8 @@ async function REC_nextWindowStateCycle(tryNext, settings, usingContext, recursi
       Object.assign(usingContext, { _item }),
       recursiveDiff
     );
+    if (res instanceof Error)
+      throw res;
     busy = false;
     return res;
   } catch (error) {
