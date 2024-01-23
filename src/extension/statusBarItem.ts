@@ -21,7 +21,10 @@ import { useGlobal, useState } from './utils'
 import path from 'path'
 import { Task, createTask, deltaFn, deltaValue } from 'src/shared/utils'
 import { type windowColorsTable } from 'src/workbench'
-import { calibrateWindowCommandPlaceholder } from 'src/workbench/keys'
+import {
+  calibrateTimeout,
+  calibrateWindowCommandPlaceholder,
+} from 'src/workbench/keys'
 
 /**
  * The icon's purpose is to indicate the workbench.ts script the extension is active.
@@ -281,7 +284,7 @@ async function calibrateStateSandbox(
     new Promise<Error>((resolve) =>
       setTimeout(() => {
         resolve(new Error('calibrate_window_task timed out '))
-      }, 5_000)
+      }, calibrateTimeout)
     ),
   ])
   if (race instanceof Error) return race

@@ -12,7 +12,7 @@ type SymbolClass<C = Condition> = {
   [key in textMateRulesNames]?:
     | {
         match: RegExp | string
-        capture?: Condition
+        capture?: C
       }
     | ({
         match: RegExp | string
@@ -85,9 +85,9 @@ const lastSymbolTable = {
 } satisfies SymbolClass
 
 const multipleSymbolTale = {
-  quotes: {
+  string: {
     match: /"|'|`/,
-    string({ siblings, current }) {
+    capture({ siblings, current }) {
       const beginQuote = current.textContent
       const string = siblings[siblings.indexOf(current) + 1]
       const end = siblings[siblings.indexOf(current) + 2]
@@ -115,90 +115,126 @@ const multipleSymbolTale = {
  * FIXME: This function might crash if it can't find valid selectors...
  * FIXME: the types are overloaded but correct, fix them
  */
-export function parseSymbolColors(lineEditor: HTMLElement) {
+export async function parseSymbolColors(
+  lines: HTMLElement,
+  monacoEditor: HTMLElement,
+  editorMaxLines: string
+) {
   //#region parser
-  const lineSelector = 'div>span'
-  const lines = Array.from(lineEditor.querySelectorAll(lineSelector))
-
   let table: any = Clone(symbolTable)
   let lastTable: any = Clone(lastSymbolTable)
   let multipleTable: any = Clone(multipleSymbolTale)
   let output: any = {}
 
-  parser: for (const line of lines) {
-    const text = line.textContent
-    if (!text) continue
-    const siblings = Array.from(line.children) as HTMLElement[]
+  const lineSelector = 'div>span'
+  let lastLines: Element[] = []
+  const parsing = () =>
+    Object.keys(Object.assign({}, table, lastTable, multipleTable)).length
+  while (parsing()) {
+    const deltaLines = Array.from(lines.querySelectorAll(lineSelector)).filter(
+      (l) => {
+        const included = lastLines.includes(l)
+        if (!included) {
+          lastLines.push(l)
+        }
+        return !included
+      }
+    )
 
-    line: for (let current of siblings) {
-      const content = current.textContent
+    parser: for (const line of deltaLines) {
+      const text = line.textContent
+      if (!text) continue
+      const siblings = Array.from(line.children) as HTMLElement[]
 
-      for (let key in table) {
-        const regex = table[key].match
-        const match = content?.match(regex)
-        if (!match) continue
-        output[key] ??= {}
-        delete table[key].match
+      line: for (let current of siblings) {
+        const content = current.textContent
 
-        for (let conditionKey in table[key]) {
-          const evaluation = table[key][conditionKey]({
-            siblings,
-            current,
-          })
-          if (evaluation) {
-            output[key][conditionKey] = getProcess(evaluation, match[0])
-            delete table[key][conditionKey]
+        for (let key in table) {
+          const regex = table[key].match
+          const match = content?.match(regex)
+          if (!match) continue
+          output[key] ??= {}
+          delete table[key].match
+
+          for (let conditionKey in table[key]) {
+            const evaluation = table[key][conditionKey]({
+              siblings,
+              current,
+            })
+            if (evaluation) {
+              output[key][conditionKey] = getProcess(evaluation, match[0])
+              delete table[key][conditionKey]
+            }
+          }
+          if (Object.keys(table[key]).length === 0) {
+            output[key].capture ??= getProcess(current, match[0])
+            delete table[key]
+          } else {
+            table[key].match = regex
           }
         }
-        if (Object.keys(table[key]).length === 0) {
-          output[key].capture ??= getProcess(current, match[0])
-          delete table[key]
-        } else {
-          table[key].match = regex
+
+        for (let key in multipleTable) {
+          const regex = multipleTable[key].match
+          const match = content?.match(regex)
+          if (!match) continue
+          output[key] ??= {}
+          delete multipleTable[key].match
+
+          for (let conditionKey in multipleTable[key]) {
+            const evaluations = multipleTable[key][conditionKey]({
+              siblings,
+              current,
+            })
+            if (evaluations) {
+              output[key][conditionKey] = evaluations.map(getProcess)
+              delete multipleTable[key][conditionKey]
+            }
+          }
+          if (Object.keys(multipleTable[key]).length === 0) {
+            output[key].capture ??= getProcess(current, match[0])
+            delete multipleTable[key]
+          } else {
+            multipleTable[key].match = regex
+          }
         }
       }
 
-      for (let key in multipleTable) {
-        const regex = multipleTable[key].match
-        const match = content?.match(regex)
+      for (let key in lastTable) {
+        const regex = lastTable[key].match
+        const match = text.match(regex)
         if (!match) continue
         output[key] ??= {}
-        delete multipleTable[key].match
 
-        for (let conditionKey in multipleTable[key]) {
-          const evaluations = multipleTable[key][conditionKey]({
-            siblings,
-            current,
-          })
-          if (evaluations) {
-            output[key][conditionKey] = evaluations.map(getProcess)
-            delete multipleTable[key][conditionKey]
-          }
-        }
-        if (Object.keys(multipleTable[key]).length === 0) {
-          output[key].capture ??= getProcess(current, match[0])
-          delete multipleTable[key]
-        } else {
-          multipleTable[key].match = regex
+        const evaluation = lastTable[key].capture({
+          siblings,
+        })
+        if (evaluation) {
+          output[key].capture = getProcess(evaluation, match[0])
+          delete lastTable[key]
         }
       }
     }
 
-    for (let key in lastTable) {
-      const regex = lastTable[key].match
-      const match = text?.match(regex)
-      if (!match) continue
-      output[key] ??= {}
-
-      const evaluation = lastTable[key].capture({
-        siblings,
-      })
-      if (evaluation) {
-        output[key].capture = getProcess(evaluation, match[0])
-        delete lastTable[key]
-      }
+    if (
+      !parsing() ||
+      Array.from(
+        monacoEditor.querySelectorAll(
+          '.margin-view-overlays > div > .line-numbers'
+        )
+      ).find((e) => e.textContent == editorMaxLines)
+    ) {
+      break
+    } else {
+      await scroll(monacoEditor.offsetHeight * -1)
     }
   }
+  function scroll(deltaY: number) {
+    monacoEditor.dispatchEvent(new WheelEvent('wheel', { deltaY }))
+    // FIXME: find the exact moment the new lines are rendered
+    return new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  await scroll(10_000) // reset to top
 
   // typescript...
   type Table = typeof symbolTable
@@ -210,7 +246,7 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
     | AllKeys<TableKeyUnions<typeof multipleSymbolTale>>
   type conditionKeys = AllKeys<TableKeyUnions<Table>[keyof Table]>
   // FIXME: type me correctly...
-  const process = output as { [key in TableKeys]: { capture: HTMLElement } }
+  const process = output as { [key in TableKeys]: { capture: CSElement } }
   //#endregion
 
   //#region map capture to pre selectors
@@ -233,14 +269,14 @@ export function parseSymbolColors(lineEditor: HTMLElement) {
   const bracketBeginSelector =
     '.' + process['bracket.begin'].capture.className.split(' ').shift()
 
-  const stringEl = process.quotes.string[0]
+  const stringEl = process.string.capture[0]
   const beginQuote = stringEl.className
-  const endQuoteEl = process.quotes.string[2] ?? stringEl
+  const endQuoteEl = process.string.capture[2] ?? stringEl
   const endQuote = endQuoteEl.className
 
   // why is this so bloated?
   const ternaryOtherwiseSelector: string =
-    Array.from(process.ternaryOtherwise.capture as HTMLElement[])
+    Array.from(process.ternaryOtherwise.capture as CSElement[])
       .map((c) => Array.from(c.classList))
       .reduce((acc, val) => acc.concat(val.join('.')), [])
       .reduce((acc, val) => acc + '.' + val + '+', '')
@@ -425,11 +461,27 @@ function setToSelector(...elements: HTMLElement[]) {
     return `:is(${c.join(', ')})`
   }
 }
-function color(element: HTMLElement) {
+type CSElement = HTMLElement & { conciseSyntaxColor: string | undefined }
+function color(element: CSElement) {
+  return element.conciseSyntaxColor
+}
+function _color(element: HTMLElement) {
   return element.computedStyleMap().get('color')?.toString()
 }
-function getProcess(span: HTMLElement, match: string) {
-  return span
+function getProcess<T extends HTMLElement | HTMLElement>(
+  evaluation: T[],
+  match: string
+) {
+  if (evaluation instanceof HTMLElement) {
+    ;(evaluation as any as CSElement).conciseSyntaxColor = _color(evaluation)
+  } else if (evaluation instanceof Array) {
+    evaluation.forEach((s) => {
+      ;(s as any as CSElement).conciseSyntaxColor = _color(s)
+    })
+  } else {
+    throw new Error('Capture editor line: Invalid dom evaluation type')
+  }
+  return evaluation as any as T extends HTMLElement[] ? CSElement[] : CSElement
 }
 
 //#endregion

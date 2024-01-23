@@ -157,6 +157,7 @@ const extensionName = `concise-syntax`;
 const calibrateWindowCommandPlaceholder = `Calibrate Window`;
 const extensionId = `${publisher}.${extensionName}`;
 const extensionScriptSrc = `${extensionId}.js`;
+const calibrateTimeout = 5e3;
 const extensionScriptTag = () => new RegExp(
   `<script.+${extensionId.replaceAll(".", "\\.")}.+/script>`,
   "gm"
@@ -844,7 +845,7 @@ async function calibrateStateSandbox(uriRemote2, usingContext, _item2) {
     new Promise(
       (resolve) => setTimeout(() => {
         resolve(new Error("calibrate_window_task timed out "));
-      }, 5e3)
+      }, calibrateTimeout)
     )
   ]);
   if (race instanceof Error)

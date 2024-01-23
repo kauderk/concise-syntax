@@ -25,6 +25,7 @@ var __publicField = (obj, key, value) => {
   const selectedSelector = ".selected-text";
   const currentSelector = ".current-line";
   const splitViewContainerSelector = ".split-view-container";
+  const calibrateTimeout = 5e3;
   function deltaFn(consume = false) {
     let delta;
     return {
@@ -1380,9 +1381,9 @@ var __publicField = (obj, key, value) => {
     }
   };
   const multipleSymbolTale = {
-    quotes: {
+    string: {
       match: /"|'|`/,
-      string({ siblings, current }) {
+      capture({ siblings, current }) {
         var _a;
         const beginQuote = current.textContent;
         const string = siblings[siblings.indexOf(current) + 1];
@@ -1396,85 +1397,111 @@ var __publicField = (obj, key, value) => {
       }
     }
   };
-  function parseSymbolColors(lineEditor) {
+  async function parseSymbolColors(lines, monacoEditor, editorMaxLines) {
     var _a, _b;
-    const lineSelector = "div>span";
-    const lines = Array.from(lineEditor.querySelectorAll(lineSelector));
     let table = Clone(symbolTable);
     let lastTable = Clone(lastSymbolTable);
     let multipleTable = Clone(multipleSymbolTale);
     let output = {};
-    for (const line of lines) {
-      const text = line.textContent;
-      if (!text)
-        continue;
-      const siblings = Array.from(line.children);
-      for (let current of siblings) {
-        const content = current.textContent;
-        for (let key in table) {
-          const regex = table[key].match;
-          const match = content == null ? void 0 : content.match(regex);
-          if (!match)
-            continue;
-          output[key] ?? (output[key] = {});
-          delete table[key].match;
-          for (let conditionKey in table[key]) {
-            const evaluation = table[key][conditionKey]({
-              siblings,
-              current
-            });
-            if (evaluation) {
-              output[key][conditionKey] = getProcess(evaluation, match[0]);
-              delete table[key][conditionKey];
+    const lineSelector = "div>span";
+    let lastLines = [];
+    const parsing = () => Object.keys(Object.assign({}, table, lastTable, multipleTable)).length;
+    while (parsing()) {
+      const deltaLines = Array.from(lines.querySelectorAll(lineSelector)).filter(
+        (l) => {
+          const included = lastLines.includes(l);
+          if (!included) {
+            lastLines.push(l);
+          }
+          return !included;
+        }
+      );
+      for (const line of deltaLines) {
+        const text = line.textContent;
+        if (!text)
+          continue;
+        const siblings = Array.from(line.children);
+        for (let current of siblings) {
+          const content = current.textContent;
+          for (let key in table) {
+            const regex = table[key].match;
+            const match = content == null ? void 0 : content.match(regex);
+            if (!match)
+              continue;
+            output[key] ?? (output[key] = {});
+            delete table[key].match;
+            for (let conditionKey in table[key]) {
+              const evaluation = table[key][conditionKey]({
+                siblings,
+                current
+              });
+              if (evaluation) {
+                output[key][conditionKey] = getProcess(evaluation, match[0]);
+                delete table[key][conditionKey];
+              }
+            }
+            if (Object.keys(table[key]).length === 0) {
+              (_a = output[key]).capture ?? (_a.capture = getProcess(current, match[0]));
+              delete table[key];
+            } else {
+              table[key].match = regex;
             }
           }
-          if (Object.keys(table[key]).length === 0) {
-            (_a = output[key]).capture ?? (_a.capture = getProcess(current, match[0]));
-            delete table[key];
-          } else {
-            table[key].match = regex;
+          for (let key in multipleTable) {
+            const regex = multipleTable[key].match;
+            const match = content == null ? void 0 : content.match(regex);
+            if (!match)
+              continue;
+            output[key] ?? (output[key] = {});
+            delete multipleTable[key].match;
+            for (let conditionKey in multipleTable[key]) {
+              const evaluations = multipleTable[key][conditionKey]({
+                siblings,
+                current
+              });
+              if (evaluations) {
+                output[key][conditionKey] = evaluations.map(getProcess);
+                delete multipleTable[key][conditionKey];
+              }
+            }
+            if (Object.keys(multipleTable[key]).length === 0) {
+              (_b = output[key]).capture ?? (_b.capture = getProcess(current, match[0]));
+              delete multipleTable[key];
+            } else {
+              multipleTable[key].match = regex;
+            }
           }
         }
-        for (let key in multipleTable) {
-          const regex = multipleTable[key].match;
-          const match = content == null ? void 0 : content.match(regex);
+        for (let key in lastTable) {
+          const regex = lastTable[key].match;
+          const match = text.match(regex);
           if (!match)
             continue;
           output[key] ?? (output[key] = {});
-          delete multipleTable[key].match;
-          for (let conditionKey in multipleTable[key]) {
-            const evaluations = multipleTable[key][conditionKey]({
-              siblings,
-              current
-            });
-            if (evaluations) {
-              output[key][conditionKey] = evaluations.map(getProcess);
-              delete multipleTable[key][conditionKey];
-            }
-          }
-          if (Object.keys(multipleTable[key]).length === 0) {
-            (_b = output[key]).capture ?? (_b.capture = getProcess(current, match[0]));
-            delete multipleTable[key];
-          } else {
-            multipleTable[key].match = regex;
+          const evaluation = lastTable[key].capture({
+            siblings
+          });
+          if (evaluation) {
+            output[key].capture = getProcess(evaluation, match[0]);
+            delete lastTable[key];
           }
         }
       }
-      for (let key in lastTable) {
-        const regex = lastTable[key].match;
-        const match = text == null ? void 0 : text.match(regex);
-        if (!match)
-          continue;
-        output[key] ?? (output[key] = {});
-        const evaluation = lastTable[key].capture({
-          siblings
-        });
-        if (evaluation) {
-          output[key].capture = getProcess(evaluation, match[0]);
-          delete lastTable[key];
-        }
+      if (!parsing() || Array.from(
+        monacoEditor.querySelectorAll(
+          ".margin-view-overlays > div > .line-numbers"
+        )
+      ).find((e2) => e2.textContent == editorMaxLines)) {
+        break;
+      } else {
+        await scroll(monacoEditor.offsetHeight * -1);
       }
     }
+    function scroll(deltaY) {
+      monacoEditor.dispatchEvent(new WheelEvent("wheel", { deltaY }));
+      return new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await scroll(1e4);
     const process = output;
     const angleBracketSelector = setToSelector(
       process["tag.begin"].capture,
@@ -1491,9 +1518,9 @@ var __publicField = (obj, key, value) => {
       process["tag.begin"].component
     )}`;
     const bracketBeginSelector = "." + process["bracket.begin"].capture.className.split(" ").shift();
-    const stringEl = process.quotes.string[0];
+    const stringEl = process.string.capture[0];
     const beginQuote = stringEl.className;
-    const endQuoteEl = process.quotes.string[2] ?? stringEl;
+    const endQuoteEl = process.string.capture[2] ?? stringEl;
     const endQuote = endQuoteEl.className;
     const ternaryOtherwiseSelector = Array.from(process.ternaryOtherwise.capture).map((c) => Array.from(c.classList)).reduce((acc, val) => acc.concat(val.join(".")), []).reduce((acc, val) => acc + "." + val + "+", "").replaceAll(
       /\.bracket-highlighting-\d/g,
@@ -1651,11 +1678,23 @@ var __publicField = (obj, key, value) => {
     }
   }
   function color(element) {
+    return element.conciseSyntaxColor;
+  }
+  function _color(element) {
     var _a;
     return (_a = element.computedStyleMap().get("color")) == null ? void 0 : _a.toString();
   }
-  function getProcess(span, match) {
-    return span;
+  function getProcess(evaluation, match) {
+    if (evaluation instanceof HTMLElement) {
+      evaluation.conciseSyntaxColor = _color(evaluation);
+    } else if (evaluation instanceof Array) {
+      evaluation.forEach((s) => {
+        s.conciseSyntaxColor = _color(s);
+      });
+    } else {
+      throw new Error("Capture editor line: Invalid dom evaluation type");
+    }
+    return evaluation;
   }
   function createObservable(initialValue) {
     let _value = initialValue;
@@ -1723,7 +1762,7 @@ var __publicField = (obj, key, value) => {
     new_task_tree_is_a_function_expected_an_array: ""
   });
   const createResult = () => createTask();
-  const Config = { timeoutMs: 5e3, pokeTheDomIntervalMs: 500 };
+  const Config = { timeoutMs: calibrateTimeout, pokeTheDomIntervalMs: 500 };
   const work_REC_ObservableTaskTree = (target, domTasks, config) => {
     const _config = { ...Config, ...config };
     const taskPromise = createResult();
@@ -1991,8 +2030,9 @@ var __publicField = (obj, key, value) => {
     }
     if (!(state2 == calibrate.opened || state2 == calibrate.idle))
       return;
-    const lineEditor = document.querySelector(`[data-uri$="out/${calibrationFileName}"] ${viewLinesSelector}`);
-    if (!lineEditor) {
+    const monacoEditor = document.querySelector(`[data-uri$="out/${calibrationFileName}"]`);
+    const lineEditor = monacoEditor == null ? void 0 : monacoEditor.querySelector(viewLinesSelector);
+    if (!e(lineEditor) || !e(monacoEditor)) {
       return toastConsole.error("Calibrate Editor not found");
     }
     if (tableTask && state2 == calibrate.opened) {
@@ -2005,24 +2045,27 @@ var __publicField = (obj, key, value) => {
       tableTask.resolve(state2);
       return;
     }
+    let _snapshot;
+    const parse = async () => _snapshot = await parseSymbolColors(lineEditor, monacoEditor, "44");
     syntaxStyle.dispose();
-    const snapshot = parseSymbolColors(lineEditor);
-    BonkersExecuteCommand(
-      extensionDisplayName,
-      calibrateWindowCommandPlaceholder,
-      JSON.stringify(snapshot.colorsTable)
+    BonkersExecuteCommand.shadow(true);
+    Promise.resolve().then(parse).then(
+      (snapshot) => BonkersExecuteCommand(
+        extensionDisplayName,
+        calibrateWindowCommandPlaceholder,
+        JSON.stringify(snapshot.colorsTable)
+      )
     ).catch(() => {
       toastConsole.error("Failed to run Calibrate Window command");
       BonkersExecuteCommand.shadow(false, getInput());
-    }).then(() => tableTask.promise).then(() => {
-      const css = parseSymbolColors(lineEditor).process(snapshot.payload);
+    }).then(() => tableTask.promise).then(async () => {
+      const css = (await parse()).process(_snapshot.payload);
       window.localStorage.setItem(calibrateStorageKey, css);
       syntaxStyle.styleIt(css);
     }).catch(() => toastConsole.error("Failed to get colors table")).finally(() => tableTask = void 0);
   });
   const calibrateWindowStyle = createStyles("calibrate.window");
   function BonkersExecuteCommand(displayName, commandName, value) {
-    BonkersExecuteCommand.shadow(true);
     const widgetSelector = ".quick-input-widget";
     const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`;
     let shadowInput;

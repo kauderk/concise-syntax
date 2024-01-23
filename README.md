@@ -44,16 +44,7 @@ That being said, it is a proof of concept about how to communicate between the e
 	</details>
 
 errors:
-debug anyway for this task when debugging F5
 
 apply default .vscode/settings.json along with textMateRules
 
-window side can¿t find concise-syntax/out/${calibrateTsx}
-
 annoying waring: extension is busy even though it didn't install correctly
-
-the window side will fail if it doesn't find all the hardcoded dom elements/ have at lest 33 lines of code
-
-Your code installation seems to be corrupted. Please reinstall the extension.
-
-failed last input dom task, change title attribute selector to placeholder

@@ -21,3 +21,5 @@ export const selectedSelector = '.selected-text'
 export const currentSelector = '.current-line'
 export const languages = ['typescriptreact', 'javascriptreact']
 export const splitViewContainerSelector = '.split-view-container'
+
+export const calibrateTimeout = 5_000

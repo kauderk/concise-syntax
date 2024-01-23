@@ -1,3 +1,4 @@
+import { calibrateTimeout } from './keys'
 import { toastConsole } from './shared'
 
 export type ObserverTasks = [
@@ -31,7 +32,7 @@ type FnError = (typeof errors)[keyof typeof errors]
 export type Falsy = 0 | -0 | 0n | '' | false | null | undefined // javascript :D
 const createResult = () => createTask<'finish', FnError | Error | Falsy>()
 
-const Config = { timeoutMs: 5_000, pokeTheDomIntervalMs: 500 }
+const Config = { timeoutMs: calibrateTimeout, pokeTheDomIntervalMs: 500 }
 export const work_REC_ObservableTaskTree = (
   target: HTMLElement,
   domTasks: BranchObserverTasks,

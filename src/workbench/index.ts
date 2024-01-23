@@ -11,6 +11,7 @@ import { createObservable } from '../shared/observable'
 import { createTask, deltaFn } from 'src/shared/utils'
 import { BranchObserverTasks, ObserverTasks } from './observableTask'
 import { REC_ObservableTaskTree } from './observableTask'
+import { e } from './utils'
 export type { stateObservable, calibrateObservable, opacitiesObservable }
 export type { editorObservable }
 
@@ -41,8 +42,8 @@ function cacheOpacitiesProc() {
 //#region calibrate
 const calibrateStorageKey = `${extensionId}.session.styles`
 let tableTask: ReturnType<typeof createTask<Calibrate>> | undefined
-export type windowColorsTable = ReturnType<
-  typeof parseSymbolColors
+export type windowColorsTable = Awaited<
+  ReturnType<typeof parseSymbolColors>
 >['colorsTable']
 const calibrateObservable = createObservable<Calibrate | undefined>(undefined)
 const createCalibrateSubscription = () =>
@@ -55,8 +56,9 @@ const createCalibrateSubscription = () =>
     if (!(state == calibrate.opened || state == calibrate.idle)) return
     // prettier-ignore
     // FIXME: use proper uri or shared file path between extension and workbench
-    const lineEditor = document.querySelector<HTMLElement>(`[data-uri$="out/${calibrationFileName}"] ${viewLinesSelector}`)
-    if (!lineEditor) {
+    const monacoEditor = document.querySelector<HTMLElement>(`[data-uri$="out/${calibrationFileName}"]`)
+    const lineEditor = monacoEditor?.querySelector(viewLinesSelector)
+    if (!e(lineEditor) || !e(monacoEditor)) {
       return toastConsole.error('Calibrate Editor not found')
     }
     if (tableTask && state == calibrate.opened) {
@@ -73,13 +75,22 @@ const createCalibrateSubscription = () =>
     }
     //#endregion
 
+    let _snapshot: any
+    const parse = async () =>
+      (_snapshot = await parseSymbolColors(lineEditor, monacoEditor, '44'))
+
     syntaxStyle.dispose()
-    const snapshot = parseSymbolColors(lineEditor)
-    BonkersExecuteCommand(
-      extensionDisplayName,
-      calibrateWindowCommandPlaceholder,
-      JSON.stringify(snapshot.colorsTable)
-    )
+    BonkersExecuteCommand.shadow(true)
+
+    Promise.resolve()
+      .then(parse)
+      .then((snapshot) =>
+        BonkersExecuteCommand(
+          extensionDisplayName,
+          calibrateWindowCommandPlaceholder,
+          JSON.stringify(snapshot.colorsTable)
+        )
+      )
       .catch(() => {
         toastConsole.error('Failed to run Calibrate Window command')
         BonkersExecuteCommand.shadow(false, getInput())
@@ -87,8 +98,8 @@ const createCalibrateSubscription = () =>
       // FIXME: here is where the window should resolve the 'Calibrate Window' task
       // take a look at src/extension/statusBarItem.ts calibrateStateSandbox procedure
       .then(() => tableTask!.promise)
-      .then(() => {
-        const css = parseSymbolColors(lineEditor).process(snapshot.payload)
+      .then(async () => {
+        const css = (await parse()).process(_snapshot.payload)
         window.localStorage.setItem(calibrateStorageKey, css)
         syntaxStyle.styleIt(css)
       })
@@ -104,7 +115,6 @@ function BonkersExecuteCommand(
   commandName: string,
   value: string
 ) {
-  BonkersExecuteCommand.shadow(true)
   const widgetSelector = '.quick-input-widget'
   const inputSelector = `${widgetSelector}:not([style*="display: none"]) div.quick-input-box input`
   let shadowInput: any
