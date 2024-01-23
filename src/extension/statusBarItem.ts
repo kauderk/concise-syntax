@@ -36,6 +36,8 @@ let busy: boolean | undefined
 let disposeConfiguration = deltaFn(true)
 let crashedMessage = ''
 
+let anyDocument = false
+
 let c_busy = false
 let disposeClosedEditor = deltaFn(true)
 let calibrate_confirmation_task = deltaValue<Task>((t) => {
@@ -120,10 +122,18 @@ export async function ExtensionState_statusBarItem(
 
   // the extension side doesn't need to read this but the window side does; so make sure to not fall out of sync
   syncOpacities(usingContext)
-
   // execute after registering the commands, specially calibrateWIndowCommand
-  const next = setState ?? 'active'
-  await changeExtensionStateCycle(usingContext, next)
+
+  const firstDocument = vscode.window.onDidChangeActiveTextEditor(async (e) => {
+    if (anyDocument) return
+    const tsx = e?.document.languageId == 'typescriptreact'
+    if (!tsx) return
+    anyDocument = true
+    firstDocument.dispose()
+    const next = setState ?? 'active'
+    await changeExtensionStateCycle(usingContext, next)
+  })
+  context.subscriptions.push(firstDocument)
 }
 
 async function REC_windowStateSandbox(
@@ -139,7 +149,7 @@ async function REC_windowStateSandbox(
 
   if (typeof cache == 'function') {
     if (await invalidRecursiveDiff?.(cache)) {
-      return 'invalid recursive diff'
+      return 'SC: invalid recursive diff'
     }
     const task = createTask()
     const watcher = vscode.workspace.onDidChangeConfiguration(task.resolve)
@@ -206,9 +216,9 @@ async function REC_windowStateSandbox(
   }).dispose
 
   if (cache === true) {
-    return 'cached'
+    return 'Success: cached'
   } else {
-    return 'invalidated'
+    return 'Success: invalidated'
   }
 }
 
@@ -317,19 +327,19 @@ async function REC_nextWindowStateCycle(
   recursiveDiff?: RecursiveDiff
 ) {
   if (!_item) {
-    const r = 'No status bar item found'
+    const r = 'SC: No status bar item found'
     vscode.window.showErrorMessage(r)
     return r
   } else if (crashedMessage) {
     vscode.window.showErrorMessage(
       `The extension crashed when updating .vscode/settings.json with property ${key}.textMateRules with error: ${crashedMessage}`
     )
-    return 'crashed'
+    return 'SC: crashed'
   }
   const { stores } = usingContext
   if (stores.calibrationState.read() != state.active) {
     await defaultWindowState(_item, state.stale, stores.windowState)
-    return 'not calibrated'
+    return 'SC: stale - calibrationState was not active'
   }
 
   try {
@@ -348,7 +358,7 @@ async function REC_nextWindowStateCycle(
     debugger
     busy = false
     showCrashIcon(_item, error)
-    return error as Error
+    return error instanceof Error ? error : new Error('Unknown error')
   }
 }
 function showCrashIcon(_item: vscode.StatusBarItem, error: any) {
@@ -390,6 +400,7 @@ async function calibrateCommandCycle(
   usingContext: UsingContext,
   _item: vscode.StatusBarItem | undefined
 ) {
+  anyDocument = true
   const { stores } = usingContext
 
   if (stores.extensionState.read() == 'disposed') {
@@ -552,6 +563,7 @@ function rgbToHexDivergent(rgbString: string, scalar = 1) {
 }
 
 async function toggleCommandCycle(usingContext: UsingContext) {
+  anyDocument = true
   const { stores } = usingContext
 
   if (stores.extensionState.read() == 'disposed') {
@@ -599,6 +611,7 @@ async function changeExtensionStateCycle(
   usingContext: UsingContext,
   overloadedNextState: State
 ) {
+  anyDocument = true
   const { stores } = usingContext
 
   const theme = vscode.workspace
@@ -627,26 +640,43 @@ async function changeExtensionStateCycle(
 
   t_busy = true
 
-  if (theme === stores.colorThemeKind.read()) {
-    await REC_nextWindowStateCycle(
+  // Happy path
+  if (
+    stores.globalCalibration.read() == state.active &&
+    stores.calibrationState.read() == state.active &&
+    stores.colorThemeKind.read() == theme
+  ) {
+    const res = await REC_nextWindowStateCycle(
       overloadedNextState,
       binary(overloadedNextState),
       usingContext
     )
     t_busy = false
-    return 'Success: overloadedNextState'
+    if (res == 'Success: cached' || res == 'Success: invalidated') {
+      return 'Success: overloadedNextState'
+    } else {
+      return res
+    }
   } else {
     if (_item) {
-      await defaultWindowState(_item, overloadedNextState, stores.windowState)
+      await defaultWindowState(_item, state.stale, stores.windowState)
     }
     waitingForUserInput = true
+    let info: string
+    if (stores.globalCalibration.read() != state.active) {
+      info = 'The extension is not calibrated.'
+    } else if (stores.calibrationState.read() != state.active) {
+      info = 'The extension (workspace) is not calibrated.'
+    } else {
+      info = 'The color theme changed.'
+    }
     // NOTE: it seems like the extension holds the entire client thread
     // if you await on the "vscode export activate hook"
     // right now the state is controlled by guard clauses.
     // so entering this branch multiple times should be impossible
-    vscode.window
+    const res = vscode.window
       .showInformationMessage(
-        'The color theme changed. Shall we calibrate the extension?',
+        info + ' Shall we calibrate it?',
         'Yes',
         'No and deactivate'
       )
@@ -660,15 +690,12 @@ async function changeExtensionStateCycle(
           t_busy = false
           return 'SC: deactivate'
         }
-        const tryNext = stores.windowState.read()
-        if (!tryNext) {
-          t_busy = false
-          return 'SC: undefined windowState'
-        }
-        vscode.commands.executeCommand('extension.calibrate').then(() => {
-          t_busy = false
-          return 'Executed: extension.calibrate command'
-        })
+        return vscode.commands
+          .executeCommand('extension.calibrate')
+          .then(() => {
+            t_busy = false
+            return 'Executed: extension.calibrate command' as const
+          })
       })
     return 'Deferred: waitingForUserInput'
   }
@@ -678,8 +705,14 @@ function changedColorThemeCycle(
   e: vscode.ConfigurationChangeEvent,
   usingContext: UsingContext
 ) {
-  if (e.affectsConfiguration('workbench.colorTheme')) return 'SC: no change'
   const { stores } = usingContext
+  if (
+    !anyDocument ||
+    stores.calibrationState.read() != state.active ||
+    stores.colorThemeKind.read() == undefined
+  )
+    return
+  if (e.affectsConfiguration('workbench.colorTheme')) return 'SC: no change'
   const tryNext = stores.windowState.read()
   if (tryNext != state.active) {
     return 'SC: windowState is not active'
