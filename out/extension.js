@@ -3,7 +3,6 @@ Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
-const JSONC = require("comment-json");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -283,6 +282,7 @@ function Clone(o, m) {
   return n;
 }
 const key = "editor.tokenColorCustomizations";
+const textMateRulesKey = "textMateRules";
 const name = `${extensionId}.`;
 const TextMateRules = [
   {
@@ -358,7 +358,7 @@ const TextMateRules = [
   }
 ];
 function getTextMateRules(context) {
-  return useState(context, "textMateRules");
+  return useState(context, textMateRulesKey);
 }
 async function updateWriteTextMateRules(context, cb) {
   const store = await getOrDefaultTextMateRules(context);
@@ -463,30 +463,8 @@ async function getOrDefaultTextMateRules(context) {
   }
 }
 async function tryParseSettings() {
-  const workspace = vscode__namespace.workspace.workspaceFolders?.[0].uri;
-  if (!workspace) {
-    return new Error("No workspace found: cannot update textMateRules");
-  }
-  const userSettingsPath = workspace.fsPath + "/" + settingsJsonPath;
-  let raw_json;
-  let config;
-  try {
-    raw_json = await fs__namespace.promises.readFile(userSettingsPath, "utf-8");
-    config = JSONC.parse(raw_json);
-  } catch (error) {
-    config ??= {};
-    await fs__namespace.promises.mkdir(path.dirname(userSettingsPath), { recursive: true }).then(
-      () => fs__namespace.promises.writeFile(userSettingsPath, "", "utf-8").then((res) => raw_json = "")
-    ).catch((res) => {
-    });
-    console.error(error);
-  }
-  if (raw_json === void 0) {
-    return new Error(
-      `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
-    );
-  }
-  let userRules = config?.[key]?.textMateRules;
+  const config = await vscode__namespace.workspace.getConfiguration(key);
+  let userRules = config[textMateRulesKey];
   if (userRules && !Array.isArray(userRules)) {
     return new Error(
       `${settingsJsonPath}: ${key}.textMateRules is not an array`
@@ -495,18 +473,23 @@ async function tryParseSettings() {
   const wasEmpty = !userRules || userRules?.length == 0;
   if (!userRules) {
     userRules = [];
-    config[key] = { textMateRules: userRules };
   }
   return {
     specialObjectUserRules: userRules,
     wasEmpty,
     async write() {
       try {
-        if (raw_json === void 0)
-          return new Error("raw_json is undefined");
-        const indent = raw_json.match(/^\s+/)?.[0] ?? "  ";
-        const virtualJson = JSONC.stringify(config, null, indent);
-        await fs__namespace.promises.writeFile(userSettingsPath, virtualJson, "utf-8");
+        if (!userRules || typeof config !== "object")
+          return new Error("userRules is undefined");
+        const { "[*Light*]": ikd, "[*Dark*]": ikd2, ...rest } = config;
+        await vscode__namespace.workspace.getConfiguration().update(
+          key,
+          {
+            ...rest,
+            [textMateRulesKey]: userRules
+          },
+          vscode__namespace.ConfigurationTarget.Workspace
+        );
         return "Success: wrote textMateRules";
       } catch (error) {
         return new Error(

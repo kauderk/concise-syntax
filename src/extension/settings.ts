@@ -1,12 +1,10 @@
 import * as vscode from 'vscode'
-import * as fs from 'fs'
 import { _catch, useState } from './utils'
-import JSONC from 'comment-json'
 import { extensionId } from 'src/workbench/keys'
 import { Clone } from 'src/shared/clone'
-import path from 'path'
 
 export const key = 'editor.tokenColorCustomizations'
+export const textMateRulesKey = 'textMateRules'
 const name = `${extensionId}.`
 type textMateRulesNames = (typeof TextMateRules)[number]['name']
 export type { textMateRulesNames }
@@ -89,7 +87,7 @@ type _TextMateRules = {
   settings: { foreground: string }
 }[]
 export function getTextMateRules(context: vscode.ExtensionContext) {
-  return useState(context, 'textMateRules', <string>{})
+  return useState(context, textMateRulesKey, <string>{})
 }
 export async function updateWriteTextMateRules(
   context: vscode.ExtensionContext,
@@ -218,40 +216,10 @@ async function getOrDefaultTextMateRules(context: vscode.ExtensionContext) {
 }
 
 async function tryParseSettings() {
-  const workspace = vscode.workspace.workspaceFolders?.[0].uri
-  if (!workspace) {
-    return new Error('No workspace found: cannot update textMateRules')
-  }
-
-  const userSettingsPath = workspace.fsPath + '/' + settingsJsonPath
-
-  let raw_json: string | undefined
-  let config: any
-  try {
-    raw_json = await fs.promises.readFile(userSettingsPath, 'utf-8')
-    config = JSONC.parse(raw_json)
-  } catch (error) {
-    config ??= {}
-    await fs.promises
-      .mkdir(path.dirname(userSettingsPath), { recursive: true })
-      .then(() =>
-        fs.promises
-          .writeFile(userSettingsPath, '', 'utf-8')
-          .then((res) => (raw_json = ''))
-      )
-      .catch((res) => {})
-    console.error(error)
-  }
-
-  if (raw_json === undefined) {
-    return new Error(
-      `Cannot read ${settingsJsonPath}: does not exist or is not valid JSON`
-    )
-  }
-
-  // NOTE: This is a special object https://www.npmjs.com/package/comment-json#commentarray
-  let userRules: DeepPartial<_TextMateRules> | undefined =
-    config?.[key]?.textMateRules
+  const config = await vscode.workspace.getConfiguration(key)
+  let userRules: DeepPartial<_TextMateRules> | undefined = config[
+    textMateRulesKey
+  ] as any
 
   if (userRules && !Array.isArray(userRules)) {
     return new Error(
@@ -262,18 +230,27 @@ async function tryParseSettings() {
   const wasEmpty = !userRules || userRules?.length == 0
   if (!userRules) {
     userRules = []
-    config[key] = { textMateRules: userRules }
   }
   return {
     specialObjectUserRules: userRules,
     wasEmpty,
     async write() {
       try {
-        if (raw_json === undefined) return new Error('raw_json is undefined')
-        const indent = raw_json.match(/^\s+/)?.[0] ?? '  '
-        const virtualJson = JSONC.stringify(config, null, indent)
-        // if (virtualJson === raw_json) return
-        await fs.promises.writeFile(userSettingsPath, virtualJson, 'utf-8')
+        if (!userRules || typeof config !== 'object')
+          return new Error('userRules is undefined')
+
+        // FIXME: understand why the api returns these values...
+        const { '[*Light*]': ikd, '[*Dark*]': ikd2, ...rest } = config
+
+        await vscode.workspace.getConfiguration().update(
+          key,
+          {
+            ...rest,
+            [textMateRulesKey]: userRules,
+          },
+          vscode.ConfigurationTarget.Workspace
+        )
+
         return 'Success: wrote textMateRules'
       } catch (error: any) {
         return new Error(

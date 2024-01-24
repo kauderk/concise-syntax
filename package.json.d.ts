@@ -97,7 +97,6 @@ declare const data: {
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
-    "comment-json": "^4.2.3",
     "ts-node": "^10.9.2",
     "vite": "4.5.1",
     "vscode": "^1.1.37"
