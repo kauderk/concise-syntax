@@ -59,26 +59,22 @@ const config: UserConfig[] = [
     },
   },
 ]
-config.forEach(async (config) => {
-  // https://github.com/vitejs/vite/issues/11424#issuecomment-1483847848
-  await build(config).catch(console.error)
-})
 
-// update package.json.d.ts
-const file = 'package.json'
-const jsonData = JSON.stringify(require(`./${file}`), null, 2)
-fs.promises.writeFile(
-  `${file}.d.ts`,
-  `/** Generated with \`./json-d-ts.js\` */\ndeclare const data: ${jsonData}\nexport = data`
-)
+async function preBuild() {
+  // update package.json.d.ts
+  const file = 'package.json'
+  const jsonData = JSON.stringify(require(`./${file}`), null, 2)
+  await fs.promises.writeFile(
+    `${file}.d.ts`,
+    `/** Generated with \`./json-d-ts.js\` */\ndeclare const data: ${jsonData}\nexport = data`
+  )
 
-// tsc src/shared/uninstall.ts --outDir out/uninstall.js
-exec('tsc src/shared/uninstall.ts --outDir out')
-
-// FIXME: find a vite hook on fileSaveEnd and nodeProcessEnded to stop this function
-fs.promises
-  .access('out/workbench.js')
-  .then(() =>
+  // tsc src/shared/uninstall.ts --outDir out/uninstall.js
+  await exec('tsc src/shared/uninstall.ts --outDir out')
+}
+function postBuild() {
+  // FIXME: find a vite hook on fileSaveEnd and nodeProcessEnded to stop this function
+  return fs.promises.access('out/workbench.js').then(() =>
     fs.watchFile('out/workbench.js', async () => {
       const vscodePath = path.join(
         os.homedir(),
@@ -90,4 +86,14 @@ fs.promises
       console.log('patch vscode:', path.basename(res.workbench.customPath))
     })
   )
+}
+
+preBuild()
+  .then(async () => {
+    for (const c of config) {
+      // https://github.com/vitejs/vite/issues/11424#issuecomment-1483847848
+      await build(c)
+    }
+  })
+  .then(() => (watch ? postBuild() : undefined))
   .catch(console.error)

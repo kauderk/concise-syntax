@@ -5,6 +5,14 @@ declare const data: {
   "description": "Hide unnecessary syntax or markup from programming languages",
   "version": "0.0.1",
   "publisher": "kauderk",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kauderk/concise-syntax"
+  },
+  "bugs": {
+    "url": "https://github.com/kauderk/concise-syntax/issues"
+  },
   "type": "commonjs",
   "engines": {
     "vscode": "^1.70.0"
@@ -14,7 +22,7 @@ declare const data: {
   ],
   "main": "./out/extension",
   "activationEvents": [
-    "*"
+    "onStartupFinished"
   ],
   "scripts": {
     "watch": "ts-node vite.config.custom.ts --watch",
@@ -96,6 +104,7 @@ declare const data: {
     }
   },
   "devDependencies": {
+    "@types/vscode": "^1.70.0",
     "@types/node": "^20.10.5",
     "ts-node": "^10.9.2",
     "vite": "4.5.1",

@@ -10,6 +10,17 @@
 3. How does it work?
 	- It uses tokenColors rules along with a window script to synchronize the visibility of syntax.
 
+## Usage
+
+- Install the extension.
+	- Open a concise-syntax target document: typescriptreact.
+	- A info message will appear `The extension is not calibrated. Shall we calibrate it?` click `Yes`.
+
+- Then you'll have access to a command palette command `Concise Syntax: Calibrate`
+	- Use this command to calibrate the extension to your theme/settings.json.
+
+- When ever you change your workspace theme and the extension is active, you'll be prompted to calibrate the extension or deactivate it.
+
 ## Development
 - Launch the vscode `debugger` with `F5`. A warning will appear `The task "watch" cannot be tracked. Make sure to have a problem matcher defined`, click `Remember my choice for this task` and `Debug Anyway`.
 	- Why does this happen? The build script `vite.config.custom.ts` needs to build the extension and the window side. That script doesn't have a problem matcher defined in `.vscode/tasks.json` so vscode doesn't know how to track it. The warning is harmless and can be ignored.

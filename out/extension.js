@@ -39,6 +39,14 @@ const displayName = "Concise Syntax";
 const description = "Hide unnecessary syntax or markup from programming languages";
 const version = "0.0.1";
 const publisher$1 = "kauderk";
+const license = "MIT";
+const repository = {
+  type: "git",
+  url: "https://github.com/kauderk/concise-syntax"
+};
+const bugs = {
+  url: "https://github.com/kauderk/concise-syntax/issues"
+};
 const type = "commonjs";
 const engines = {
   vscode: "^1.70.0"
@@ -48,7 +56,7 @@ const categories = [
 ];
 const main = "./out/extension";
 const activationEvents = [
-  "*"
+  "onStartupFinished"
 ];
 const scripts = {
   watch: "ts-node vite.config.custom.ts --watch",
@@ -130,8 +138,8 @@ const contributes = {
   }
 };
 const devDependencies = {
+  "@types/vscode": "^1.70.0",
   "@types/node": "^20.10.5",
-  "comment-json": "^4.2.3",
   "ts-node": "^10.9.2",
   vite: "4.5.1",
   vscode: "^1.1.37"
@@ -142,6 +150,9 @@ const packageJson = {
   description,
   version,
   publisher: publisher$1,
+  license,
+  repository,
+  bugs,
   type,
   engines,
   categories,
