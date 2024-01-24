@@ -237,6 +237,13 @@ function editorOverlayLifecycle(
         for (let i = -bleed; i <= bleed; i++) {
           bleedCurrentLines[add ? 'add' : 'delete'](top + lineHeight * i)
         }
+        // FIXME: either find a more elegant to handle this edge case
+        // or stop using the "*" selector and use a more specific one
+        const onVeryFirstCalibration = [0, lineHeight]
+        for (const bad of onVeryFirstCalibration) {
+          bleedCurrentLines.delete(bad)
+          bleedCurrentLines.delete(bad - 1)
+        }
 
         const lines = Array.from(bleedCurrentLines)
           .reduce((acc, top) => acc + `[style*="${top}"],`, '')

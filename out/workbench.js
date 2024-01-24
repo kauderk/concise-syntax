@@ -1115,6 +1115,11 @@ var __publicField = (obj, key, value) => {
           for (let i = -bleed; i <= bleed; i++) {
             bleedCurrentLines[add2 ? "add" : "delete"](top + lineHeight * i);
           }
+          const onVeryFirstCalibration = [0, lineHeight];
+          for (const bad of onVeryFirstCalibration) {
+            bleedCurrentLines.delete(bad);
+            bleedCurrentLines.delete(bad - 1);
+          }
           const lines = Array.from(bleedCurrentLines).reduce((acc, top2) => acc + `[style*="${top2}"],`, "").slice(0, -1);
           styleIt(
             styles.getOrCreateLabeledStyle(label, selector),
