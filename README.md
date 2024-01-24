@@ -13,17 +13,29 @@
 ## Usage
 
 - Install the extension.
-	- Open a concise-syntax target document: typescriptreact.
-	- A info message will appear `The extension is not calibrated. Shall we calibrate it?` click `Yes`.
+	- Download the latest vsix asset from the [releases page](https://github.com/kauderk/concise-syntax/releases).
+	- Install it:
+		- View > Command Palette > `Extensions: Install from VSIX...`
+		- Or with `code --install-extension concise-syntax-0.0.1.vsix`.
+	
+- Usage
+	- Open a workspace folder.
+	- Open a concise-syntax target document: **typescriptreact** (any flavour is supported).
+	- An info message will appear `The extension is not calibrated. Shall we calibrate it?` click `Yes`.
 
-- Then you'll have access to a command palette command `Concise Syntax: Calibrate`
-	- Use this command to calibrate the extension to your theme/settings.json.
+- Runtime:
+	- Then you'll have access to a command palette command `Concise Syntax: Calibrate`
+		- Use this command to manually calibrate the extension to your theme/settings.json.
+	- When ever you change your workspace theme and the extension is active, you'll be prompted to calibrate the extension or deactivate it.
 
-- When ever you change your workspace theme and the extension is active, you'll be prompted to calibrate the extension or deactivate it.
+- Configuration:
+	- File > Preferences > Settings > Extensions > Concise Syntax
+	- There, you can tune the opacities and their hierarchy.
 
 ## Development
 - Launch the vscode `debugger` with `F5`. A warning will appear `The task "watch" cannot be tracked. Make sure to have a problem matcher defined`, click `Remember my choice for this task` and `Debug Anyway`.
 	- Why does this happen? The build script `vite.config.custom.ts` needs to build the extension and the window side. That script doesn't have a problem matcher defined in `.vscode/tasks.json` so vscode doesn't know how to track it. The warning is harmless and can be ignored.
+- To package the extension install `vsce` with `npm install -g vsce` and run `vsce package`.
 
 ## Known Issues
 
