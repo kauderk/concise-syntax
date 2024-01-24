@@ -17,10 +17,13 @@
 	- Install it:
 		- View > Command Palette > `Extensions: Install from VSIX...`
 		- Or with `code --install-extension concise-syntax-0.0.1.vsix`.
+
+- Uninstall the extension.
+	- View > Command Palette > `Dispose Extension (free memory)`.
 	
 - Usage
 	- Open a workspace folder.
-	- Open a concise-syntax target document: **typescriptreact** (any flavour is supported).
+	- Open a concise-syntax target file with the extension **.tsx**
 	- An info message will appear `The extension is not calibrated. Shall we calibrate it?` click `Yes`.
 
 - Runtime:
@@ -41,6 +44,10 @@
 
 - `Your Code installation appears to be corrupt. Please reinstall.`
 	- The extension spawns a window script and vscode doesn't like that. That script syncs the window state with the extension.
+
+- Uninstall the extension.
+	- View > Command Palette > `Dispose Extension (free memory)`.
+	- Why? The vscode extension api doesn't seem to call it's uninstall hook consistently. So, the extension needs to be disposed manually. :'(
 
 - This extension is a workaround for a feature that is not yet available in VSCode.
 	- Which is the ability to toggle tokenColors and or apply partial theme rules.
