@@ -101,6 +101,11 @@ declare const data: {
           "description": "When a line has focus/caret: how many lines above and below should gain opacity."
         }
       }
+    },
+    "configurationDefaults": {
+      "files.readonlyInclude": {
+        "**/*concise-syntax*/out/syntax.tsx": true
+      }
     }
   },
   "devDependencies": {
